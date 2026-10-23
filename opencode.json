@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "canvas": {
+        "type": "local",
+        "command": ["node", "/home/parth/Production/openchamber-canvas/mcp/server.js"],
+        "disabled": false
+      }
+    }
+  }
+}

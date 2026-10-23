@@ -8,7 +8,7 @@ owner: Parth
 created: 2026-10-23
 last_updated: 2026-10-23
 last_verified_commit: null
-version: 0.5.0
+version: 0.6.0
 tags:
   - openchamber
   - extension
@@ -32,7 +32,7 @@ related_features: []
 | Field | Details |
 |---|---|
 | Document status | Proposed |
-| Implementation status | Phase 2 server done; Phase 3 next |
+| Implementation status | Phase 3 done; Phase 4 next |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, MCP server, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -41,7 +41,7 @@ related_features: []
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode MCP client |
 | Feature flag | None in v1 |
-| Last verified | 47 tests pass. Phase 2 built viewer e2e: view, inline runtime, bundle asset, storage, feedback, and theme in headless Chrome. Phase 0 blocking probes pass. |
+| Last verified | 54 tests pass. Built MCP e2e: publish, view, update, and read. Built viewer e2e: inline runtime, bundle asset, storage, feedback, and theme. Phase 0 blocking probes pass. |
 
 ### At a Glance
 
@@ -58,7 +58,7 @@ The feature is built from four parts:
 
 Both the MCP and the service use the same viewer daemon and the same on-disk store. No OpenChamber core change is required.
 
-The store, view policy, viewer server, runtime, and pinned library set exist. The extension panel, service, and MCP server do not. Platform behavior is verified by the Phase 0 probes.
+The store, view policy, viewer server, runtime, pinned library set, and MCP server exist. The extension panel and service do not. Platform behavior is verified by the Phase 0 probes.
 
 ### What changed from 0.1
 
@@ -433,7 +433,7 @@ An artifact is published once and updated in place. Each update appends an immut
 
 ### Existing Artifacts
 
-Phases 1 and 2, 2026-10-23:
+Phases 1 to 3, 2026-10-23:
 
 | Path | What it does | Verification |
 |---|---|---|
@@ -450,16 +450,20 @@ Phases 1 and 2, 2026-10-23:
 | `src/viewer/server.ts` | `/health`, `/mint`, `/notify`, `/view`, `/events`, `/api`, `/libraries`, port file, idle exit | `tests/viewer.test.ts` |
 | `src/viewer/runtime/canvas.ts` | `window.canvas` storage, feedback, data, refresh, theme, live update | Browser e2e |
 | `src/viewer/ensure.ts` | Detached spawn, port file discovery, mint, notify | `tsc`, built-viewer e2e |
+| `src/mcp/source.ts` | `filePath` and `directoryPath` readers, external-reference scan | `tests/mcp.test.ts` |
+| `src/mcp/heartbeat.ts` | `.mcp-heartbeat.json` every 60 seconds | `tests/mcp.test.ts` |
+| `src/mcp/server.ts` | Six MCP tools, validation, viewer integration | `tests/mcp.test.ts`, built MCP e2e |
 | `tests/viewer.test.ts` | HTTP, SSE, feedback, state, bundle asset, library injection | `bun test` |
+| `tests/mcp.test.ts` | Stdio tools, publish, read, update, result, archive, file and folder sources | `bun test` |
 | `tests/feedback.test.ts` | Feedback and runtime state units | `bun test` |
 
 HTML and bundle validation lives in `src/store/index.ts`. The `src/kinds` adapters are deferred until Markdown, image, and PDF exist. Splitting now would add an abstraction with one caller.
 
-Not implemented: `src/mcp`, `src/service`, `panel`, `status`, and the extension manifest.
+Not implemented: `src/service`, `panel`, `status`, and the extension manifest.
 
 ### Planned Artifacts
 
-The store, policy, package, and build rows are implemented. The rest are planned. The `src/kinds` row is deferred until a second kind needs its own adapter.
+The store, policy, viewer, build, and MCP rows are implemented. The service and UI rows are planned. The `src/kinds` row is deferred until a second kind needs its own adapter.
 
 | Layer | Responsibility | Planned path | Main symbol | Change type |
 |---|---|---|---|---|
@@ -475,6 +479,8 @@ The store, policy, package, and build rows are implemented. The rest are planned
 | Viewer | Detached spawn and client | `src/viewer/ensure.ts` | `ensureViewer`, `mintViewUrl`, `notifyViewer` | Create |
 | Viewer | Pinned libraries | `viewer/libraries/` | Chart.js, D3, Mermaid | Build output |
 | MCP | Tool schemas and handlers | `src/mcp/server.ts` | `publish`, `update`, `list`, `read`, `archive`, `result` | Create |
+| MCP | Source readers and external-reference scan | `src/mcp/source.ts` | `readHtmlFile`, `readDirectorySource`, `scanExternalReferences` | Create |
+| MCP | Heartbeat | `src/mcp/heartbeat.ts` | `startHeartbeat` | Create |
 | MCP | Ensure and talk to the viewer | `src/viewer/ensure.ts` | `ensureViewer` | Create |
 | Service | Host service entry | `src/service/main.ts` | `main` | Create |
 | Service | `/health`, `/list`, `/view-url`, `/feedback`, `/export` | `src/service/routes.ts` | `serviceRoutes` | Create |
@@ -487,7 +493,8 @@ The store, policy, package, and build rows are implemented. The rest are planned
 | Tests | Store, kinds, policy units | `tests/store.test.ts`, `tests/policy.test.ts` | Not applicable | Create |
 | Tests | Feedback and state units | `tests/feedback.test.ts` | Not applicable | Create |
 | Tests | Viewer HTTP and SSE | `tests/viewer.test.ts` | Not applicable | Create |
-| Tests | Service and MCP integration | `tests/service.test.ts`, `tests/mcp.test.ts` | Not applicable | Create |
+| Tests | Service integration | `tests/service.test.ts` | Not applicable | Create |
+| Tests | MCP stdio | `tests/mcp.test.ts` | Not applicable | Create |
 | Tests | Viewer browser tests | `tests/viewer.spec.ts` | Playwright | Create |
 
 ### Generated or Restricted Areas
@@ -498,6 +505,7 @@ The store, policy, package, and build rows are implemented. The rest are planned
 | `viewer/libraries/` | Generated and pinned | Built by `scripts/build.ts` from the exact npm versions; `manifest.json` records bytes and SHA-256; the viewer verifies each file at startup |
 | `src/viewer/policy.ts` | Restricted | Changes need a security review and the SEC-001 test |
 | `src/viewer/runtime/canvas.ts` | Restricted | Runs inside the artifact origin; no secrets |
+| `src/mcp/source.ts` | Restricted | Source paths stay inside the project; changes need traversal tests |
 | `src/store/paths.ts` | Restricted | Changes need traversal tests |
 | `~/.config/openchamber/artifacts` | User data | Never committed to the repository |
 
@@ -1810,17 +1818,19 @@ All blocking probes pass on 2026-10-23. Phase 2 is unblocked.
 
 **Objective:** The agent can publish, read, update, list, archive, and read feedback without any UI.
 
+**Status:** Implemented. Six tools, source readers, external-reference scan, heartbeat, and viewer integration. 54 tests pass. The built MCP e2e published, opened, updated, and read an artifact. The real project-scoped MCP is registered, and `canvas_publish` returned a 200 view URL with the Chart.js tag and runtime.
+
 **Expected changes:**
 
 - Implement `src/mcp/server.ts` with the six tools, validation, external-reference scan, bundle validation, dedupe, conflict checks, and the five update modes.
-- Implement `src/mcp/viewer-client.ts` with `ensureViewer` and `mint`.
-- Add the heartbeat file.
-- Bundle to `dist/mcp/server.js`.
+- Implement `src/mcp/source.ts` for `filePath` and `directoryPath`, and `src/mcp/heartbeat.ts`.
+- Use `src/viewer/ensure.ts` for `ensureViewer`, `mintViewUrl`, and `notifyViewer`.
+- Bundle to `mcp/server.js`.
 - Add stdio integration tests that spawn the server and send JSON-RPC.
 
-**Validation:** `bun run build`, `bun test tests/mcp.test.ts`, manual add in Settings, MCP.
+**Validation:** `bun run typecheck`, `bun test tests/mcp.test.ts`, `bun run build`, the built MCP e2e, and a real `canvas_publish` call.
 
-**Completion criteria:** AC-001, AC-005, AC-012, AC-016, AC-029, AC-033, AC-034, AC-035, AC-036 pass. The agent can publish, read, update, and read feedback.
+**Completion criteria:** AC-001, AC-012, AC-016, AC-029, AC-033, AC-034, AC-035, and AC-036 pass. AC-005's tool result passes; the agent `browser.open` path is pending the agent web tool.
 
 **Rollback:** Remove the MCP entry. Stored artifacts remain readable by the gallery.
 
@@ -1924,7 +1934,7 @@ None of these block v1.
 {
   "canvas": {
     "type": "local",
-    "command": ["node", "/home/parth/Production/openchamber-canvas/dist/mcp/server.js"]
+    "command": ["node", "/home/parth/Production/openchamber-canvas/mcp/server.js"]
   }
 }
 ```
@@ -2085,6 +2095,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.3.1 | Phase 0 results: P4, P7, P8, and P12 pass; P6 partial; P1, P3, P5, and P9 pending | In progress | Parth |
 | 2026-10-23 | 0.4.0 | Phase 0 blocking probes pass: P1, P3, P4, P6, P7, P8, P9, and P12. Phase 2 is unblocked | In progress | Parth |
 | 2026-10-23 | 0.5.0 | Phase 2: viewer server, runtime, feedback and state, pinned libraries, 47 tests, built-viewer browser e2e | In progress | Parth |
+| 2026-10-23 | 0.6.0 | Phase 3: MCP server with six tools, source readers, heartbeat, viewer integration, 54 tests, built MCP e2e | In progress | Parth |
 
 ## 31. Related Resources
 
@@ -2242,7 +2253,7 @@ The first two ship in one package. The MCP is a separate install. The tool card 
 {
   "canvas": {
     "type": "local",
-    "command": ["node", "/absolute/path/to/openchamber-canvas/dist/mcp/server.js"]
+    "command": ["node", "/absolute/path/to/openchamber-canvas/mcp/server.js"]
   }
 }
 ```

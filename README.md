@@ -2,7 +2,7 @@
 
 A project gallery for agent-generated artifacts. Each artifact opens in OpenChamber's browser panel, keeps its versions, refreshes in place, and can send user feedback back to the agent.
 
-Status: Phase 2 server done. The artifact store, view policy, viewer server, runtime, feedback and state, and pinned libraries are implemented and tested. Phase 3, the MCP server, is next.
+Status: Phase 3 done. The artifact store, view policy, viewer server, runtime, feedback and state, pinned libraries, and MCP server are implemented and tested. Phase 4, the extension service and gallery, is next.
 
 - Plan and feature document: [docs/features/FEAT-001-openchamber-canvas.md](docs/features/FEAT-001-openchamber-canvas.md)
 - Platform research: [docs/research/openchamber-extension-platform.md](docs/research/openchamber-extension-platform.md)
@@ -17,7 +17,8 @@ Status: Phase 2 server done. The artifact store, view policy, viewer server, run
 - Viewer server: `/health`, `/mint`, `/notify`, `/view`, `/events`, `/api`, `/libraries`, port file, idle exit.
 - Runtime: `window.canvas` with storage, feedback, data, refresh, theme, and live update.
 - Pinned libraries: Chart.js, D3, and Mermaid, copied by the build with a SHA-256 manifest.
-- 47 tests covering storage, update modes, conflicts, traversal, locking, policy, feedback, state, viewer routes, SSE, and bundle assets.
+- MCP server: `publish`, `update`, `list`, `read`, `archive`, and `result`, with `filePath` and `directoryPath` sources, an external-reference scan, and a heartbeat.
+- 54 tests covering storage, update modes, conflicts, traversal, locking, policy, feedback, state, viewer routes, SSE, bundle assets, MCP tools, and file and folder sources.
 
 Run:
 
@@ -28,9 +29,9 @@ bun test
 bun run build
 ```
 
-`bun run build` builds `viewer/server.js`, `viewer/runtime/canvas.js`, and copies the pinned libraries into `viewer/libraries/`.
+`bun run build` builds `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js`, and copies the pinned libraries into `viewer/libraries/`.
 
-`opencode.json` in the project root is a temporary probe config. It points at `/tmp/opencode/canvas-probe/mcp/server.js`. Remove it or repoint it at `dist/mcp/server.js` when the real MCP server exists.
+`opencode.json` in the project root is a development MCP config. It points at the built `mcp/server.js`. A fresh clone needs `bun run build` before the MCP can start. OpenChamber installs the real MCP entry through Settings → MCP.
 
 ## What it will be
 

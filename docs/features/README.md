@@ -2,7 +2,7 @@
 
 | ID | Feature | Status | Implementation | Document |
 |---|---|---|---|---|
-| FEAT-001 | OpenChamber Canvas | Proposed | Phase 2 server done; Phase 3 next | [FEAT-001-openchamber-canvas.md](FEAT-001-openchamber-canvas.md) |
+| FEAT-001 | OpenChamber Canvas | Proposed | Phase 3 done; Phase 4 next | [FEAT-001-openchamber-canvas.md](FEAT-001-openchamber-canvas.md) |
 
 Every feature document uses stable section numbers, stable rule IDs, and the status vocabulary `Current`, `Planned`, `Inferred`, `Unknown`.
 
