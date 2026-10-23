@@ -6987,8 +6987,8 @@ var require_dist = __commonJS(function(exports, module) {
 });
 
 // src/mcp/server.ts
-import * as path8 from "node:path";
-import { fileURLToPath } from "node:url";
+import * as path9 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // node_modules/zod/v3/helpers/util.js
 var util;
@@ -35620,9 +35620,20 @@ class ArtifactStore {
     validateFileSet(kind, files, entry, this.limits());
     const dedupeKey = normalizeOptional(input2.dedupeKey, 200);
     if (dedupeKey !== null) {
-      const existing = await this.findByDedupeKey(dedupeKey, directory);
-      if (existing !== null)
-        return existing;
+      const existing = await this.findByDedupeKey(dedupeKey, kind, directory);
+      if (existing !== null) {
+        if (await this.hasSameFiles(existing.id, existing.version, files)) {
+          return existing;
+        }
+        const updated = await this.update(existing.id, {
+          mode: "replace",
+          files: files.map((file2) => ({ path: file2.path, content: file2.bytes })),
+          entry,
+          title,
+          tags
+        });
+        return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true };
+      }
     }
     const { id, artifactDir } = await this.allocateArtifact(title, now);
     try {
@@ -35771,7 +35782,7 @@ class ArtifactStore {
     const artifacts = [];
     let errors3 = 0;
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash")
+      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash" || entry.name === "exports")
         continue;
       let meta3;
       try {
@@ -36105,18 +36116,31 @@ class ArtifactStore {
     }
     throw new StoreError("STORE_UNAVAILABLE", "Could not allocate an artifact id");
   }
-  async findByDedupeKey(key, directory) {
+  async findByDedupeKey(key, kind, directory) {
     const metas = await this.readAllMetas();
     const found = metas.find((meta3) => meta3.dedupeKey === key && meta3.directory === directory);
-    if (found === undefined)
+    if (found === undefined || found.kind !== kind)
       return null;
     return { id: found.id, version: found.currentVersion, meta: found, deduped: true };
+  }
+  async hasSameFiles(id, version2, files) {
+    const current = await this.readVersion(id, version2);
+    if (current.files.length !== files.length)
+      return false;
+    for (const file2 of current.files) {
+      const source = files.find((entry) => entry.path === file2.path);
+      if (source === undefined)
+        return false;
+      if (!Buffer.from(source.bytes).equals(Buffer.from(file2.content)))
+        return false;
+    }
+    return true;
   }
   async readAllMetas() {
     const entries = await fs4.readdir(this.root, { withFileTypes: true });
     const metas = [];
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash")
+      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash" || entry.name === "exports")
         continue;
       try {
         const raw = await readJson(path5.join(this.root, entry.name, "meta.json"));
@@ -36751,11 +36775,20 @@ async function notifyViewer(state, input2) {
 }
 
 // src/mcp/heartbeat.ts
+import * as path7 from "node:path";
+
+// src/mcp/version.ts
+import { readFileSync } from "node:fs";
 import * as path6 from "node:path";
-var MCP_VERSION = "0.1.0";
+import { fileURLToPath } from "node:url";
+var packageJsonPath = path6.join(path6.dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
+var parsed = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+var MCP_VERSION = typeof parsed.version === "string" ? parsed.version : "0.0.0";
+
+// src/mcp/heartbeat.ts
 var HEARTBEAT_MS = 60000;
 function startHeartbeat(storeRoot) {
-  const file2 = path6.join(storeRoot, ".mcp-heartbeat.json");
+  const file2 = path7.join(storeRoot, ".mcp-heartbeat.json");
   const write = () => {
     writeJsonAtomic(file2, {
       seenAt: new Date().toISOString(),
@@ -36773,15 +36806,15 @@ function startHeartbeat(storeRoot) {
 
 // src/mcp/source.ts
 import * as fs6 from "node:fs/promises";
-import * as path7 from "node:path";
+import * as path8 from "node:path";
 var MAX_SOURCE_FILE_BYTES = 5 * 1024 * 1024;
 var MAX_SOURCE_BUNDLE_BYTES = 20 * 1024 * 1024;
 var MAX_SOURCE_FILES = 200;
 var MAX_DEPTH = 8;
 var SKIP_DIRECTORIES = new Set(["node_modules", ".git", ".hg", ".svn"]);
 async function resolveExisting(directory, input2) {
-  const base = path7.resolve(directory);
-  const target = path7.resolve(base, input2);
+  const base = path8.resolve(directory);
+  const target = path8.resolve(base, input2);
   if (!isWithin(base, target)) {
     throw new StoreError("INVALID_PATH", "The source path is outside the project");
   }
@@ -36817,16 +36850,20 @@ async function readHtmlFile(directory, filePath) {
   }
 }
 async function walk(root, relative2, files, warnings, state) {
-  const entries = await fs6.readdir(path7.join(root, relative2), { withFileTypes: true });
+  const entries = await fs6.readdir(path8.join(root, relative2), { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name.startsWith(".") || SKIP_DIRECTORIES.has(entry.name)) {
+    if (entry.name.startsWith(".")) {
+      warnings.push(`Skipped ${relative2 === "" ? entry.name : `${relative2}/${entry.name}`}`);
+      continue;
+    }
+    if (SKIP_DIRECTORIES.has(entry.name)) {
       if (entry.isDirectory() || entry.isSymbolicLink()) {
         warnings.push(`Skipped ${relative2 === "" ? entry.name : `${relative2}/${entry.name}`}`);
       }
       continue;
     }
     const childRelative = relative2 === "" ? entry.name : `${relative2}/${entry.name}`;
-    const absolute = path7.join(root, relative2, entry.name);
+    const absolute = path8.join(root, relative2, entry.name);
     if (entry.isSymbolicLink()) {
       warnings.push(`Skipped symlink ${childRelative}`);
       continue;
@@ -36901,17 +36938,16 @@ function entryContent(files, entry) {
 }
 
 // src/mcp/server.ts
-var MCP_VERSION2 = "0.1.0";
 var MAX_READ_BYTES = 2 * 1024 * 1024;
 var parsedViewerTimeout = Number(process.env.CANVAS_VIEWER_TIMEOUT_MS ?? "");
 var VIEWER_TIMEOUT_MS = Number.isFinite(parsedViewerTimeout) && parsedViewerTimeout > 0 ? parsedViewerTimeout : 15000;
-var moduleDir = path8.dirname(fileURLToPath(import.meta.url));
+var moduleDir = path9.dirname(fileURLToPath2(import.meta.url));
 var configuredStore = process.env.CANVAS_STORE?.trim();
-var storeRoot = configuredStore !== undefined && configuredStore.length > 0 ? path8.resolve(configuredStore) : defaultStoreRoot();
+var storeRoot = configuredStore !== undefined && configuredStore.length > 0 ? path9.resolve(configuredStore) : defaultStoreRoot();
 var configuredPortFile = process.env.CANVAS_VIEWER_PORT_FILE?.trim();
-var portFile = configuredPortFile !== undefined && configuredPortFile.length > 0 ? path8.resolve(configuredPortFile) : defaultViewerPortFile(storeRoot);
+var portFile = configuredPortFile !== undefined && configuredPortFile.length > 0 ? path9.resolve(configuredPortFile) : defaultViewerPortFile(storeRoot);
 var configuredViewerEntry = process.env.CANVAS_VIEWER_ENTRY?.trim();
-var viewerEntry = configuredViewerEntry !== undefined && configuredViewerEntry.length > 0 ? path8.resolve(configuredViewerEntry) : path8.join(moduleDir, "..", "viewer", "server.js");
+var viewerEntry = configuredViewerEntry !== undefined && configuredViewerEntry.length > 0 ? path9.resolve(configuredViewerEntry) : path9.join(moduleDir, "..", "viewer", "server.js");
 var store = new ArtifactStore({ root: storeRoot });
 await store.init();
 startHeartbeat(storeRoot);
@@ -37189,7 +37225,7 @@ async function notifyChange(id, version2) {
 }
 var server = new McpServer({
   name: "canvas",
-  version: MCP_VERSION2
+  version: MCP_VERSION
 });
 server.tool("publish", "Publish a persistent Canvas artifact for a chart, dashboard, report, mockup, diagram, or interactive page that the user will reopen, annotate, or iterate on. Use openchamber_render instead for a page that belongs in the chat reply. Send self-contained HTML or a bundle. No CDN: use the bundled libraries chartjs, d3, or mermaid in the libraries field. The result includes a local viewUrl; open it with openchamber_web browser.open when that tool is available. The gallery is the durable viewer if the URL expires. Do not put secrets in an artifact.", publishSchema.shape, async (args) => {
   try {

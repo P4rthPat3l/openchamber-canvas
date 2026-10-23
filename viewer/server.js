@@ -736,9 +736,20 @@ class ArtifactStore {
     validateFileSet(kind, files, entry, this.limits());
     const dedupeKey = normalizeOptional(input.dedupeKey, 200);
     if (dedupeKey !== null) {
-      const existing = await this.findByDedupeKey(dedupeKey, directory);
-      if (existing !== null)
-        return existing;
+      const existing = await this.findByDedupeKey(dedupeKey, kind, directory);
+      if (existing !== null) {
+        if (await this.hasSameFiles(existing.id, existing.version, files)) {
+          return existing;
+        }
+        const updated = await this.update(existing.id, {
+          mode: "replace",
+          files: files.map((file) => ({ path: file.path, content: file.bytes })),
+          entry,
+          title,
+          tags
+        });
+        return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true };
+      }
     }
     const { id, artifactDir } = await this.allocateArtifact(title, now);
     try {
@@ -887,7 +898,7 @@ class ArtifactStore {
     const artifacts = [];
     let errors = 0;
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash")
+      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash" || entry.name === "exports")
         continue;
       let meta;
       try {
@@ -1221,18 +1232,31 @@ class ArtifactStore {
     }
     throw new StoreError("STORE_UNAVAILABLE", "Could not allocate an artifact id");
   }
-  async findByDedupeKey(key, directory) {
+  async findByDedupeKey(key, kind, directory) {
     const metas = await this.readAllMetas();
     const found = metas.find((meta) => meta.dedupeKey === key && meta.directory === directory);
-    if (found === undefined)
+    if (found === undefined || found.kind !== kind)
       return null;
     return { id: found.id, version: found.currentVersion, meta: found, deduped: true };
+  }
+  async hasSameFiles(id, version, files) {
+    const current = await this.readVersion(id, version);
+    if (current.files.length !== files.length)
+      return false;
+    for (const file of current.files) {
+      const source = files.find((entry) => entry.path === file.path);
+      if (source === undefined)
+        return false;
+      if (!Buffer.from(source.bytes).equals(Buffer.from(file.content)))
+        return false;
+    }
+    return true;
   }
   async readAllMetas() {
     const entries = await fs4.readdir(this.root, { withFileTypes: true });
     const metas = [];
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash")
+      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash" || entry.name === "exports")
         continue;
       try {
         const raw = await readJson(path5.join(this.root, entry.name, "meta.json"));

@@ -10,6 +10,7 @@ import type { ArtifactStoreOptions } from '../src/store/index';
 import type { CreateResult } from '../src/store/types';
 import { createServiceServer } from '../src/service/routes';
 import type { ServiceServer, ServiceServerOptions } from '../src/service/routes';
+import { MCP_VERSION } from '../src/mcp/version';
 import { inspectMcpRegistration, UNCHECKED_REGISTRATION } from '../src/service/mcp-registration';
 
 const temporaryRoots: string[] = [];
@@ -128,7 +129,7 @@ describe('canvas service', () => {
     expect(health.status).toBe(200);
     const body = (await health.json()) as { ok: boolean; version: string };
     expect(body.ok).toBe(true);
-    expect(body.version).toBe('0.1.0');
+    expect(body.version).toBe(MCP_VERSION);
     expect((await fetch(`${fixture.base}/health`)).status).toBe(401);
   });
 
@@ -233,14 +234,14 @@ describe('canvas service', () => {
 
     await fs.writeFile(
       path.join(fixture.root, '.mcp-heartbeat.json'),
-      JSON.stringify({ seenAt: '2026-10-23T10:00:00.000Z', pid: 42, version: '0.1.0' }),
+      JSON.stringify({ seenAt: '2026-10-23T10:00:00.000Z', pid: 42, version: MCP_VERSION }),
       'utf8',
     );
     const heartbeat = (await (await get(fixture, '/mcp-status')).json()) as {
       seenAt: string;
       version: string;
     };
-    expect(heartbeat.version).toBe('0.1.0');
+    expect(heartbeat.version).toBe(MCP_VERSION);
 
     const view = await postJson(fixture, '/view-url', { id: fixture.created.id });
     expect(view.status).toBe(503);

@@ -15,8 +15,9 @@ import {
   mintViewUrl,
 } from '../viewer/ensure';
 import { defaultMcpConfigCandidates, inspectMcpRegistration } from './mcp-registration';
+import { MCP_VERSION } from '../mcp/version';
 
-const SERVICE_VERSION = '0.1.0';
+const SERVICE_VERSION = MCP_VERSION;
 const MAX_JSON_BODY = 128 * 1024;
 const KINDS: readonly ArtifactKind[] = ['html', 'bundle', 'markdown', 'image', 'pdf', 'data'];
 

@@ -1187,7 +1187,7 @@ No test exists yet. Every rule below is untested until Phase 1 and is marked wit
 | BR-018 | Planned | Artifacts may use only libraries in the pinned set | Viewer | `tests/policy.test.ts` |
 | BR-019 | Planned | An artifact belongs to a project by the longest matching directory prefix | Gallery | `tests/gallery.test.ts` |
 | BR-020 | Planned | Archive hides an artifact from the default list and keeps it restorable | Store | `tests/store.test.ts` |
-| BR-021 | Planned | A `dedupeKey` returns the existing artifact instead of creating a duplicate | MCP | `tests/mcp.test.ts` |
+| BR-021 | Built | A `dedupeKey` returns the existing artifact when the source content is unchanged; a changed source appends a version to the same artifact | Store, MCP | `tests/store.test.ts`, `tests/mcp.test.ts` |
 | BR-022 | Planned | A `baseVersion` mismatch returns `CONFLICT` and writes nothing | MCP | `tests/mcp.test.ts` |
 | BR-023 | Planned | Restore creates a new version with `restoredFrom` and leaves history intact | Store | `tests/store.test.ts` |
 | BR-024 | Planned | The viewer inlines the runtime and sets `data-theme` and the `canvas.theme` value | Viewer | Chrome runtime e2e; `tests/viewer.spec.ts` planned |
@@ -1421,10 +1421,15 @@ No test exists yet. Every rule below is untested until Phase 1 and is marked wit
 
 ### AC-029: Idempotent publish
 
-**Given** the same `dedupeKey` is sent twice  
+**Given** the same `dedupeKey` is sent twice with unchanged content  
 **When** the agent calls `canvas_publish` twice  
 **Then** only one artifact exists  
-**And** both calls return the same id
+**And** both calls return the same id and version
+
+**Given** the same `dedupeKey` is sent with changed content  
+**When** the agent calls `canvas_publish`  
+**Then** the same artifact gains a version with the new content  
+**And** nothing is silently dropped
 
 ### AC-030: Bundle traversal is rejected
 
@@ -2162,6 +2167,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.9.0 | Gallery redesign: native master-detail, neutral kind tiles and labels, version ladder, quiet empty state, setup checklist, labelled MCP status, focus and stale-detail handling | In progress | Parth |
 | 2026-10-23 | 0.10.0 | SDK UI migration: native buttons/fields/search/selects/menus/lists/badges/banners/empty/spinner/separator controls, host theme/font/radius application without remount, host.storage preferences, panel/status typecheck, sandboxed browser suite AC-037–AC-042 | In progress | Parth |
 | 2026-10-23 | 0.11.0 | MCP setup CTA: service `/mcp-registration` reads the user-layer OpenCode config (v2/v1 entries, comment-tolerant, command-matched), gallery warning CTA opening Setup when Canvas MCP is unregistered/disabled/stale, exact Setup mirror states; uncertainty reports checked:false and never nags | In progress | Parth |
+| 2026-10-23 | 0.11.1 | Dedupe upsert: a changed source under the same `dedupeKey` appends a version instead of being dropped; kind mismatches no longer dedupe; `list.errors` no longer counts the `exports/` directory; hidden bundle files are skipped with a warning; MCP and health versions read `package.json` (0.1.3) | In progress | Parth |
 
 ## 31. Related Resources
 

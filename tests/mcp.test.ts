@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 import { ArtifactStore } from '../src/store/index';
+import { MCP_VERSION } from '../src/mcp/version';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const temporaryRoots: string[] = [];
@@ -117,7 +118,7 @@ describe('canvas MCP', () => {
     const heartbeat = JSON.parse(
       await fs.readFile(path.join(root, '.mcp-heartbeat.json'), 'utf8'),
     ) as { pid: number; version: string };
-    expect(heartbeat.version).toBe('0.1.0');
+    expect(heartbeat.version).toBe(MCP_VERSION);
     expect(heartbeat.pid).toBeGreaterThan(0);
 
     const stored = await store.read(id);
@@ -217,6 +218,36 @@ describe('canvas MCP', () => {
     });
     const files = bundleRead.value.files as Array<{ path: string; content: string }>;
     expect(files.map((file) => file.path).sort()).toEqual(['app.js', 'index.html']);
+  });
+
+  test('warns when a bundle skips hidden files, node_modules, and symlinks', async () => {
+    const { client, root } = await makeClient();
+    const projectDir = path.join(root, 'project-b');
+    await fs.mkdir(path.join(projectDir, 'dist', 'node_modules'), { recursive: true });
+    await fs.writeFile(path.join(projectDir, 'dist', 'index.html'), page, 'utf8');
+    await fs.writeFile(path.join(projectDir, 'dist', 'app.js'), 'console.log(1);', 'utf8');
+    await fs.writeFile(path.join(projectDir, 'dist', 'node_modules', 'bundle-only.js'), 'x', 'utf8');
+    await fs.writeFile(path.join(projectDir, 'dist', '.env.txt'), 'hidden', 'utf8');
+    await fs.symlink(
+      path.join(projectDir, 'dist', 'app.js'),
+      path.join(projectDir, 'dist', 'link.js'),
+    );
+
+    const published = await call(client, 'publish', {
+      title: 'Skips warning click',
+      kind: 'bundle',
+      directoryPath: 'dist',
+      directory: projectDir,
+    });
+    expect(published.isError).toBe(false);
+    const warnings = published.value.warnings as string[];
+    const read = await call(client, 'read', { id: published.value.id, includeFiles: true });
+    const files = read.value.files as Array<{ path: string }>;
+
+    expect(files.map((file) => file.path).sort()).toEqual(['app.js', 'index.html']);
+    expect(warnings).toContain('Skipped .env.txt');
+    expect(warnings).toContain('Skipped node_modules');
+    expect(warnings.some((warning) => warning.includes('link.js'))).toBe(true);
   });
 
   test('reads feedback and archives', async () => {

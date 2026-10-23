@@ -1,6 +1,6 @@
 // src/service/main.ts
-import * as path8 from "node:path";
-import { fileURLToPath } from "node:url";
+import * as path9 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/store/index.ts
 import * as fs4 from "node:fs/promises";
@@ -733,9 +733,20 @@ class ArtifactStore {
     validateFileSet(kind, files, entry, this.limits());
     const dedupeKey = normalizeOptional(input.dedupeKey, 200);
     if (dedupeKey !== null) {
-      const existing = await this.findByDedupeKey(dedupeKey, directory);
-      if (existing !== null)
-        return existing;
+      const existing = await this.findByDedupeKey(dedupeKey, kind, directory);
+      if (existing !== null) {
+        if (await this.hasSameFiles(existing.id, existing.version, files)) {
+          return existing;
+        }
+        const updated = await this.update(existing.id, {
+          mode: "replace",
+          files: files.map((file) => ({ path: file.path, content: file.bytes })),
+          entry,
+          title,
+          tags
+        });
+        return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true };
+      }
     }
     const { id, artifactDir } = await this.allocateArtifact(title, now);
     try {
@@ -884,7 +895,7 @@ class ArtifactStore {
     const artifacts = [];
     let errors = 0;
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash")
+      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash" || entry.name === "exports")
         continue;
       let meta;
       try {
@@ -1218,18 +1229,31 @@ class ArtifactStore {
     }
     throw new StoreError("STORE_UNAVAILABLE", "Could not allocate an artifact id");
   }
-  async findByDedupeKey(key, directory) {
+  async findByDedupeKey(key, kind, directory) {
     const metas = await this.readAllMetas();
     const found = metas.find((meta) => meta.dedupeKey === key && meta.directory === directory);
-    if (found === undefined)
+    if (found === undefined || found.kind !== kind)
       return null;
     return { id: found.id, version: found.currentVersion, meta: found, deduped: true };
+  }
+  async hasSameFiles(id, version, files) {
+    const current = await this.readVersion(id, version);
+    if (current.files.length !== files.length)
+      return false;
+    for (const file of current.files) {
+      const source = files.find((entry) => entry.path === file.path);
+      if (source === undefined)
+        return false;
+      if (!Buffer.from(source.bytes).equals(Buffer.from(file.content)))
+        return false;
+    }
+    return true;
   }
   async readAllMetas() {
     const entries = await fs4.readdir(this.root, { withFileTypes: true });
     const metas = [];
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash")
+      if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash" || entry.name === "exports")
         continue;
       try {
         const raw = await readJson(path5.join(this.root, entry.name, "meta.json"));
@@ -1735,7 +1759,7 @@ function applyEdits(source, edits) {
 import * as crypto2 from "node:crypto";
 import * as fs7 from "node:fs/promises";
 import * as http from "node:http";
-import * as path7 from "node:path";
+import * as path8 from "node:path";
 
 // node_modules/fflate/esm/index.mjs
 import { createRequire } from "module";
@@ -2644,8 +2668,16 @@ async function inspectMcpRegistration(candidates, mcpPath) {
   return sawConfig ? { checked: true, registered: false, name: null, disabled: false, commandMatch: false, source: null } : { ...UNCHECKED_REGISTRATION };
 }
 
+// src/mcp/version.ts
+import { readFileSync } from "node:fs";
+import * as path7 from "node:path";
+import { fileURLToPath } from "node:url";
+var packageJsonPath = path7.join(path7.dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
+var parsed = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+var MCP_VERSION = typeof parsed.version === "string" ? parsed.version : "0.0.0";
+
 // src/service/routes.ts
-var SERVICE_VERSION = "0.1.0";
+var SERVICE_VERSION = MCP_VERSION;
 var MAX_JSON_BODY = 128 * 1024;
 var KINDS2 = ["html", "bundle", "markdown", "image", "pdf", "data"];
 
@@ -2713,11 +2745,11 @@ function requireToken(request, response, token) {
 function parseInteger(value, name) {
   if (value === null || value.length === 0)
     return;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
+  const parsed2 = Number(value);
+  if (!Number.isInteger(parsed2) || parsed2 < 1) {
     throw new HttpError(400, "INVALID_REQUEST", `${name} must be a positive integer`);
   }
-  return parsed;
+  return parsed2;
 }
 function isKind2(value) {
   return value !== null && KINDS2.includes(value);
@@ -2789,7 +2821,7 @@ async function createServiceServer(options) {
         ok: true,
         pid: process.pid,
         uptime: Date.now() - startedAt,
-        store: path7.basename(options.storeRoot),
+        store: path8.basename(options.storeRoot),
         version: SERVICE_VERSION,
         mcpPath: options.mcpPath
       });
@@ -2950,7 +2982,7 @@ async function createServiceServer(options) {
     }
     if (url.pathname === "/mcp-status" && request.method === "GET") {
       try {
-        const raw = await readJson(path7.join(options.storeRoot, ".mcp-heartbeat.json"));
+        const raw = await readJson(path8.join(options.storeRoot, ".mcp-heartbeat.json"));
         sendJson(response, 200, isRecord4(raw) ? raw : null);
       } catch {
         sendJson(response, 200, null);
@@ -2968,14 +3000,14 @@ async function createServiceServer(options) {
 async function exportArtifact(store, storeRoot, id, version, requestedFormat) {
   const result = await store.readVersion(id, version);
   const format = requestedFormat ?? (result.meta.kind === "html" ? "html" : "zip");
-  const exportsDir = path7.join(storeRoot, "exports");
+  const exportsDir = path8.join(storeRoot, "exports");
   await ensureDir(exportsDir);
   if (format === "html") {
     const entry = result.files.find((file) => file.path === result.manifest.entry);
     if (entry === undefined) {
       throw new StoreError("ENTRY_NOT_FOUND", "The entry file is missing");
     }
-    const target2 = path7.join(exportsDir, `${id}-${result.version}.html`);
+    const target2 = path8.join(exportsDir, `${id}-${result.version}.html`);
     await fs7.writeFile(target2, entry.content, { mode: 384 });
     return { path: target2, format, bytes: entry.content.byteLength };
   }
@@ -2984,13 +3016,13 @@ async function exportArtifact(store, storeRoot, id, version, requestedFormat) {
     entries[file.path] = file.content;
   }
   const zipped = zipSync(entries);
-  const target = path7.join(exportsDir, `${id}-${result.version}.zip`);
+  const target = path8.join(exportsDir, `${id}-${result.version}.zip`);
   await fs7.writeFile(target, zipped, { mode: 384 });
   return { path: target, format, bytes: zipped.byteLength };
 }
 
 // src/service/main.ts
-var moduleDir = path8.dirname(fileURLToPath(import.meta.url));
+var moduleDir = path9.dirname(fileURLToPath2(import.meta.url));
 async function main() {
   const port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
   const token = process.env.OPENCHAMBER_SERVICE_TOKEN;
@@ -3003,11 +3035,11 @@ async function main() {
     process.exit(1);
   }
   const configuredStore = process.env.CANVAS_STORE?.trim();
-  const storeRoot = configuredStore !== undefined && configuredStore.length > 0 ? path8.resolve(configuredStore) : defaultStoreRoot();
+  const storeRoot = configuredStore !== undefined && configuredStore.length > 0 ? path9.resolve(configuredStore) : defaultStoreRoot();
   const configuredPortFile = process.env.CANVAS_VIEWER_PORT_FILE?.trim();
-  const portFile = configuredPortFile !== undefined && configuredPortFile.length > 0 ? path8.resolve(configuredPortFile) : defaultViewerPortFile(storeRoot);
+  const portFile = configuredPortFile !== undefined && configuredPortFile.length > 0 ? path9.resolve(configuredPortFile) : defaultViewerPortFile(storeRoot);
   const configuredViewerEntry = process.env.CANVAS_VIEWER_ENTRY?.trim();
-  const viewerEntry = configuredViewerEntry !== undefined && configuredViewerEntry.length > 0 ? path8.resolve(configuredViewerEntry) : path8.join(moduleDir, "..", "viewer", "server.js");
+  const viewerEntry = configuredViewerEntry !== undefined && configuredViewerEntry.length > 0 ? path9.resolve(configuredViewerEntry) : path9.join(moduleDir, "..", "viewer", "server.js");
   const parsedTimeout = Number(process.env.CANVAS_VIEWER_TIMEOUT_MS ?? "");
   const viewerTimeoutMs = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : 15000;
   const store = new ArtifactStore({ root: storeRoot });
@@ -3018,7 +3050,7 @@ async function main() {
     storeRoot,
     portFile,
     viewerEntry,
-    mcpPath: path8.join(moduleDir, "..", "mcp", "server.js"),
+    mcpPath: path9.join(moduleDir, "..", "mcp", "server.js"),
     viewerTimeoutMs,
     host: "127.0.0.1",
     port

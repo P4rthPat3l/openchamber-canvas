@@ -1,8 +1,8 @@
 import * as path from 'node:path';
 
 import { writeJsonAtomic } from '../store/fs';
+import { MCP_VERSION } from './version';
 
-const MCP_VERSION = '0.1.0';
 const HEARTBEAT_MS = 60_000;
 
 export function startHeartbeat(storeRoot: string): () => void {

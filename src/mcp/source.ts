@@ -69,7 +69,11 @@ async function walk(
 ): Promise<void> {
   const entries = await fs.readdir(path.join(root, relative), { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name.startsWith('.') || SKIP_DIRECTORIES.has(entry.name)) {
+    if (entry.name.startsWith('.')) {
+      warnings.push(`Skipped ${relative === '' ? entry.name : `${relative}/${entry.name}`}`);
+      continue;
+    }
+    if (SKIP_DIRECTORIES.has(entry.name)) {
       if (entry.isDirectory() || entry.isSymbolicLink()) {
         warnings.push(`Skipped ${relative === '' ? entry.name : `${relative}/${entry.name}`}`);
       }

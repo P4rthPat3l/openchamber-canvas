@@ -294,6 +294,65 @@ describe('artifact store', () => {
     expect((await store.getMeta(first.id)).versions).toHaveLength(1);
   });
 
+  test('appends a version when a dedupe publish changes the content', async () => {
+    const root = await makeRoot();
+    const { store, advance } = makeStore(root);
+    const first = await createHtml(store, { dedupeKey: 'turn-1' });
+    advance();
+    const second = await createHtml(store, {
+      dedupeKey: 'turn-1',
+      files: [{ path: 'index.html', content: page('<h1>Turn 2</h1>') }],
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(second.deduped).toBe(true);
+    expect(second.version).not.toBe(first.version);
+    const meta = await store.getMeta(first.id);
+    expect(meta.versions).toHaveLength(2);
+    expect(meta.currentVersion).toBe(second.version);
+    expect(meta.tags).toEqual(first.meta.tags);
+    expect(decodeText(await store.readFile(first.id, second.version, 'index.html'))).toBe(
+      page('<h1>Turn 2</h1>'),
+    );
+  });
+
+  test('does not dedupe across kinds', async () => {
+    const root = await makeRoot();
+    const { store } = makeStore(root);
+    const first = await createHtml(store, { dedupeKey: 'turn-1' });
+
+    const second = await store.create({
+      title: 'Revenue by region',
+      kind: 'bundle',
+      directory: '/home/parth/Project',
+      dedupeKey: 'turn-1',
+      files: [{ path: 'index.html', content: page() }],
+      entry: 'index.html',
+    });
+    expect(second.id).not.toBe(first.id);
+    expect(second.deduped).toBe(false);
+  });
+
+  test('a dedupe publish keeps the dedupe key on the updated artifact', async () => {
+    const root = await makeRoot();
+    const { store, advance } = makeStore(root);
+    const first = await createHtml(store, { dedupeKey: 'turn-1' });
+    advance();
+    await createHtml(store, {
+      dedupeKey: 'turn-1',
+      files: [{ path: 'index.html', content: page('<h1>Turn 2</h1>') }],
+    });
+    const third = await createHtml(store, {
+      dedupeKey: 'turn-1',
+      files: [{ path: 'index.html', content: page('<h1>Turn 3</h1>') }],
+    });
+
+    expect(third.id).toBe(first.id);
+    expect(third.deduped).toBe(true);
+    expect((await store.getMeta(first.id)).versions).toHaveLength(3);
+    expect((await store.getMeta(first.id)).dedupeKey).toBe('turn-1');
+  });
+
   test('lists by project, tag, query, and archive state', async () => {
     const root = await makeRoot();
     const { store } = makeStore(root);
@@ -326,6 +385,8 @@ describe('artifact store', () => {
     await createHtml(store);
     await fs.mkdir(path.join(root, 'broken'), { mode: 0o700 });
     await fs.writeFile(path.join(root, 'broken', 'meta.json'), '{"schema":2}', 'utf8');
+    await fs.mkdir(path.join(root, 'exports'), { recursive: true });
+    await fs.writeFile(path.join(root, 'exports', 'x.txt'), 'not an artifact', 'utf8');
 
     const listed = await store.list();
     expect(listed.artifacts).toHaveLength(1);

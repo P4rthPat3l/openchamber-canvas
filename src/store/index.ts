@@ -164,8 +164,22 @@ export class ArtifactStore {
 
     const dedupeKey = normalizeOptional(input.dedupeKey, 200);
     if (dedupeKey !== null) {
-      const existing = await this.findByDedupeKey(dedupeKey, directory);
-      if (existing !== null) return existing;
+      const existing = await this.findByDedupeKey(dedupeKey, kind, directory);
+      if (existing !== null) {
+        if (await this.hasSameFiles(existing.id, existing.version, files)) {
+          return existing;
+        }
+        // Same dedupeKey but a changed source: append a version instead of
+        // silently dropping the new content.
+        const updated = await this.update(existing.id, {
+          mode: 'replace',
+          files: files.map((file) => ({ path: file.path, content: file.bytes })),
+          entry,
+          title,
+          tags,
+        });
+        return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true };
+      }
     }
 
     const { id, artifactDir } = await this.allocateArtifact(title, now);
@@ -328,7 +342,7 @@ export class ArtifactStore {
     let errors = 0;
 
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'trash') continue;
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'trash' || entry.name === 'exports') continue;
       let meta: ArtifactMeta;
       try {
         const raw = await readJson(path.join(this.root, entry.name, 'meta.json'));
@@ -698,18 +712,37 @@ export class ArtifactStore {
     throw new StoreError('STORE_UNAVAILABLE', 'Could not allocate an artifact id');
   }
 
-  private async findByDedupeKey(key: string, directory: string): Promise<CreateResult | null> {
+  private async findByDedupeKey(
+    key: string,
+    kind: ArtifactKind,
+    directory: string,
+  ): Promise<CreateResult | null> {
     const metas = await this.readAllMetas();
     const found = metas.find((meta) => meta.dedupeKey === key && meta.directory === directory);
-    if (found === undefined) return null;
+    if (found === undefined || found.kind !== kind) return null;
     return { id: found.id, version: found.currentVersion, meta: found, deduped: true };
+  }
+
+  private async hasSameFiles(
+    id: string,
+    version: string,
+    files: { path: string; bytes: Uint8Array }[],
+  ): Promise<boolean> {
+    const current = await this.readVersion(id, version);
+    if (current.files.length !== files.length) return false;
+    for (const file of current.files) {
+      const source = files.find((entry) => entry.path === file.path);
+      if (source === undefined) return false;
+      if (!Buffer.from(source.bytes).equals(Buffer.from(file.content))) return false;
+    }
+    return true;
   }
 
   private async readAllMetas(): Promise<ArtifactMeta[]> {
     const entries = await fs.readdir(this.root, { withFileTypes: true });
     const metas: ArtifactMeta[] = [];
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'trash') continue;
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'trash' || entry.name === 'exports') continue;
       try {
         const raw = await readJson(path.join(this.root, entry.name, 'meta.json'));
         const meta = parseMeta(raw);

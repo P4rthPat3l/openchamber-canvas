@@ -19,6 +19,7 @@ import type {
 } from '../store/types';
 import { ViewerUnavailableError, ensureViewer, mintViewUrl, notifyViewer } from '../viewer/ensure';
 import { startHeartbeat } from './heartbeat';
+import { MCP_VERSION } from './version';
 import {
   decodeBase64,
   entryContent,
@@ -27,7 +28,6 @@ import {
   scanExternalReferences,
 } from './source';
 
-const MCP_VERSION = '0.1.0';
 const MAX_READ_BYTES = 2 * 1024 * 1024;
 const parsedViewerTimeout = Number(process.env.CANVAS_VIEWER_TIMEOUT_MS ?? '');
 const VIEWER_TIMEOUT_MS =
