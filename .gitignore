@@ -1,0 +1,12 @@
+node_modules/
+dist/
+panel/main.js
+panel/page.js
+status/main.js
+service/main.js
+mcp/server.js
+viewer/server.js
+viewer/runtime/canvas.js
+viewer/libraries/
+*.log
+.DS_Store

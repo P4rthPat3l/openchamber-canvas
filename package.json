@@ -1,0 +1,25 @@
+{
+  "name": "openchamber-canvas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A project gallery for agent-generated artifacts in OpenChamber.",
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.4.0",
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "bun test",
+    "build": "bun run scripts/build.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "chart.js": "4.6.1",
+    "d3": "7.9.0",
+    "mermaid": "12.2.0",
+    "typescript": "^5.9.0"
+  }
+}
