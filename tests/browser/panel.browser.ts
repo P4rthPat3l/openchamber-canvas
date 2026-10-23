@@ -352,6 +352,18 @@ assert.ok(widePanelLayout.left.x < widePanelLayout.right.x);
 assert.equal(await frame.getByRole('button', { name: 'Back', exact: true }).isVisible(), false);
 assert.equal(widePanelLayout.overflow, false, 'wide panel overflows at 720px');
 check('AC-041', 'wide panel keeps the library and inspector visible', true);
+
+const rowOpen = frame.locator('.canvas-list-bar').getByRole('button', { name: 'Open', exact: true });
+assert.equal(await rowOpen.isDisabled(), false, 'row open stayed disabled after selection');
+const openedBefore = await widePanelPage.evaluate(() => window.__host.getState().actions.filter(action => action.type === 'open-url').length);
+await rowOpen.click();
+await widePanelPage.waitForFunction(count => window.__host.getState().actions.filter(action => action.type === 'open-url').length > count, openedBefore);
+check('AC-048', 'the library toolbar opens the selected row', true);
+
+const openedBeforeDouble = await widePanelPage.evaluate(() => window.__host.getState().actions.filter(action => action.type === 'open-url').length);
+await frame.getByRole('option', { name: /Onboarding flow/ }).dblclick();
+await widePanelPage.waitForFunction(count => window.__host.getState().actions.filter(action => action.type === 'open-url').length > count, openedBeforeDouble);
+check('AC-048', 'double-clicking a row opens it directly', true);
 await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'panel-wide.png') });
 await closePage(widePanelPage);
 

@@ -14,6 +14,8 @@ h1, h2 { font: inherit; font-weight: 600; }
 .canvas-options { margin-left: auto; }
 .canvas-filter { min-width: 0; }
 .canvas-search, .canvas-count { flex: none; }
+.canvas-list-bar { display: flex; align-items: center; gap: .5rem; }
+.canvas-list-bar .canvas-count { margin-right: auto; }
 .canvas-library-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 .canvas-list-heading { display: flex; align-items: center; gap: .375rem; padding: .25rem .5rem; color: var(--oc-muted); font-size: .6875rem; font-weight: 600; }
 .canvas-list-icon { width: 13px; height: 13px; flex: none; }

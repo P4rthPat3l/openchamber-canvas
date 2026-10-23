@@ -473,8 +473,21 @@ function mountLibrary(parent: Element) {
     search.update({ value });
     update();
   } });
-  const count = element('p', node, 'canvas-count canvas-muted');
+  const listBar = element('div', node, 'canvas-list-bar');
+  const count = element('p', listBar, 'canvas-count canvas-muted');
   count.setAttribute('aria-live', 'polite');
+  const openSelected = mountButtonWithIcon(listBar, {
+    label: remote ? 'Copy URL' : 'Open',
+    variant: 'outline',
+    size: 'sm',
+    disabled: true,
+    onClick: () => {
+      const id = selectedId;
+      if (id === null) return;
+      void run(() => (remote ? copyUrl(id) : openArtifact(id)));
+    },
+  }, remote ? 'copy' : 'arrow-up-right');
+  handles.push(openSelected);
   const scroll = element('div', node, 'canvas-library-scroll');
   const spinnerRoot = element('div', scroll, 'canvas-state');
   const spinner = mountSpinner(spinnerRoot, { label: 'Loading artifacts' });
@@ -490,12 +503,41 @@ function mountLibrary(parent: Element) {
   let gridHandles: Disposable[] = [];
   let rowsSignature = '';
   let controlsSignature = '';
+  for (const root of [favoritesRoot, listRoot]) {
+    root.querySelector('[role="listbox"]')?.setAttribute('title', 'Double-click a row to open');
+  }
+
+  // The kit list rebuilds its rows on every selection change, so the two
+  // clicks of a double-click land on different elements. Track the last row
+  // click and use it when the double-click target is the list itself.
+  let lastRowClick: { id: string; at: number } | null = null;
+  const rowIdAt = (event: Event): string | null => {
+    const target = event.target instanceof Element ? event.target.closest('[role="option"]') : null;
+    if (!(target instanceof HTMLElement)) return null;
+    return artifacts.find(item => target.id.endsWith(`-${item.id}`))?.id ?? null;
+  };
+  const onRowClick = (event: MouseEvent): void => {
+    const id = rowIdAt(event);
+    if (id !== null) lastRowClick = { id, at: Date.now() };
+  };
+  const onRowDoubleClick = (event: MouseEvent): void => {
+    const inList = event.target instanceof Element && event.target.closest('.oc-sdk-list') !== null;
+    const recent = lastRowClick !== null && Date.now() - lastRowClick.at < 700 ? lastRowClick.id : null;
+    const id = rowIdAt(event) ?? (inList ? recent : null);
+    if (id === null || scope === 'trash') return;
+    event.preventDefault();
+    lastRowClick = null;
+    void run(() => (remote ? copyUrl(id) : openArtifact(id)));
+  };
+  scroll.addEventListener('click', onRowClick);
+  scroll.addEventListener('dblclick', onRowDoubleClick);
   handles.push(scopeControl, tagControl, options, search, spinner, empty, favorites, list);
 
   function update(): void {
     const availableTags = [...new Set(artifacts.flatMap(item => item.tags))].sort();
     if (tag && !availableTags.includes(tag)) tag = '';
     const visible = visibleArtifacts();
+    openSelected.update({ label: remote ? 'Copy URL' : 'Open', disabled: selectedId === null || scope === 'trash' });
     const nextControls = JSON.stringify([scope, tag, directory, availableTags, view, sort]);
     if (nextControls !== controlsSignature) {
       controlsSignature = nextControls;
@@ -582,7 +624,13 @@ function mountLibrary(parent: Element) {
   return { node, search, update,
     focusSearch: () => searchRoot.querySelector('input')?.focus(),
     focusList: () => node.querySelector<HTMLElement>('[role="listbox"]')?.focus(),
-    dispose: () => { dispose(gridHandles); dispose(handles); node.remove(); },
+    dispose: () => {
+      scroll.removeEventListener('click', onRowClick);
+      scroll.removeEventListener('dblclick', onRowDoubleClick);
+      dispose(gridHandles);
+      dispose(handles);
+      node.remove();
+    },
   };
 }
 

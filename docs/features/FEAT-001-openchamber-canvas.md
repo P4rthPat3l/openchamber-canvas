@@ -1499,6 +1499,7 @@ Implemented in `a4911b2`. The browser suite in `tests/browser/panel.browser.ts` 
 - **AC-045:** A `canvas`-named entry whose command differs from the installed path reads as unregistered with the known name, so the UI can say the command is stale.
 - **AC-046:** The gallery shows a warning setup call to action only when the service reports a checked registration that is not registered, is disabled, or points at an old command. The button opens the existing Setup view. A healthy registration, an unchecked state, or a service request failure keep the gallery clean.
 - **AC-047:** The Setup page's MCP mirror separates not installed, disabled, old command, waiting for the first agent request, and connected states instead of a single "Not seen recently" label; when the state cannot be checked it falls back to the heartbeat wording.
+- **AC-048:** In the 720px panel and the full-screen page, the library toolbar carries an Open button for the selected row, disabled when nothing is selected and in the trash scope, and double-clicking a row opens that artifact. Double-click survives the kit list rebuilding its rows between the two clicks. In the rail the library gives way to the inspector on the first click, so the inspector's Open action remains the path there.
 
 Tests carry the AC IDs. `bun run test:browser` exercises the actual built panel and status entrypoints through a sandboxed mock host, not a separately handwritten screenshot page. Theme tests cover six official resolved OpenChamber palettes and a host-supplied font/radius snapshot. Installed-app acceptance remains a separate manual check.
 
@@ -2170,6 +2171,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.11.0 | MCP setup CTA: service `/mcp-registration` reads the user-layer OpenCode config (v2/v1 entries, comment-tolerant, command-matched), gallery warning CTA opening Setup when Canvas MCP is unregistered/disabled/stale, exact Setup mirror states; uncertainty reports checked:false and never nags | In progress | Parth |
 | 2026-10-23 | 0.11.1 | Dedupe upsert: a changed source under the same `dedupeKey` appends a version instead of being dropped; kind mismatches no longer dedupe; `list.errors` no longer counts the `exports/` directory; hidden bundle files are skipped with a warning; MCP and health versions read `package.json` (0.1.3) | In progress | Parth |
 | 2026-10-23 | 0.11.2 | Version resolution walks up from the running file, so the bundled `service/main.js` and `mcp/server.js` find `package.json` in the installed layout instead of crashing the service with `ENOENT` (0.1.4) | In progress | Parth |
+| 2026-10-23 | 0.11.3 | Library quick open: an Open button beside the artifact count acts on the selected row, and double-clicking a row opens it, both in the 720px and full-screen layouts (0.1.5) | In progress | Parth |
 
 ## 31. Related Resources
 

@@ -3038,8 +3038,22 @@ ${GUEST_UI_LOOK_CSS}`;
       search.update({ value });
       update();
     } });
-    const count = element("p", node, "canvas-count canvas-muted");
+    const listBar = element("div", node, "canvas-list-bar");
+    const count = element("p", listBar, "canvas-count canvas-muted");
     count.setAttribute("aria-live", "polite");
+    const openSelected = mountButtonWithIcon(listBar, {
+      label: remote ? "Copy URL" : "Open",
+      variant: "outline",
+      size: "sm",
+      disabled: true,
+      onClick: () => {
+        const id = selectedId;
+        if (id === null)
+          return;
+        run(() => remote ? copyUrl(id) : openArtifact(id));
+      }
+    }, remote ? "copy" : "arrow-up-right");
+    handles.push(openSelected);
     const scroll = element("div", node, "canvas-library-scroll");
     const spinnerRoot = element("div", scroll, "canvas-state");
     const spinner = mountSpinner(spinnerRoot, { label: "Loading artifacts" });
@@ -3055,12 +3069,40 @@ ${GUEST_UI_LOOK_CSS}`;
     let gridHandles = [];
     let rowsSignature = "";
     let controlsSignature = "";
+    for (const root of [favoritesRoot, listRoot]) {
+      root.querySelector('[role="listbox"]')?.setAttribute("title", "Double-click a row to open");
+    }
+    let lastRowClick = null;
+    const rowIdAt = (event) => {
+      const target = event.target instanceof Element ? event.target.closest('[role="option"]') : null;
+      if (!(target instanceof HTMLElement))
+        return null;
+      return artifacts.find((item) => target.id.endsWith(`-${item.id}`))?.id ?? null;
+    };
+    const onRowClick = (event) => {
+      const id = rowIdAt(event);
+      if (id !== null)
+        lastRowClick = { id, at: Date.now() };
+    };
+    const onRowDoubleClick = (event) => {
+      const inList = event.target instanceof Element && event.target.closest(".oc-sdk-list") !== null;
+      const recent = lastRowClick !== null && Date.now() - lastRowClick.at < 700 ? lastRowClick.id : null;
+      const id = rowIdAt(event) ?? (inList ? recent : null);
+      if (id === null || scope === "trash")
+        return;
+      event.preventDefault();
+      lastRowClick = null;
+      run(() => remote ? copyUrl(id) : openArtifact(id));
+    };
+    scroll.addEventListener("click", onRowClick);
+    scroll.addEventListener("dblclick", onRowDoubleClick);
     handles.push(scopeControl, tagControl, options, search, spinner, empty, favorites, list);
     function update() {
       const availableTags = [...new Set(artifacts.flatMap((item) => item.tags))].sort();
       if (tag && !availableTags.includes(tag))
         tag = "";
       const visible = visibleArtifacts();
+      openSelected.update({ label: remote ? "Copy URL" : "Open", disabled: selectedId === null || scope === "trash" });
       const nextControls = JSON.stringify([scope, tag, directory, availableTags, view, sort]);
       if (nextControls !== controlsSignature) {
         controlsSignature = nextControls;
@@ -3171,6 +3213,8 @@ ${GUEST_UI_LOOK_CSS}`;
       focusSearch: () => searchRoot.querySelector("input")?.focus(),
       focusList: () => node.querySelector('[role="listbox"]')?.focus(),
       dispose: () => {
+        scroll.removeEventListener("click", onRowClick);
+        scroll.removeEventListener("dblclick", onRowDoubleClick);
         dispose(gridHandles);
         dispose(handles);
         node.remove();
