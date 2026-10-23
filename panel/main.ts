@@ -1,7 +1,7 @@
 import { connectHost } from '@openchamber/sdk';
 import {
   applyHostReady, mountBadge, mountBanner, mountButton, mountEmpty, mountList,
-  mountMenu, mountSearchField, mountSelect, mountSeparator, mountSpinner, mountTextField,
+  mountMenu, mountSearchField, mountSelect, mountSpinner, mountTextField,
 } from '@openchamber/sdk/ui';
 import type { ButtonHandle, ButtonVariant, ListItem, MenuItem } from '@openchamber/sdk/ui';
 import type { ArtifactKind, ArtifactMeta, ArtifactSummary, ListResult } from '../src/store/types';
@@ -14,6 +14,27 @@ interface ViewUrl { url: string }
 interface ExportResult { path: string }
 interface Health { store: string; mcpPath?: string }
 interface Heartbeat { seenAt: string }
+type IconName =
+  | 'arrow-up-right' | 'copy' | 'download' | 'message'
+  | 'history' | 'code' | 'server' | 'terminal' | 'refresh'
+  | 'chevron-left' | 'ellipsis' | 'star' | 'file-text';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const ICONS: Record<IconName, string> = {
+  'arrow-up-right': '<path d="M7 17 17 7"/><path d="M8 7h9v9"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  download: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+  message: '<path d="M21 15a4 4 0 0 1-4 4H7l-4 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/>',
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/><path d="M12 8v4l3 2"/>',
+  code: '<path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="M14 4l-4 16"/>',
+  server: '<rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01"/><path d="M6 17h.01"/>',
+  terminal: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/>',
+  'chevron-left': '<path d="m15 18-6-6 6-6"/>',
+  ellipsis: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9Z"/>',
+  'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h6"/>',
+};
 
 const KINDS: Record<ArtifactKind, string> = {
   html: 'HTML', bundle: 'Bundle', markdown: 'Markdown', image: 'Image', pdf: 'PDF', data: 'Data',
@@ -63,6 +84,58 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+function svgIcon(name: IconName, className = 'canvas-icon'): SVGSVGElement {
+  const node = document.createElementNS(SVG_NS, 'svg');
+  node.setAttribute('viewBox', '0 0 24 24');
+  node.setAttribute('fill', 'none');
+  node.setAttribute('stroke', 'currentColor');
+  node.setAttribute('stroke-width', '1.7');
+  node.setAttribute('stroke-linecap', 'round');
+  node.setAttribute('stroke-linejoin', 'round');
+  node.setAttribute('aria-hidden', 'true');
+  node.setAttribute('focusable', 'false');
+  node.setAttribute('class', className);
+  node.innerHTML = ICONS[name];
+  return node;
+}
+
+/** Decorative icon inside a kit button or heading; the kit still owns the control's geometry and label. */
+function mountButtonWithIcon(parent: Element, props: Parameters<typeof mountButton>[1], icon?: IconName): ButtonHandle {
+  const handle = mountButton(parent, props);
+  if (icon) {
+    const button = parent.lastElementChild;
+    button?.prepend(svgIcon(icon, 'canvas-control-icon'));
+  }
+  return handle;
+}
+
+function iconMenu(parent: Element, props: Parameters<typeof mountMenu>[1], icon: IconName = 'ellipsis') {
+  const handle = mountMenu(parent, props);
+  const button = parent.lastElementChild?.querySelector?.('button');
+  button?.prepend(svgIcon(icon, 'canvas-control-icon'));
+  return handle;
+}
+
+function sectionHeading(parent: Element, icon: IconName, label: string, meta?: string): HTMLElement {
+  const heading = element('header', parent, 'canvas-section-heading');
+  heading.append(svgIcon(icon, 'canvas-section-icon'));
+  element('h2', heading, '', label);
+  if (meta) element('span', heading, 'canvas-section-meta', meta);
+  return heading;
+}
+
+function metaItem(parent: Element, icon: IconName, text: string): HTMLElement {
+  const item = element('span', parent, 'canvas-meta-item');
+  item.append(svgIcon(icon, 'canvas-status-icon'), document.createTextNode(text));
+  return item;
+}
+
+function groupHeading(parent: Element, icon: IconName, label: string): HTMLElement {
+  const heading = element('header', parent, 'canvas-list-heading');
+  heading.append(svgIcon(icon, 'canvas-list-icon'), element('span', heading, '', label));
+  return heading;
+}
+
 function dispose(handles: Disposable[]): void {
   for (const handle of handles.splice(0)) handle.dispose();
 }
@@ -96,12 +169,12 @@ async function run(work: () => Promise<void>): Promise<void> {
 
 function action(
   parent: Element, handles: Disposable[], label: string, work: () => Promise<void>,
-  variant: ButtonVariant = 'ghost', size: 'default' | 'sm' | 'xs' = 'sm',
+  variant: ButtonVariant = 'ghost', size: 'default' | 'sm' | 'xs' = 'sm', icon?: IconName,
 ): ButtonHandle {
-  const button = mountButton(parent, { label, variant, size, onClick: () => {
+  const button = mountButtonWithIcon(parent, { label, variant, size, onClick: () => {
     button.update({ loading: true });
     void run(work).finally(() => button.update({ loading: false }));
-  } });
+  } }, icon);
   handles.push(button);
   return button;
 }
@@ -350,7 +423,7 @@ function mountLibrary(parent: Element) {
     update();
   } });
   const optionsRoot = element('div', toolbar, 'canvas-options');
-  const options = mountMenu(optionsRoot, { label: 'Options', variant: 'outline', size: 'sm', items: [], onSelect: id => {
+  const options = iconMenu(optionsRoot, { label: 'Options', variant: 'outline', size: 'sm', items: [], onSelect: id => {
     if (id === 'refresh') void refresh();
     else if (id === 'ask') void run(() => askAgent());
     else if (id === 'setup') setSetup(true);
@@ -371,16 +444,16 @@ function mountLibrary(parent: Element) {
   const emptyRoot = element('div', scroll, 'canvas-empty-slot');
   const empty = mountEmpty(emptyRoot, { title: 'No artifacts yet' });
   const favoritesRoot = element('section', scroll);
-  const favoritesHeading = mountSeparator(favoritesRoot, { label: 'Favorites' });
+  groupHeading(favoritesRoot, 'star', 'Favorites');
   const favorites = mountList(favoritesRoot, { ariaLabel: 'Favorite artifacts', items: [], onSelect: selectArtifact });
   const listRoot = element('section', scroll);
-  const listHeading = mountSeparator(listRoot, { label: 'Artifacts' });
+  groupHeading(listRoot, 'file-text', 'Artifacts');
   const list = mountList(listRoot, { ariaLabel: 'Artifacts', items: [], onSelect: selectArtifact });
   const gridRoot = element('div', scroll, 'canvas-grid');
   let gridHandles: Disposable[] = [];
   let rowsSignature = '';
   let controlsSignature = '';
-  handles.push(scopeControl, tagControl, options, search, spinner, empty, favoritesHeading, favorites, listHeading, list);
+  handles.push(scopeControl, tagControl, options, search, spinner, empty, favorites, list);
 
   function update(): void {
     const availableTags = [...new Set(artifacts.flatMap(item => item.tags))].sort();
@@ -483,13 +556,13 @@ function mountInspector(parent: Element, id: string) {
   node.setAttribute('aria-label', 'Artifact inspector');
   const toolbar = element('div', node, 'canvas-toolbar');
   const backRoot = element('div', toolbar, 'canvas-back');
-  handles.push(mountButton(backRoot, { label: 'Back', variant: 'ghost', size: 'sm', onClick: backToLibrary }));
+  handles.push(mountButtonWithIcon(backRoot, { label: 'Back', variant: 'ghost', size: 'sm', onClick: backToLibrary }, 'chevron-left'));
   const titleRow = element('div', node, 'canvas-title-row');
   const title = element('h1', titleRow, 'canvas-title');
   title.tabIndex = -1;
   title.dir = 'auto';
   const titleActions = element('div', titleRow, 'canvas-title-actions');
-  const menu = mountMenu(titleActions, { label: 'Actions', variant: 'ghost', size: 'sm', items: [], onSelect: value => {
+  const menu = iconMenu(titleActions, { label: 'Actions', variant: 'ghost', size: 'sm', items: [], onSelect: value => {
     const meta = detail;
     if (meta === null || meta.id !== id) return;
     if (value === 'delete') confirmDelete(meta);
@@ -510,29 +583,32 @@ function mountInspector(parent: Element, id: string) {
   const spinnerRoot = element('div', node, 'canvas-state');
   const spinner = mountSpinner(spinnerRoot, { label: 'Loading artifact' });
   const content = element('div', node, 'canvas-detail-content');
-  const actions = element('div', content, 'canvas-actions');
+  const overview = element('section', content, 'canvas-section canvas-overview');
+  const actions = element('div', overview, 'canvas-actions');
   action(actions, handles, remote ? 'Copy URL' : 'Open', async () => {
     if (remote) await copyUrl(id); else await openArtifact(id);
-  }, 'default', 'default');
-  if (!remote) action(actions, handles, 'Copy URL', () => copyUrl(id), 'outline');
-  action(actions, handles, 'Export', async () => { if (detail?.id === id) await exportArtifact(detail); }, 'outline');
-  const metadata = element('p', content, 'canvas-muted');
-  const tagsRoot = element('div', content, 'canvas-tags');
+  }, 'default', 'default', 'arrow-up-right');
+  if (!remote) action(actions, handles, 'Copy URL', () => copyUrl(id), 'outline', 'sm', 'copy');
+  action(actions, handles, 'Export', async () => { if (detail?.id === id) await exportArtifact(detail); }, 'outline', 'sm', 'download');
+  const metadata = element('div', overview, 'canvas-meta canvas-muted');
+  const tagRow = element('div', overview, 'canvas-tags');
   let tagHandles: Disposable[] = [];
   let tagSignature = '';
-  const versionsRoot = element('section', content, 'canvas-versions');
-  handles.push(mountSeparator(versionsRoot, { label: 'Versions' }));
-  const versionRows = element('div', versionsRoot, 'canvas-version-rows');
+  const versions = element('section', content, 'canvas-section');
+  const versionHeading = sectionHeading(versions, 'history', 'Versions');
+  const versionRows = element('div', versions, 'canvas-version-rows');
   let versionsSignature = '';
-  const technical = element('div', content, 'canvas-technical');
-  const technicalToggle = mountButton(technical, { label: 'Show details', variant: 'ghost', size: 'xs', onClick: () => {
+  const technical = element('section', content, 'canvas-section');
+  const technicalToggle = mountButtonWithIcon(technical, { label: 'Show details', variant: 'ghost', size: 'xs', onClick: () => {
     technicalText.hidden = !technicalText.hidden;
     technicalToggle.update({ label: technicalText.hidden ? 'Show details' : 'Hide details' });
-  } });
+  } }, 'code');
   const technicalText = element('dl', technical, 'canvas-details');
   technicalText.hidden = true;
-  const instruction = element('section', content, 'canvas-instruction');
-  const field = mountTextField(instruction, { label: 'Instruction for the agent', value: draft,
+  const instructions = element('section', content, 'canvas-section');
+  instructions.append(sectionHeading(instructions, 'message', 'Ask the agent'));
+  const instruction = element('div', instructions, 'canvas-instruction');
+  const field = mountTextField(instruction, { label: 'What should change?', value: draft,
     placeholder: 'Describe the change', helper: 'Adds a draft to chat. It does not send it.', multiline: true, rows: 2,
     onChange: value => { draft = value; field.update({ value }); add.update({ disabled: !value.trim() }); },
   });
@@ -544,7 +620,7 @@ function mountInspector(parent: Element, id: string) {
       draft = ''; field.update({ value: '' }); add.update({ disabled: true });
     }
     await host.toast({ kind: 'info', message: 'Instruction added to the composer. Review it before sending.' });
-  }, 'outline');
+  }, 'outline', 'sm', 'message');
   add.update({ disabled: !draft.trim() });
   handles.push(error, spinner, menu, field, technicalToggle);
 
@@ -558,8 +634,10 @@ function mountInspector(parent: Element, id: string) {
     subtitle.textContent = meta ? `${meta.projectName}, updated ${date(meta.updatedAt)}` : '';
     if (!meta) return;
     const summary = artifacts.find(item => item.id === id);
-    metadata.textContent = [KINDS[meta.kind], `${summary?.feedbackCount ?? 0} responses`, meta.favorite ? 'Favorite' : '']
-      .filter(Boolean).join(', ');
+    metadata.replaceChildren();
+    metaItem(metadata, 'file-text', KINDS[meta.kind]);
+    metaItem(metadata, 'message', `${summary?.feedbackCount ?? 0} responses`);
+    if (meta.favorite) metaItem(metadata, 'star', 'Favorite');
     const items: MenuItem[] = [
       { id: 'favorite', label: meta.favorite ? 'Remove from favorites' : 'Add to favorites' },
       { id: 'attach', label: 'Attach to chat' }, { id: 'copy-id', label: 'Copy artifact ID' },
@@ -570,12 +648,15 @@ function mountInspector(parent: Element, id: string) {
     const nextTags = JSON.stringify([meta.tags]);
     if (nextTags !== tagSignature) {
       tagSignature = nextTags;
-      dispose(tagHandles); tagsRoot.replaceChildren();
-      for (const label of meta.tags) tagHandles.push(mountBadge(tagsRoot, { label }));
+      dispose(tagHandles); tagRow.replaceChildren();
+      for (const label of meta.tags) tagHandles.push(mountBadge(tagRow, { label }));
     }
     const nextVersions = JSON.stringify([meta.versions, meta.currentVersion, locale]);
     if (nextVersions !== versionsSignature) {
       versionsSignature = nextVersions;
+      const count = versionHeading.querySelector('.canvas-section-meta');
+      if (count instanceof HTMLElement) count.textContent = `${meta.versions.length}`;
+      else versionHeading.append(element('span', versionHeading, 'canvas-section-meta', `${meta.versions.length}`));
       dispose(versionHandles); versionRows.replaceChildren();
       for (let index = meta.versions.length - 1; index >= 0; index--) {
         const version = meta.versions[index];
@@ -594,8 +675,8 @@ function mountInspector(parent: Element, id: string) {
         }
         if (version.id !== meta.currentVersion) {
           const actions = element('div', row, 'canvas-version-actions');
-          if (!remote) action(actions, versionHandles, `Open v${index + 1}`, () => openArtifact(id, version.id), 'ghost', 'xs');
-          action(actions, versionHandles, `Restore v${index + 1}`, () => restoreVersion(meta, version.id), 'outline', 'xs');
+          if (!remote) action(actions, versionHandles, `Open v${index + 1}`, () => openArtifact(id, version.id), 'ghost', 'xs', 'arrow-up-right');
+          action(actions, versionHandles, `Restore v${index + 1}`, () => restoreVersion(meta, version.id), 'outline', 'xs', 'refresh');
         }
       }
     }
@@ -617,8 +698,8 @@ function mountSetup(parent: Element) {
   const node = element('section', parent, 'canvas-setup');
   node.setAttribute('aria-label', 'Canvas setup');
   const toolbar = element('div', node, 'canvas-toolbar');
-  handles.push(mountButton(toolbar, { label: 'Back to gallery', variant: 'ghost', size: 'sm', onClick: () => setSetup(false) }));
-  const recheck = action(toolbar, handles, 'Check again', load, 'outline');
+  handles.push(mountButtonWithIcon(element('div', toolbar, 'canvas-back'), { label: 'Back to gallery', variant: 'ghost', size: 'sm', onClick: () => setSetup(false) }, 'chevron-left'));
+  const recheck = action(toolbar, handles, 'Check again', load, 'outline', 'sm', 'refresh');
   const intro = element('header', node, 'canvas-setup-intro');
   element('h1', intro, 'canvas-title', 'Set up Canvas');
   element('p', intro, 'canvas-muted', 'The gallery works without the MCP server. Connect it to let the agent publish and update artifacts.');
@@ -626,12 +707,14 @@ function mountSetup(parent: Element) {
   errorRoot.hidden = true;
   const error = mountBanner(errorRoot, { tone: 'error', title: 'Could not check setup' });
   const extension = element('section', node, 'canvas-setup-section');
-  const extensionRow = element('div', extension, 'canvas-section-heading');
+  const extensionRow = element('header', extension, 'canvas-section-heading');
+  extensionRow.append(svgIcon('server', 'canvas-section-icon'));
   element('h2', extensionRow, '', 'Extension service');
   const extensionBadge = mountBadge(extensionRow, { label: 'Checking' });
   const store = element('p', extension, 'canvas-muted');
   const mcp = element('section', node, 'canvas-setup-section');
-  const mcpRow = element('div', mcp, 'canvas-section-heading');
+  const mcpRow = element('header', mcp, 'canvas-section-heading');
+  mcpRow.append(svgIcon('terminal', 'canvas-section-icon'));
   element('h2', mcpRow, '', 'MCP server');
   const mcpBadge = mountBadge(mcpRow, { label: 'Checking' });
   const mcpNotice = mountBanner(mcp, { tone: 'info', title: 'Checking the MCP heartbeat' });
@@ -642,16 +725,16 @@ function mountSetup(parent: Element) {
   let mcpPath = '';
   let mcpConfig = '';
   const configActions = element('div', mcp, 'canvas-actions');
-  const copyConfig = action(configActions, handles, 'Copy MCP config', () => copy(mcpConfig, 'MCP config'), 'default');
-  const copyPath = action(configActions, handles, 'Copy path', () => copy(mcpPath, 'MCP path'), 'outline');
-  const showConfig = mountButton(configActions, { label: 'Show JSON', variant: 'ghost', size: 'sm', onClick: () => {
+  const copyConfig = action(configActions, handles, 'Copy MCP config', () => copy(mcpConfig, 'MCP config'), 'default', 'sm', 'copy');
+  const copyPath = action(configActions, handles, 'Copy path', () => copy(mcpPath, 'MCP path'), 'outline', 'sm', 'copy');
+  const showConfig = mountButtonWithIcon(configActions, { label: 'Show JSON', variant: 'ghost', size: 'sm', onClick: () => {
     config.hidden = !config.hidden;
     showConfig.update({ label: config.hidden ? 'Show JSON' : 'Hide JSON' });
-  } });
+  } }, 'code');
   const agent = element('section', node, 'canvas-setup-section');
-  element('h2', agent, '', 'Try Canvas');
+  sectionHeading(agent, 'message', 'Try Canvas');
   element('p', agent, 'canvas-muted', 'Publish a small test chart from the chat after the MCP server is connected.');
-  const sample = action(agent, handles, 'Add sample prompt to chat', () => askAgent(SAMPLE_PROMPT), 'outline');
+  const sample = action(agent, handles, 'Add sample prompt to chat', () => askAgent(SAMPLE_PROMPT), 'outline', 'sm', 'message');
   handles.push(error, extensionBadge, mcpBadge, mcpNotice, showConfig);
   copyConfig.update({ disabled: true }); copyPath.update({ disabled: true }); sample.update({ disabled: true });
 

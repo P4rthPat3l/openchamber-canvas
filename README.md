@@ -2,7 +2,7 @@
 
 A project gallery for agent-generated artifacts. Each artifact opens in OpenChamber's browser panel, keeps its versions, refreshes in place, and can send user feedback back to the agent.
 
-Status: Phase 6 SDK UI migration built; installed acceptance pending. The gallery, setup view, and Work Status section use the public `@openchamber/sdk/ui` controls, with custom CSS limited to composition the installed kit lacks. The manual acceptance run is pending.
+Status: Phase 6 SDK UI migration built; installed acceptance pending. The gallery, setup view, and Work Status section use the public `@openchamber/sdk/ui` controls, with custom CSS limited to composition the installed kit lacks and decorative icons in section headings and labelled controls. The manual acceptance run is pending.
 
 - Plan and feature document: [docs/features/FEAT-001-openchamber-canvas.md](docs/features/FEAT-001-openchamber-canvas.md)
 - Product truth: [PRODUCT.md](PRODUCT.md)
@@ -21,7 +21,7 @@ Status: Phase 6 SDK UI migration built; installed acceptance pending. The galler
 - Pinned libraries: Chart.js, D3, and Mermaid, copied by the build with a SHA-256 manifest.
 - MCP server: `publish`, `update`, `list`, `read`, `archive`, and `result`, with `filePath` and `directoryPath` sources, an external-reference scan, and a heartbeat.
 - Extension service: `/health`, `/list`, `/artifact`, `/versions`, `/view-url`, `/feedback`, `/export`, `/mcp-status`, `/archive`, `/favorite`, `/restore`, `/trash`, `/untrash`.
-- Gallery panel: a master-detail artifact shelf built from the OpenChamber SDK UI kit, with project, all, archived, and trash scopes; search; tags; sort; list and grid; a persistent inspector on the full-screen page; version actions; restore; archive; delete; favorite; refine; attach; export; setup; remote warning.
+- Gallery panel: a master-detail artifact shelf built from the OpenChamber SDK UI kit, with project, all, archived, and trash scopes; search; tags; sort; list and grid; a persistent inspector on the full-screen page and on wide panels; version actions; restore; archive; delete; favorite; refine; attach; export; setup; remote warning.
 - Work Status section: artifact count, latest title, and a native MCP state badge.
 - Extension manifest: panel, page, status section, service, and Canvas tool card.
 - 60 tests covering storage, update modes, conflicts, traversal, locking, policy, feedback, state, viewer routes, SSE, bundle assets, MCP tools, file and folder sources, service routes, export, and trash.
@@ -37,7 +37,7 @@ bun run test:browser
 bun run build
 ```
 
-`bun run test:browser` builds the entries and runs the Playwright browser suite against the actual panel and status files in an opaque iframe with a mock host. It uses the system Chrome at `/usr/bin/google-chrome`. It covers AC-037 through AC-042, including six official resolved themes, a host font/radius override, theme-only updates, retained draft and focus, menus, dialog, setup, empty and error states, and 320px/1200px layouts.
+`bun run test:browser` builds the entries and runs the Playwright browser suite against the actual panel and status files in an opaque iframe with a mock host. It uses the system Chrome at `/usr/bin/google-chrome`. It covers AC-037 through AC-042, including six official resolved themes, a host font/radius override, theme-only updates, retained draft and focus, menus, dialog, setup, empty and error states, and 320px/720px/1200px layouts.
 
 `bun run build` builds `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js`, and copies the pinned libraries into `viewer/libraries/`.
 

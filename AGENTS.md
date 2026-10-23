@@ -36,7 +36,7 @@ bun run build
 - The service and the viewer daemon bind `127.0.0.1` only. No `0.0.0.0`.
 - The viewer daemon is the only process that serves artifact HTML. The MCP server writes the store and ensures the viewer; it does not serve a second copy.
 - Never remove `sandbox allow-scripts` from the view response to make annotation or storage work. Use the runtime shim, or accept the limitation.
-- Use the public `@openchamber/sdk/ui` controls rather than recreating buttons, fields, search, selects, menus, lists, badges, banners, empty states, or feedback. Do not import private OpenChamber React components or override kit control geometry, colors, shadows, type, selection, or focus. Custom CSS is only layout the kit lacks.
+- Use the public `@openchamber/sdk/ui` controls rather than recreating buttons, fields, search, selects, menus, lists, badges, banners, empty states, or feedback. Do not import private OpenChamber React components or override kit control geometry, colors, shadows, type, selection, or focus. Decorative inline SVG icons may sit inside a mounted kit button or menu trigger and in custom section headings; they must not replace a kit control or change its geometry. Custom CSS is only layout the kit lacks.
 - Apply `applyHostReady` on every host ready snapshot. Do not rebuild mounted controls for a theme-only snapshot; call `update` for controlled values and `dispose` when removing a view.
 - Use `host.storage`, not `localStorage`, for panel preferences. The extension iframe has an opaque origin.
 - Store paths are validated against the store root. No `..`, no symlink escape.

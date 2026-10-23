@@ -177,7 +177,8 @@ await frame.getByRole('heading', { name: 'Revenue by region' }).waitFor();
 for (const label of ['Open', 'Copy URL', 'Export', 'Actions']) {
   assert.ok(await frame.getByRole('button', { name: label, exact: true }).count() > 0, `missing ${label}`);
 }
-const instruction = frame.getByRole('textbox', { name: 'Instruction for the agent' });
+await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'panel-detail.png') });
+const instruction = frame.getByRole('textbox', { name: 'What should change?' });
 await instruction.fill('Make the chart weekly');
 const beforeTheme = await panelPage.evaluate(() => window.__host.getState().requests.length);
 await panelPage.evaluate(() => window.__host.setTheme('openchamber-light'));
@@ -301,7 +302,7 @@ const narrow = await frame.evaluate(() => ({
 }));
 assert.equal(narrow.width, 320);
 assert.equal(narrow.overflow, false, 'panel overflows at 320px');
-check('AC-041', 'SDK keyboard interactions and 320px/1200px layouts hold', true);
+check('AC-041', 'SDK keyboard interactions and 320px panel layout hold', true);
 
 await panelPage.evaluate(() => {
   const iframe = document.querySelector('iframe');
@@ -313,6 +314,30 @@ await frame.waitForFunction(() => document.documentElement.dataset.ocTheme === '
 await panelPage.waitForTimeout(220);
 await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'panel.png') });
 await closePage(panelPage);
+
+const widePanelPage = await browser.newPage({ viewport: { width: 900, height: 1000 } });
+widePanelPage.on('pageerror', error => pageErrors.push(error.message));
+frame = await openSurface(widePanelPage, 'panel', 720, 900);
+await waitCanvasReady(frame);
+await frame.getByRole('option', { name: /Revenue by region/ }).click();
+await frame.getByRole('heading', { name: 'Revenue by region' }).waitFor();
+const widePanelLayout = await frame.evaluate(() => {
+  const library = document.querySelector('.canvas-library');
+  const inspector = document.querySelector('.canvas-inspector');
+  if (!(library instanceof HTMLElement) || !(inspector instanceof HTMLElement)) return null;
+  const left = library.getBoundingClientRect();
+  const right = inspector.getBoundingClientRect();
+  return { left: { x: left.x, width: left.width }, right: { x: right.x, width: right.width },
+    overflow: document.documentElement.scrollWidth > innerWidth };
+});
+assert.ok(widePanelLayout);
+assert.ok(widePanelLayout.left.width > 0 && widePanelLayout.right.width > 0, 'wide panel did not show library and inspector');
+assert.ok(widePanelLayout.left.x < widePanelLayout.right.x);
+assert.equal(await frame.getByRole('button', { name: 'Back', exact: true }).isVisible(), false);
+assert.equal(widePanelLayout.overflow, false, 'wide panel overflows at 720px');
+check('AC-041', 'wide panel keeps the library and inspector visible', true);
+await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'panel-wide.png') });
+await closePage(widePanelPage);
 
 const pagePage = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
 pagePage.on('pageerror', error => pageErrors.push(error.message));
@@ -335,6 +360,7 @@ assert.ok(pageLayout.left.width > 0 && pageLayout.right.width > 0);
 assert.ok(pageLayout.left.x < pageLayout.right.x);
 assert.equal(await frame.getByRole('button', { name: 'Back', exact: true }).isVisible(), false);
 assert.equal(pageLayout.overflow, false);
+check('AC-041', '1200px page keeps both columns', true);
 await pagePage.evaluate(() => window.__host.setTheme('openchamber-light'));
 await frame.waitForFunction(() => document.documentElement.dataset.ocTheme === 'light');
 await pagePage.waitForTimeout(220);
@@ -402,7 +428,7 @@ server.stop();
 if (errors.length > 0) throw new Error(`Browser console errors:\n${errors.join('\n')}`);
 if (pageErrors.length > 0) throw new Error(`Page errors:\n${pageErrors.join('\n')}`);
 console.log(JSON.stringify({
-  screenshots: ['panel.png', 'grid.png', 'page.png', 'page-light.png', 'page-empty.png', 'setup.png', 'setup-page.png', 'empty.png', 'dialog.png', 'dialog-dark.png', 'status.png'],
+  screenshots: ['panel.png', 'panel-detail.png', 'panel-wide.png', 'grid.png', 'page.png', 'page-light.png', 'page-empty.png', 'setup.png', 'setup-page.png', 'empty.png', 'dialog.png', 'dialog-dark.png', 'status.png'],
   verified: [...verified].sort(),
   checks: [
     'actual bundled panel and status in an opaque sandbox',
@@ -412,6 +438,6 @@ console.log(JSON.stringify({
     'host.storage view/sort persistence across reload',
     'setup MCP path/config/heartbeat states',
     'empty, grid, error/retry, menu, dialog, and action coverage',
-    '320px panel and 1200px page layout',
+    '320px panel, 720px wide panel, and 1200px page layout',
   ],
 }, null, 2));

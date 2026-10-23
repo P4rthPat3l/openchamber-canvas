@@ -501,7 +501,7 @@ The store, policy, viewer, build, MCP, service, and UI rows are implemented. The
 | UI | Gallery panel | `panel/index.html`, `panel/main.ts` | `mountApp`, `mountLibrary`, `mountInspector`, `mountSetup`, `paint` | Current |
 | UI | Full-screen page | `page: true` reuses `panel/index.html` | `ctx.surface === "page"` | Current |
 | UI | Work Status section | `status/index.html`, `status/main.ts` | `mountStatus`, `refresh` | Current |
-| UI | SDK controls | `@openchamber/sdk/ui` | `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountBadge`, `mountBanner`, `mountEmpty`, `mountSpinner`, `mountSeparator` | Current |
+| UI | SDK controls | `@openchamber/sdk/ui` | `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountBadge`, `mountBanner`, `mountEmpty`, `mountSpinner` | Current |
 | UI | List, filter, detail, versions, setup, scopes | `panel/main.ts` | `mountLibrary`, `mountInspector`, `mountSetup` | Current |
 | UI | Browser open action | `panel/main.ts` | `openArtifact` | Current |
 | Manifest | Extension declaration | `package.json` `openchamber` block | `contributes` | Create |
@@ -1487,7 +1487,7 @@ Implemented in `a4911b2`. The browser suite in `tests/browser/panel.browser.ts` 
 - **AC-038:** Every ready snapshot updates the host theme. A theme-only update changes native control colors and supplied font/radius without remounting the controls, losing drafts/focus/selection, or triggering data requests. Custom metadata uses the appropriate host foreground and computed status-text tokens, with no Canvas palette or fixed control type scale.
 - **AC-039:** Controlled SDK values are fed back through `handle.update`. Polling updates list/state handles without replacing a focused field. Removing an inspector, menu, grid, or setup view disposes its mounted controls; repeated navigation does not leave popups or listeners behind.
 - **AC-040:** Existing actions remain available in rail, full-screen, and grid views: search, scope, tags, sort, favorite, open, copy URL, export, attach, refine, version open/restore, archive/unarchive, trash/restore, and confirmed deletion. Empty views keep scope navigation reachable. Remote clients keep Copy URL and Export rather than an unusable Open action.
-- **AC-041:** SDK keyboard behavior works for search, lists, selects, and menus. Popups remain inside the smallest supported frame, open toward available space, close on Escape/outside press, and return focus. Loading, service failure/retry, no matches, missing/stale MCP, and setup states use native feedback components. Rail widths of 320px and 360px and a 1200px page have no horizontal overflow.
+- **AC-041:** SDK keyboard behavior works for search, lists, selects, and menus. Popups remain inside the smallest supported frame, open toward available space, close on Escape/outside press, and return focus. Loading, service failure/retry, no matches, missing/stale MCP, and setup states use native feedback components. Rail widths of 320px and 360px, a 720px wide panel, and a 1200px page have no horizontal overflow. The 720px panel and the full-screen page show the library and inspector together.
 - **AC-042:** View/sort preferences persist through `host.storage` in the opaque sandbox, without additional capabilities. A failed preference read/write does not block the gallery or overwrite a choice made while the read was pending.
 
 Tests carry the AC IDs. `bun run test:browser` exercises the actual built panel and status entrypoints through a sandboxed mock host, not a separately handwritten screenshot page. Theme tests cover six official resolved OpenChamber palettes and a host-supplied font/radius snapshot. Installed-app acceptance remains a separate manual check.
@@ -1910,17 +1910,17 @@ All blocking probes pass on 2026-10-23. Phase 2 is unblocked.
 
 **Objective:** Close the loop between publish, view, feedback, and update.
 
-**Status:** In progress. The tool card is declared, the setup page shows the exact MCP path and a copyable config, and `opencode.json` is no longer tracked because OpenChamber manages it. The gallery uses the public OpenChamber SDK UI kit across the rail, full-screen page, setup view, and Work Status section; custom CSS is limited to composition the installed kit lacks. The 500-artifact measurement and installed desktop and web acceptance runs are pending.
+**Status:** In progress. The tool card is declared, the setup page shows the exact MCP path and a copyable config, and `opencode.json` is no longer tracked because OpenChamber manages it. The gallery uses the public OpenChamber SDK UI kit across the rail, full-screen page, setup view, and Work Status section; custom CSS is limited to composition the installed kit lacks, plus decorative icons and section headings. The 500-artifact measurement and installed desktop and web acceptance runs are pending.
 
 #### Native SDK migration, current
 
 The custom redraw in `4656110` was rejected. Reusing the host's colors did not make its controls native. Commit `a4911b2` replaces the custom control system with the installed SDK UI kit; it is not another CSS restyle.
 
 1. The panel toolbar, artifact lists, inspector actions and field, setup feedback and actions, and status feedback now mount SDK controls. Duplicate Canvas marks, kind tiles, custom focus rings, and custom button/select/search/list implementations were removed.
-2. Custom CSS now covers only the responsive list/detail split, flat grid tiles, version metadata rows, setup/status layout, and the native dialog frame. All interactive children are SDK controls. The code does not copy `.oc-sdk-*` markup, import private app React components, or override kit control appearance.
+2. Custom CSS now covers the responsive list/detail split, section headings, decorative icons inside labelled SDK controls, flat grid tiles, version metadata rows, setup/status layout, and the native dialog frame. All interactive children are SDK controls. The code does not copy `.oc-sdk-*` markup, import private app React components, or override kit control appearance.
 3. Component handles and application state persist across updates. Service responses feed summary/detail state and then SDK `update` calls. Theme-ready snapshots apply `applyHostReady` without remounting; only directory changes reload data. Inspector, grid, and setup handles are disposed when their view is removed.
 4. View and sort preferences use `host.storage` instead of unavailable `localStorage`. `tsconfig.json` now includes `panel/` and `status/`, and the three pre-existing errors are fixed. No backend contract or manifest permission changed.
-5. `tests/browser/panel.browser.ts` serves the actual built panel and status entries in an opaque `allow-scripts` iframe with a mock host. It checks AC-037 through AC-042, including six official resolved themes, a host font/radius override, theme-only ready handling, retained draft/focus, control disposal, storage persistence, menus, dialog, setup, empty, error/retry, grid, 320px rail, and 1200px page layouts.
+5. `tests/browser/panel.browser.ts` serves the actual built panel and status entries in an opaque `allow-scripts` iframe with a mock host. It checks AC-037 through AC-042, including six official resolved themes, a host font/radius override, theme-only ready handling, retained draft/focus, control disposal, storage persistence, menus, dialog, setup, empty, error/retry, grid, 320px rail, 720px wide panel, and 1200px page layouts. At 720px and wider the panel and page keep the library beside the inspector.
 
 Changed files: `panel/main.ts`, `panel/style.css`, `panel/index.html`, `status/main.ts`, `status/style.css`, `status/index.html`, `tsconfig.json`, `package.json`, `bun.lock`, `tests/browser/host.html`, `tests/browser/panel.browser.ts`, and `tests/fixtures/openchamber-themes.json`. Playwright is a development-only dependency. The browser test uses the system Chrome at `/usr/bin/google-chrome`.
 
@@ -1928,9 +1928,9 @@ Proven: the browser suite passes in the opaque sandbox against the built entries
 
 Risks and fallbacks:
 
-- **NUI-R1:** The public kit has no grid-card, arbitrary row-action, dialog, or icon-button API. Canvas keeps minimal content/layout wrappers and native dialog semantics, with labelled SDK controls inside. It does not import private host components or drop existing actions.
+- **NUI-R1:** The public kit has no grid-card, arbitrary row-action, dialog, or icon-button API. Canvas keeps minimal content/layout wrappers, native dialog semantics, and decorative inline SVG icons inside labelled SDK controls. It does not import private host components or drop existing actions.
 - **NUI-R2:** The mock host uses six official resolved palettes and a font/radius override; it does not prove every installed or user-authored palette by sight. Controls inherit arbitrary valid host tokens at runtime. Installed-theme acceptance remains pending.
-- **NUI-R3:** Native geometry simplified the previous multi-row toolbar and icon-tile composition. Secondary actions moved into SDK menus. No control was shrunk or restyled to preserve the rejected design.
+- **NUI-R3:** Native geometry simplified the previous multi-row toolbar and icon-tile composition. Decorative icons returned inside labelled SDK controls and custom section headings; secondary actions remained in SDK menus. No kit control was shrunk or restyled to preserve the rejected design.
 
 Rollback: revert `a4911b2` and rebuild the extension. Artifact files, service routes, viewer policy, and MCP registration are unaffected.
 
