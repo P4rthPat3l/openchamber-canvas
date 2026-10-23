@@ -4,7 +4,7 @@ Feature documentation lives in `docs/features/`. Read the relevant feature docum
 
 ## Status
 
-This repository is in Phase 5 built, manual acceptance pending. The artifact store, view policy, viewer server, runtime, pinned libraries, MCP server, extension service, gallery panel, status section, and extension manifest exist. The Phase 0 blocking probes pass.
+This repository is in Phase 5 built, Phase 6 in progress. The extension is installed. The artifact store, view policy, viewer server, runtime, pinned libraries, MCP server, extension service, gallery panel, status section, and extension manifest exist. The Phase 0 blocking probes pass.
 
 ## Stack
 
@@ -13,7 +13,7 @@ This repository is in Phase 5 built, manual acceptance pending. The artifact sto
 - Node 24 runtime for the MCP server and the extension service. Both ship as bundled ESM or CJS files, because OpenChamber never compiles extensions.
 - `@openchamber/sdk` for the panel, the service contract, and the guest bundler.
 - `@modelcontextprotocol/sdk` for the MCP server.
-- No UI framework. Use the OpenChamber UI kit from `@openchamber/sdk/ui`.
+- No UI framework. The panel uses `applyHostReady` and the app theme tokens; its list rows are custom because the kit has no row actions.
 
 ## Commands
 
@@ -26,7 +26,7 @@ bun test
 bun run build
 ```
 
-`lint` is a typecheck alias until a linter is added. `build` builds the viewer server and runtime, and copies the pinned libraries into `viewer/libraries/`.
+`lint` is a typecheck alias until a linter is added. `build` builds the panel, status, service, MCP, viewer, and runtime, and copies the pinned libraries into `viewer/libraries/`.
 
 ## Hard rules
 
@@ -39,11 +39,13 @@ bun run build
 - The extension asks for the `service` permission only. Do not add `filesystem`, `sessions`, or `prompt` without a documented reason.
 - The service token and view tokens are never logged, never sent to the panel, and never placed in artifact HTML.
 - Do not modify OpenChamber's installation or configuration outside the project folder. The extension and MCP server are installed by the user.
+- `opencode.json` is managed by OpenChamber and is not tracked. The extension bundles `mcp/server.js` but cannot register an MCP server. The user adds it in Settings → MCP. The setup page shows the exact config.
 
 ## Local paths
 
 - Project: `/home/parth/Production/openchamber-canvas`
 - Store: `~/.config/openchamber/artifacts`
+- Built MCP: `/home/parth/Production/openchamber-canvas/mcp/server.js`
 - Installed OpenChamber: `/opt/OpenChamber`
 - OpenChamber data: `~/.config/openchamber`
 

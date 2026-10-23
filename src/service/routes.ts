@@ -25,6 +25,7 @@ export interface ServiceServerOptions {
   storeRoot: string;
   portFile: string;
   viewerEntry: string;
+  mcpPath: string;
   viewerTimeoutMs?: number;
   host?: string;
   port?: number;
@@ -222,6 +223,7 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
         uptime: Date.now() - startedAt,
         store: path.basename(options.storeRoot),
         version: SERVICE_VERSION,
+        mcpPath: options.mcpPath,
       });
       return;
     }

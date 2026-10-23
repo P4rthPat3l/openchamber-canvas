@@ -1,12 +1,13 @@
 node_modules/
 dist/
 panel/main.js
-panel/page.js
 status/main.js
 service/main.js
 mcp/server.js
 viewer/server.js
 viewer/runtime/canvas.js
 viewer/libraries/
+opencode.json
+opencode.json.openchamber.backup
 *.log
 .DS_Store

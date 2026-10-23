@@ -46,6 +46,7 @@ async function main(): Promise<void> {
     storeRoot,
     portFile,
     viewerEntry,
+    mcpPath: path.join(moduleDir, '..', 'mcp', 'server.js'),
     viewerTimeoutMs,
     host: '127.0.0.1',
     port,

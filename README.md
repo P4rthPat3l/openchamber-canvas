@@ -2,7 +2,7 @@
 
 A project gallery for agent-generated artifacts. Each artifact opens in OpenChamber's browser panel, keeps its versions, refreshes in place, and can send user feedback back to the agent.
 
-Status: Phase 5 built. The artifact store, viewer, runtime, MCP server, service, gallery panel, and Work Status section are implemented. Manual install and acceptance are pending.
+Status: Phase 5 built, Phase 6 in progress. The artifact store, viewer, runtime, MCP server, service, gallery panel, and Work Status section are implemented. The extension is installed. The MCP is bundled as a file but must be registered separately in Settings → MCP.
 
 - Plan and feature document: [docs/features/FEAT-001-openchamber-canvas.md](docs/features/FEAT-001-openchamber-canvas.md)
 - Platform research: [docs/research/openchamber-extension-platform.md](docs/research/openchamber-extension-platform.md)
@@ -35,7 +35,7 @@ bun run build
 
 `bun run build` builds `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js`, and copies the pinned libraries into `viewer/libraries/`.
 
-`opencode.json` in the project root is a development MCP config. It points at the built `mcp/server.js`. A fresh clone needs `bun run build` before the MCP can start. OpenChamber installs the real MCP entry through Settings → MCP.
+`opencode.json` is managed by OpenChamber and is not tracked. The extension bundles `mcp/server.js`, but an extension cannot register an MCP server. Add it in Settings → MCP. The setup page in the gallery shows the exact JSON for this install, and `docs/mcp.example.json` is a template.
 
 ## Install
 
@@ -44,8 +44,13 @@ bun run build
 3. Paste `/home/parth/Production/openchamber-canvas`.
 4. Approve the `service` permission.
 5. Open **Canvas** on the right rail.
+6. Open **Canvas → Setup** and copy the MCP config. Add it in Settings → MCP, or paste it into an OpenCode config.
 
-For a normal user install, add the MCP server in Settings → MCP with command `node` and the absolute path to `mcp/server.js`. The project `opencode.json` already does this for development.
+The MCP is a separate process. Without it the gallery can browse, open, export, and show feedback, but the agent cannot publish or update artifacts. `canvas_*` tools appear only after the MCP is registered.
+
+## Verification
+
+The Phase 0 probes pass. The store, viewer, MCP, and service suites pass. The gallery, status section, setup page, and tool card need the installed extension; the manual acceptance run is the remaining check.
 
 ## What it will be
 
@@ -62,11 +67,7 @@ The browser panel does the rendering, so artifacts keep full JavaScript and gain
 
 The gallery and the service are one extension, installed in Settings, Extensions. The agent tools are an MCP server, installed in Settings, MCP. OpenChamber renders the MCP calls through `contributes.tools`, but it does not host the tools. An extension cannot register an agent tool, and an MCP server cannot draw a rail panel. The two are separate installs with separate permissions.
 
-The setup page in the gallery shows the exact MCP JSON and checks the service and MCP heartbeat.
-
-## Before building further
-
-The Phase 0 probes are still pending. They settle the browser panel, sandbox, viewer daemon, CORS, and MCP naming assumptions. Do not start Phase 2 until P1, P4, P6, P8, P9, and P12 pass.
+The setup page in the gallery shows the exact MCP JSON for the installed folder and checks the service and MCP heartbeat.
 
 ## Requirements
 

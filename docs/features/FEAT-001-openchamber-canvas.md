@@ -8,7 +8,7 @@ owner: Parth
 created: 2026-10-23
 last_updated: 2026-10-23
 last_verified_commit: null
-version: 0.8.0
+version: 0.8.1
 tags:
   - openchamber
   - extension
@@ -457,7 +457,7 @@ Phases 1 to 5, 2026-10-23:
 | `src/service/main.ts` | Host service entry, env, signals | `tests/service.test.ts`, built service e2e |
 | `panel/index.html`, `panel/main.ts` | Gallery: list and grid, project/all/archived/trash scopes, detail, versions, actions, setup, remote warning | `tsc`, `bun run build`, manual acceptance |
 | `status/index.html`, `status/main.ts` | Work Status section with the artifact count, latest title, and MCP dot | `tsc`, `bun run build`, manual acceptance |
-| `package.json` `openchamber` block, `opencode.json` | Extension manifest and development MCP config | `parseManifestJson`, manual install |
+| `package.json` `openchamber` block, `docs/mcp.example.json` | Extension manifest and MCP config template | `parseManifestJson`, manual install |
 | `tests/viewer.test.ts` | HTTP, SSE, feedback, state, bundle asset, library injection | `bun test` |
 | `tests/mcp.test.ts` | Stdio tools, publish, read, update, result, archive, file and folder sources | `bun test` |
 | `tests/service.test.ts` | Health, list, view URL error, feedback, archive, restore, trash, export, MCP status | `bun test` |
@@ -1887,6 +1887,8 @@ All blocking probes pass on 2026-10-23. Phase 2 is unblocked.
 
 **Objective:** Close the loop between publish, view, feedback, and update.
 
+**Status:** In progress. The tool card is declared, the setup page shows the exact MCP path and a copyable config, the gallery marks a newly published artifact, and `opencode.json` is no longer tracked because OpenChamber manages it. The 500-artifact measurement and the desktop and web acceptance runs are pending.
+
 **Expected changes:**
 
 - Add the tool card in the manifest and test the link in chat.
@@ -2109,6 +2111,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.6.0 | Phase 3: MCP server with six tools, source readers, heartbeat, viewer integration, 54 tests, built MCP e2e | In progress | Parth |
 | 2026-10-23 | 0.7.0 | Phase 4: extension service, view URLs, feedback, export, MCP status, 60 tests, built service e2e | In progress | Parth |
 | 2026-10-23 | 0.8.0 | Phase 5: gallery panel, full-screen page, Work Status section, archive and trash scopes, remote warning, setup, extension manifest | In progress | Parth |
+| 2026-10-23 | 0.8.1 | Phase 6: exact MCP path and copyable setup config, new-artifact highlight, `opencode.json` untracked | In progress | Parth |
 
 ## 31. Related Resources
 

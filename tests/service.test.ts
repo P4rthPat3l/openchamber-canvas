@@ -92,6 +92,7 @@ async function makeService(): Promise<ServiceFixture> {
     storeRoot: root,
     portFile: path.join(root, '.viewer.json'),
     viewerEntry: path.join(root, 'missing-viewer.js'),
+    mcpPath: path.join(root, 'mcp', 'server.js'),
     viewerTimeoutMs: 200,
   });
   services.push(service);

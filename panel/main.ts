@@ -73,6 +73,7 @@ interface ServiceHealth {
   uptime: number;
   store: string;
   version: string;
+  mcpPath?: string;
 }
 
 interface SetupState {
@@ -135,6 +136,8 @@ let refine = '';
 let setup: SetupState = { service: null, health: null, mcp: null, error: null, loading: false };
 let shell: Shell | null = null;
 let mounted = false;
+let knownIds = new Set<string>();
+let newId: string | null = null;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -305,6 +308,15 @@ async function refresh(): Promise<void> {
       const data = await request<ListResponse>(`/list?${params.toString()}`);
       artifacts = data.artifacts;
     }
+    const incoming = new Set(artifacts.map((artifact) => artifact.id));
+    if (
+      knownIds.size > 0 &&
+      (scope === 'project' || scope === 'all')
+    ) {
+      const fresh = artifacts.find((artifact) => !knownIds.has(artifact.id));
+      if (fresh !== undefined) newId = fresh.id;
+    }
+    knownIds = incoming;
     error = null;
     void updateBadge();
   } catch (caught) {
@@ -322,6 +334,7 @@ async function openDetail(id: string): Promise<void> {
   detail = null;
   deleteArmed = false;
   showSetup = false;
+  if (newId === id) newId = null;
   updateHeader();
   renderBody();
   try {
@@ -341,6 +354,8 @@ function setScope(next: Scope): void {
   selectedId = null;
   detail = null;
   showSetup = false;
+  knownIds = new Set();
+  newId = null;
   updateHeader();
   renderBody();
   void refresh();
@@ -587,6 +602,7 @@ function renderList(): HTMLElement {
       const meta = el('span', 'cv-card-meta');
       meta.append(el('span', undefined, artifact.projectName));
       meta.append(el('span', undefined, `${artifact.versions} versions`));
+      if (artifact.id === newId) meta.append(el('span', 'cv-new', 'New'));
       card.append(kind, title, meta);
       if (artifact.tags.length > 0) {
         const tags = el('span', 'cv-row-meta');
@@ -636,6 +652,7 @@ function renderList(): HTMLElement {
     main.append(title, meta);
 
     const side = el('span', 'cv-row-side');
+    if (artifact.id === newId) side.append(el('span', 'cv-new', 'New'));
     side.append(el('span', undefined, relativeDate(artifact.updatedAt)));
     if (artifact.feedbackCount > 0) {
       side.append(
@@ -982,18 +999,35 @@ function renderSetup(): HTMLElement {
     el(
       'p',
       'cv-setup-note',
-      'Add a local MCP server in Settings → MCP. It gives the agent the publish, update, read, archive, and result tools. The gallery and service work without it for browsing.',
+      'The extension does not register the MCP server. Add it in Settings → MCP, or paste this into an OpenCode config. The gallery and service work without it for browsing; publishing and updating need it.',
     ),
   );
+  const mcpPath = setup.health?.mcpPath ?? '/absolute/path/to/openchamber-canvas/mcp/server.js';
+  const mcpConfig = JSON.stringify(
+    {
+      mcp: {
+        servers: {
+          canvas: {
+            type: 'local',
+            command: ['node', mcpPath],
+          },
+        },
+      },
+    },
+    null,
+    2,
+  );
   const pre = el('pre', 'cv-pre');
-  pre.textContent = [
-    'Settings → MCP → Add server',
-    'Type: local',
-    'Name: canvas',
-    'Command: node',
-    'Arguments: /absolute/path/to/openchamber-canvas/mcp/server.js',
-  ].join('\n');
+  pre.textContent = mcpConfig;
   wrapper.append(pre);
+  wrapper.append(
+    actionButton('Copy MCP config', 'cv-quiet', () =>
+      runAction(async () => {
+        await host.writeClipboard(mcpConfig);
+        await host.toast({ kind: 'success', message: 'MCP config copied.' });
+      }),
+    ),
+  );
   wrapper.append(
     actionButton('Check again', 'cv-quiet', () => {
       void loadSetup();
