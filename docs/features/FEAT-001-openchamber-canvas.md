@@ -8,7 +8,7 @@ owner: Parth
 created: 2026-10-23
 last_updated: 2026-10-23
 last_verified_commit: null
-version: 0.8.1
+version: 0.9.0
 tags:
   - openchamber
   - extension
@@ -32,7 +32,7 @@ related_features: []
 | Field | Details |
 |---|---|
 | Document status | Proposed |
-| Implementation status | Phase 5 built; manual acceptance pending |
+| Implementation status | Phase 5 built; Phase 6 polish in progress |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, MCP server, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -41,7 +41,7 @@ related_features: []
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode MCP client |
 | Feature flag | None in v1 |
-| Last verified | 60 tests pass. Typecheck and build pass. The manifest parses. Built service, MCP, and viewer e2e pass. The gallery install and manual acceptance are pending. |
+| Last verified | 60 tests pass. Typecheck, build, the manifest parse, and the design detector pass. The gallery was redesigned and inspected at rail, page, empty, setup, status, and light-theme states. Built service, MCP, and viewer e2e pass. The installed gallery acceptance is pending. |
 
 ### At a Glance
 
@@ -59,6 +59,12 @@ The feature is built from four parts:
 Both the MCP and the service use the same viewer daemon and the same on-disk store. No OpenChamber core change is required.
 
 The store, view policy, viewer server, runtime, pinned library set, MCP server, extension service, and gallery panel exist. The gallery install and acceptance are pending.
+
+### Design direction
+
+The gallery is a native OpenChamber surface, not a separate visual brand. It uses the app font, theme tokens, 9px radii, 1px borders, and primary color for selection and primary actions. The composition is a master-detail workspace: a flat artifact shelf with kind labels, a persistent inspector on the full-screen page, and a back-controlled inspector on the rail. The signature is the version ladder; the setup is a status-led checklist, not a config dump.
+
+See [PRODUCT.md](../../PRODUCT.md) for product truth and [canvas-gallery.md](../design/canvas-gallery.md) for the surface direction contract.
 
 ### What changed from 0.1
 
@@ -1887,7 +1893,7 @@ All blocking probes pass on 2026-10-23. Phase 2 is unblocked.
 
 **Objective:** Close the loop between publish, view, feedback, and update.
 
-**Status:** In progress. The tool card is declared, the setup page shows the exact MCP path and a copyable config, the gallery marks a newly published artifact, and `opencode.json` is no longer tracked because OpenChamber manages it. The 500-artifact measurement and the desktop and web acceptance runs are pending.
+**Status:** In progress. The tool card is declared, the setup page shows the exact MCP path and a copyable config, the gallery marks a newly published artifact, and `opencode.json` is no longer tracked because OpenChamber manages it. The gallery was redesigned as a native master-detail surface with neutral kind tiles, a version ladder, a quiet empty state, a status-led setup checklist, and a labelled MCP status. The 500-artifact measurement and the desktop and web acceptance runs are pending.
 
 **Expected changes:**
 
@@ -2112,6 +2118,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.7.0 | Phase 4: extension service, view URLs, feedback, export, MCP status, 60 tests, built service e2e | In progress | Parth |
 | 2026-10-23 | 0.8.0 | Phase 5: gallery panel, full-screen page, Work Status section, archive and trash scopes, remote warning, setup, extension manifest | In progress | Parth |
 | 2026-10-23 | 0.8.1 | Phase 6: exact MCP path and copyable setup config, new-artifact highlight, `opencode.json` untracked | In progress | Parth |
+| 2026-10-23 | 0.9.0 | Gallery redesign: native master-detail, neutral kind tiles and labels, version ladder, quiet empty state, setup checklist, labelled MCP status, focus and stale-detail handling | In progress | Parth |
 
 ## 31. Related Resources
 

@@ -2,9 +2,11 @@
 
 A project gallery for agent-generated artifacts. Each artifact opens in OpenChamber's browser panel, keeps its versions, refreshes in place, and can send user feedback back to the agent.
 
-Status: Phase 5 built, Phase 6 in progress. The artifact store, viewer, runtime, MCP server, service, gallery panel, and Work Status section are implemented. The extension is installed. The MCP is bundled as a file but must be registered separately in Settings → MCP.
+Status: Phase 6 polish in progress. The gallery is a native OpenChamber master-detail surface, the setup page shows the exact MCP install, and the Work Status section reports the MCP state. The manual acceptance run is pending.
 
 - Plan and feature document: [docs/features/FEAT-001-openchamber-canvas.md](docs/features/FEAT-001-openchamber-canvas.md)
+- Product truth: [PRODUCT.md](PRODUCT.md)
+- Gallery design direction: [docs/design/canvas-gallery.md](docs/design/canvas-gallery.md)
 - Platform research: [docs/research/openchamber-extension-platform.md](docs/research/openchamber-extension-platform.md)
 - Product research: [docs/research/artifact-product-landscape.md](docs/research/artifact-product-landscape.md)
 - Project conventions for agents: [AGENTS.md](AGENTS.md)
@@ -19,7 +21,7 @@ Status: Phase 5 built, Phase 6 in progress. The artifact store, viewer, runtime,
 - Pinned libraries: Chart.js, D3, and Mermaid, copied by the build with a SHA-256 manifest.
 - MCP server: `publish`, `update`, `list`, `read`, `archive`, and `result`, with `filePath` and `directoryPath` sources, an external-reference scan, and a heartbeat.
 - Extension service: `/health`, `/list`, `/artifact`, `/versions`, `/view-url`, `/feedback`, `/export`, `/mcp-status`, `/archive`, `/favorite`, `/restore`, `/trash`, `/untrash`.
-- Gallery panel: project, all, archived, and trash scopes; search; tags; sort; list and grid; detail; versions; restore; archive; delete; favorite; refine; attach; export; setup; remote warning.
+- Gallery panel: a master-detail artifact shelf with project, all, archived, and trash scopes; search; tags; sort; list and grid; a persistent inspector on the full-screen page; a version ladder; restore; archive; delete; favorite; refine; attach; export; setup; remote warning.
 - Work Status section: artifact count, latest title, and MCP heartbeat dot.
 - Extension manifest: panel, page, status section, service, and Canvas tool card.
 - 60 tests covering storage, update modes, conflicts, traversal, locking, policy, feedback, state, viewer routes, SSE, bundle assets, MCP tools, file and folder sources, service routes, export, and trash.

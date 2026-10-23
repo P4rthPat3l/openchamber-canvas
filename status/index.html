@@ -2,68 +2,43 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Canvas</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-      }
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-        min-height: 100%;
-      }
-      body {
-        font-family: var(--oc-font, system-ui, sans-serif);
-        font-size: 12px;
-        color: var(--oc-fg, CanvasText);
-        background: transparent;
-      }
-      #root {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        padding: 8px 10px;
-      }
-      .cv-status-top {
-        display: flex;
-        align-items: baseline;
-        gap: 6px;
-        min-width: 0;
-      }
-      .cv-status-name {
-        font-weight: 600;
-      }
-      .cv-status-count {
-        color: var(--oc-muted, color-mix(in srgb, CanvasText 55%, transparent));
-        font-family: var(--oc-mono, monospace);
-        font-size: 10px;
-      }
-      .cv-status-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: var(--oc-muted, color-mix(in srgb, CanvasText 35%, transparent));
-        flex: none;
-      }
-      .cv-status-dot[data-live="true"] {
-        background: var(--oc-success, #2e7d32);
-      }
-      .cv-status-title {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        color: var(--oc-muted, color-mix(in srgb, CanvasText 55%, transparent));
-      }
-    </style>
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div id="root">
-      <div class="cv-status-top">
-        <span class="cv-status-name">Canvas</span>
-        <span class="cv-status-count" id="count">…</span>
-        <span class="cv-status-dot" id="mcp"></span>
-        <span class="cv-status-title" id="title">Reading artifacts</span>
+      <div class="cv-status">
+        <span class="cv-status-mark" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="4" />
+            <path d="M8 16v-4M12 16V8M16 16v-6" />
+          </svg>
+        </span>
+        <div class="cv-status-main">
+          <div class="cv-status-head">
+            <span class="cv-status-name">Canvas</span>
+            <span class="cv-status-count" id="count">Reading</span>
+          </div>
+          <div class="cv-status-latest" id="title" aria-live="polite">Checking artifacts</div>
+        </div>
+        <span
+          class="cv-status-connection"
+          id="mcp"
+          role="status"
+          aria-label="MCP not connected"
+          title="MCP not connected"
+        >
+          <span class="cv-status-dot" id="mcp-dot" aria-hidden="true"></span>
+          <span class="cv-status-label" id="mcp-label">MCP</span>
+        </span>
       </div>
     </div>
     <script src="./main.js"></script>

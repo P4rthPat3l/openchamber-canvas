@@ -4,7 +4,7 @@ Feature documentation lives in `docs/features/`. Read the relevant feature docum
 
 ## Status
 
-This repository is in Phase 5 built, Phase 6 in progress. The extension is installed. The artifact store, view policy, viewer server, runtime, pinned libraries, MCP server, extension service, gallery panel, status section, and extension manifest exist. The Phase 0 blocking probes pass.
+This repository is in Phase 5 built, Phase 6 polish in progress. The extension is installed. The artifact store, view policy, viewer server, runtime, pinned libraries, MCP server, extension service, gallery panel, status section, and extension manifest exist. The Phase 0 blocking probes pass.
 
 ## Stack
 
