@@ -41,6 +41,7 @@ bun run build
 - Use `host.storage`, not `localStorage`, for panel preferences. The extension iframe has an opaque origin.
 - Store paths are validated against the store root. No `..`, no symlink escape.
 - The extension asks for the `service` permission only. Do not add `filesystem`, `sessions`, or `prompt` without a documented reason.
+- Bundles run one level below the package root (`mcp/`, `service/`, `viewer/`) while sources run two levels below (`src/<area>`). Paths resolved from `import.meta.url` must work in both, as `src/mcp/version.ts` does. A path that only works from source breaks the installed app at startup.
 - The service token and view tokens are never logged, never sent to the panel, and never placed in artifact HTML.
 - Do not modify OpenChamber's installation or configuration outside the project folder. The extension and MCP server are installed by the user.
 - `opencode.json` is managed by OpenChamber and is not tracked. The extension bundles `mcp/server.js` but cannot register an MCP server. The user adds it in Settings → MCP. The setup page shows the exact config.

@@ -2669,12 +2669,31 @@ async function inspectMcpRegistration(candidates, mcpPath) {
 }
 
 // src/mcp/version.ts
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import * as path7 from "node:path";
 import { fileURLToPath } from "node:url";
-var packageJsonPath = path7.join(path7.dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
-var parsed = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-var MCP_VERSION = typeof parsed.version === "string" ? parsed.version : "0.0.0";
+var FALLBACK_VERSION = "0.0.0";
+var MAX_DEPTH = 4;
+function versionFrom(startDir) {
+  let dir = startDir;
+  for (let depth = 0;depth < MAX_DEPTH; depth += 1) {
+    const candidate = path7.join(dir, "package.json");
+    if (existsSync(candidate)) {
+      try {
+        const parsed = JSON.parse(readFileSync(candidate, "utf8"));
+        if (typeof parsed.version === "string" && parsed.version.length > 0) {
+          return parsed.version;
+        }
+      } catch {}
+    }
+    const parent = path7.dirname(dir);
+    if (parent === dir)
+      break;
+    dir = parent;
+  }
+  return FALLBACK_VERSION;
+}
+var MCP_VERSION = versionFrom(path7.dirname(fileURLToPath(import.meta.url)));
 
 // src/service/routes.ts
 var SERVICE_VERSION = MCP_VERSION;
@@ -2745,11 +2764,11 @@ function requireToken(request, response, token) {
 function parseInteger(value, name) {
   if (value === null || value.length === 0)
     return;
-  const parsed2 = Number(value);
-  if (!Number.isInteger(parsed2) || parsed2 < 1) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
     throw new HttpError(400, "INVALID_REQUEST", `${name} must be a positive integer`);
   }
-  return parsed2;
+  return parsed;
 }
 function isKind2(value) {
   return value !== null && KINDS2.includes(value);

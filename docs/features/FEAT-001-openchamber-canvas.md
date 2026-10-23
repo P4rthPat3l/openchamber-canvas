@@ -2076,7 +2076,7 @@ If OpenChamber ships its own Canvases surface:
 | Decision ID | Status | Decision | Rationale | Alternatives | Date |
 |---|---|---|---|---|---|
 | DEC-001 | Proposed | Global store with a directory per artifact | One gallery can show both project and all-project views without moving files | Per-project store, SQLite | 2026-10-23 |
-| DEC-002 | Proposed | Browser panel is the artifact viewer | It already has annotation, DevTools, capture, and full JavaScript | Extension iframe, file editor | 2026-10-23 |
+| DEC-002 | Accepted | Browser panel is the artifact viewer | It already has annotation, DevTools, capture, and full JavaScript | Extension iframe, file editor | 2026-10-23 |
 | DEC-003 | Proposed | Artifacts are self-contained HTML or a bundle | The viewer CSP blocks CDN scripts and open network | Bundled runtime injection from a CDN | 2026-10-23 |
 | DEC-004 | Proposed | Extension plus MCP, no core patch | Works with the current app and survives updates | Fork OpenChamber, wait for Canvases | 2026-10-23 |
 | DEC-005 | Proposed | Agent-driven auto-open is the default | Works even when the gallery is closed | Gallery auto-open only | 2026-10-23 |
@@ -2090,6 +2090,7 @@ If OpenChamber ships its own Canvases surface:
 | DEC-013 | Proposed | Feedback is a file plus a gallery prompt | Gives the artifact a way back to the agent without a new host API | A new SDK method, a chat message | 2026-10-23 |
 | DEC-014 | Proposed | Live refresh uses SSE from the viewer | The gallery cannot stream from the service, but the view page can | Polling the viewer, manual reload | 2026-10-23 |
 | DEC-015 | Proposed | The store stays open and exportable | A future built-in Canvases can read it | Proprietary database | 2026-10-23 |
+| DEC-016 | Accepted | No inline artifact preview in the gallery panel; `openUrl` to the built-in browser stays the only render path | The panel frame policy allows frames only from its own package, `data:`, and `blob:`; a blob workaround inherits the panel's connect-src and loses the runtime, feedback, SSE reload, storage shim, and library injection, so the preview would be a dead picture | Static blob-iframe preview pane in the detail view, rejected 2026-10-23 by user choice | 2026-10-23 |
 
 ## 28. Open Questions
 
@@ -2168,6 +2169,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.10.0 | SDK UI migration: native buttons/fields/search/selects/menus/lists/badges/banners/empty/spinner/separator controls, host theme/font/radius application without remount, host.storage preferences, panel/status typecheck, sandboxed browser suite AC-037–AC-042 | In progress | Parth |
 | 2026-10-23 | 0.11.0 | MCP setup CTA: service `/mcp-registration` reads the user-layer OpenCode config (v2/v1 entries, comment-tolerant, command-matched), gallery warning CTA opening Setup when Canvas MCP is unregistered/disabled/stale, exact Setup mirror states; uncertainty reports checked:false and never nags | In progress | Parth |
 | 2026-10-23 | 0.11.1 | Dedupe upsert: a changed source under the same `dedupeKey` appends a version instead of being dropped; kind mismatches no longer dedupe; `list.errors` no longer counts the `exports/` directory; hidden bundle files are skipped with a warning; MCP and health versions read `package.json` (0.1.3) | In progress | Parth |
+| 2026-10-23 | 0.11.2 | Version resolution walks up from the running file, so the bundled `service/main.js` and `mcp/server.js` find `package.json` in the installed layout instead of crashing the service with `ENOENT` (0.1.4) | In progress | Parth |
 
 ## 31. Related Resources
 

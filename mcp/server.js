@@ -36778,12 +36778,31 @@ async function notifyViewer(state, input2) {
 import * as path7 from "node:path";
 
 // src/mcp/version.ts
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import * as path6 from "node:path";
 import { fileURLToPath } from "node:url";
-var packageJsonPath = path6.join(path6.dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
-var parsed = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-var MCP_VERSION = typeof parsed.version === "string" ? parsed.version : "0.0.0";
+var FALLBACK_VERSION = "0.0.0";
+var MAX_DEPTH = 4;
+function versionFrom(startDir) {
+  let dir = startDir;
+  for (let depth = 0;depth < MAX_DEPTH; depth += 1) {
+    const candidate = path6.join(dir, "package.json");
+    if (existsSync(candidate)) {
+      try {
+        const parsed = JSON.parse(readFileSync(candidate, "utf8"));
+        if (typeof parsed.version === "string" && parsed.version.length > 0) {
+          return parsed.version;
+        }
+      } catch {}
+    }
+    const parent = path6.dirname(dir);
+    if (parent === dir)
+      break;
+    dir = parent;
+  }
+  return FALLBACK_VERSION;
+}
+var MCP_VERSION = versionFrom(path6.dirname(fileURLToPath(import.meta.url)));
 
 // src/mcp/heartbeat.ts
 var HEARTBEAT_MS = 60000;
@@ -36810,7 +36829,7 @@ import * as path8 from "node:path";
 var MAX_SOURCE_FILE_BYTES = 5 * 1024 * 1024;
 var MAX_SOURCE_BUNDLE_BYTES = 20 * 1024 * 1024;
 var MAX_SOURCE_FILES = 200;
-var MAX_DEPTH = 8;
+var MAX_DEPTH2 = 8;
 var SKIP_DIRECTORIES = new Set(["node_modules", ".git", ".hg", ".svn"]);
 async function resolveExisting(directory, input2) {
   const base = path8.resolve(directory);
@@ -36869,8 +36888,8 @@ async function walk(root, relative2, files, warnings, state) {
       continue;
     }
     if (entry.isDirectory()) {
-      if (childRelative.split("/").length >= MAX_DEPTH) {
-        throw new StoreError("INVALID_PATH", `The bundle is deeper than ${MAX_DEPTH} folders`);
+      if (childRelative.split("/").length >= MAX_DEPTH2) {
+        throw new StoreError("INVALID_PATH", `The bundle is deeper than ${MAX_DEPTH2} folders`);
       }
       await walk(root, childRelative, files, warnings, state);
       continue;
