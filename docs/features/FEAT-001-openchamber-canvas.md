@@ -8,7 +8,7 @@ owner: Parth
 created: 2026-10-23
 last_updated: 2026-10-23
 last_verified_commit: null
-version: 0.6.0
+version: 0.7.0
 tags:
   - openchamber
   - extension
@@ -32,7 +32,7 @@ related_features: []
 | Field | Details |
 |---|---|
 | Document status | Proposed |
-| Implementation status | Phase 3 done; Phase 4 next |
+| Implementation status | Phase 4 done; Phase 5 next |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, MCP server, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -41,7 +41,7 @@ related_features: []
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode MCP client |
 | Feature flag | None in v1 |
-| Last verified | 54 tests pass. Built MCP e2e: publish, view, update, and read. Built viewer e2e: inline runtime, bundle asset, storage, feedback, and theme. Phase 0 blocking probes pass. |
+| Last verified | 60 tests pass. Built service e2e: health, list, view URL, export, and MCP status. Built MCP e2e: publish, view, update, and read. Built viewer e2e: inline runtime, bundle asset, storage, feedback, and theme. Phase 0 blocking probes pass. |
 
 ### At a Glance
 
@@ -58,7 +58,7 @@ The feature is built from four parts:
 
 Both the MCP and the service use the same viewer daemon and the same on-disk store. No OpenChamber core change is required.
 
-The store, view policy, viewer server, runtime, pinned library set, and MCP server exist. The extension panel and service do not. Platform behavior is verified by the Phase 0 probes.
+The store, view policy, viewer server, runtime, pinned library set, MCP server, and extension service exist. The gallery panel and extension manifest do not. Platform behavior is verified by the Phase 0 probes.
 
 ### What changed from 0.1
 
@@ -433,7 +433,7 @@ An artifact is published once and updated in place. Each update appends an immut
 
 ### Existing Artifacts
 
-Phases 1 to 3, 2026-10-23:
+Phases 1 to 4, 2026-10-23:
 
 | Path | What it does | Verification |
 |---|---|---|
@@ -453,17 +453,20 @@ Phases 1 to 3, 2026-10-23:
 | `src/mcp/source.ts` | `filePath` and `directoryPath` readers, external-reference scan | `tests/mcp.test.ts` |
 | `src/mcp/heartbeat.ts` | `.mcp-heartbeat.json` every 60 seconds | `tests/mcp.test.ts` |
 | `src/mcp/server.ts` | Six MCP tools, validation, viewer integration | `tests/mcp.test.ts`, built MCP e2e |
+| `src/service/routes.ts` | Service HTTP API, view URLs, feedback, export, MCP status | `tests/service.test.ts` |
+| `src/service/main.ts` | Host service entry, env, signals | `tests/service.test.ts`, built service e2e |
 | `tests/viewer.test.ts` | HTTP, SSE, feedback, state, bundle asset, library injection | `bun test` |
 | `tests/mcp.test.ts` | Stdio tools, publish, read, update, result, archive, file and folder sources | `bun test` |
+| `tests/service.test.ts` | Health, list, view URL error, feedback, archive, restore, trash, export, MCP status | `bun test` |
 | `tests/feedback.test.ts` | Feedback and runtime state units | `bun test` |
 
 HTML and bundle validation lives in `src/store/index.ts`. The `src/kinds` adapters are deferred until Markdown, image, and PDF exist. Splitting now would add an abstraction with one caller.
 
-Not implemented: `src/service`, `panel`, `status`, and the extension manifest.
+Not implemented: `panel`, `status`, and the extension manifest.
 
 ### Planned Artifacts
 
-The store, policy, viewer, build, and MCP rows are implemented. The service and UI rows are planned. The `src/kinds` row is deferred until a second kind needs its own adapter.
+The store, policy, viewer, build, MCP, and service rows are implemented. The UI rows are planned. The `src/kinds` row is deferred until a second kind needs its own adapter.
 
 | Layer | Responsibility | Planned path | Main symbol | Change type |
 |---|---|---|---|---|
@@ -493,7 +496,7 @@ The store, policy, viewer, build, and MCP rows are implemented. The service and 
 | Tests | Store, kinds, policy units | `tests/store.test.ts`, `tests/policy.test.ts` | Not applicable | Create |
 | Tests | Feedback and state units | `tests/feedback.test.ts` | Not applicable | Create |
 | Tests | Viewer HTTP and SSE | `tests/viewer.test.ts` | Not applicable | Create |
-| Tests | Service integration | `tests/service.test.ts` | Not applicable | Create |
+| Tests | Service HTTP | `tests/service.test.ts` | Not applicable | Create |
 | Tests | MCP stdio | `tests/mcp.test.ts` | Not applicable | Create |
 | Tests | Viewer browser tests | `tests/viewer.spec.ts` | Playwright | Create |
 
@@ -837,9 +840,9 @@ All routes except `/health` require `Authorization: Bearer <OPENCHAMBER_SERVICE_
 | POST | `/archive/:id` | Archive or unarchive | `{ archived: true }` |
 | POST | `/favorite/:id` | Toggle favorite | `{ favorite: true }` |
 | POST | `/restore/:id` | Restore a version as a new version | `{ version: "..." }` |
-| POST | `/export/:id` | Write an export file | `{ path: "..." }` |
-| GET | `/thumb/:id` | Thumbnail as `{ mime, base64 }` | Image data |
-| GET | `/mcp-status` | Last MCP heartbeat | `{ seenAt, version }` |
+| POST | `/export/:id` | Write HTML or a zip bundle | `{ path, format, bytes }` |
+| GET | `/thumb/:id` | 404 until thumbnails exist | Not found |
+| GET | `/mcp-status` | Last MCP heartbeat or null | `{ seenAt, version }` |
 | POST | `/trash/:id` | Move to trash | `{ trashed: true }` |
 | POST | `/untrash/:id` | Restore from trash | `{ restored: true }` |
 
@@ -1838,18 +1841,21 @@ All blocking probes pass on 2026-10-23. Phase 2 is unblocked.
 
 **Objective:** A read API, a viewer proxy, feedback, export, and setup status.
 
+**Status:** Implemented. Routes, view URLs, feedback, HTML and zip export, archive, favorite, restore, trash, and MCP status. 60 tests pass. The built service e2e answered health, list, view URL, export, and MCP status. The service is not registered by an extension manifest yet; that is Phase 5.
+
 **Expected changes:**
 
 - Implement `src/service/main.ts` and `routes.ts`.
 - Read `OPENCHAMBER_SERVICE_PORT` and `OPENCHAMBER_SERVICE_TOKEN`.
 - Answer `/health` with the bearer token.
 - Implement `/list`, `/artifact`, `/versions`, `/view-url`, `/feedback`, `/export`, `/thumb`, `/mcp-status`, `/archive`, `/favorite`, `/restore`, `/trash`, `/untrash`.
-- Bundle to `dist/service/main.js`.
+- Export HTML or a zip bundle with `fflate`. `/thumb` returns 404 until thumbnails exist.
+- Bundle to `service/main.js`.
 - Add HTTP integration tests with a random port.
 
-**Validation:** `bun test tests/service.test.ts`, manual `curl` against a started service.
+**Validation:** `bun run typecheck`, `bun test tests/service.test.ts`, `bun run build`, and the built service e2e.
 
-**Completion criteria:** AC-002 data, AC-004 URL, AC-009, AC-011, AC-014, AC-022, AC-025 pass at the HTTP level.
+**Completion criteria:** AC-002 data, AC-004 URL, AC-009, AC-022, and AC-025 pass at the HTTP level. AC-011 and AC-014 are gallery states and move to Phase 5.
 
 **Rollback:** Remove the service declaration from the manifest. The gallery shows a service error.
 
@@ -2096,6 +2102,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.4.0 | Phase 0 blocking probes pass: P1, P3, P4, P6, P7, P8, P9, and P12. Phase 2 is unblocked | In progress | Parth |
 | 2026-10-23 | 0.5.0 | Phase 2: viewer server, runtime, feedback and state, pinned libraries, 47 tests, built-viewer browser e2e | In progress | Parth |
 | 2026-10-23 | 0.6.0 | Phase 3: MCP server with six tools, source readers, heartbeat, viewer integration, 54 tests, built MCP e2e | In progress | Parth |
+| 2026-10-23 | 0.7.0 | Phase 4: extension service, view URLs, feedback, export, MCP status, 60 tests, built service e2e | In progress | Parth |
 
 ## 31. Related Resources
 
