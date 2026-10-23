@@ -53,6 +53,7 @@
         theme: Object.keys(THEMES)[0] || 'openchamber-dark',
         overrides: {},
         heartbeat: null,
+        registration: { checked: false, registered: false, name: null, disabled: false, commandMatch: false, source: null },
         storage: {},
         actions: [],
         requests: [],
@@ -112,6 +113,7 @@
           mcpPath: '/home/parth/Production/openchamber-canvas/mcp/server.js',
         });
         if (path === '/mcp-status') return json(200, state.heartbeat ? { seenAt: state.heartbeat } : null);
+        if (path === '/mcp-registration') return json(200, state.registration);
         if (path === '/view-url') return json(200, { url: 'http://localhost:4199/view/canvas', expiresAt: now + 60000 });
         if (path.startsWith('/export/')) return json(200, { path: '/tmp/canvas-export.html', format: 'html', bytes: 1810 });
         if (path.startsWith('/favorite/')) {
@@ -203,6 +205,7 @@
           }
         },
         setHeartbeat(value) { state.heartbeat = value; },
+        setRegistration(value) { state.registration = value; },
         setListFailure(value) { state.failList = value; },
         reload() { frame.src = `${surface === 'status' ? '/status/index.html' : '/panel/index.html'}?reload=${Date.now()}`; },
         getState() { return JSON.parse(JSON.stringify(state)); },

@@ -14,6 +14,14 @@ interface ViewUrl { url: string }
 interface ExportResult { path: string }
 interface Health { store: string; mcpPath?: string }
 interface Heartbeat { seenAt: string }
+interface McpRegistration {
+  checked: boolean;
+  registered: boolean;
+  name: string | null;
+  disabled: boolean;
+  commandMatch: boolean;
+  source: string | null;
+}
 type IconName =
   | 'arrow-up-right' | 'copy' | 'download' | 'message'
   | 'history' | 'code' | 'server' | 'terminal' | 'refresh'
@@ -66,6 +74,8 @@ let detailRequest = 0;
 let knownIds: Set<string> | null = null;
 let newId: string | null = null;
 let detailSignature = '';
+let mcpRegistration: McpRegistration | null = null;
+let mcpRequest = 0;
 let app: ReturnType<typeof mountApp> | null = null;
 let inspector: ReturnType<typeof mountInspector> | null = null;
 let setupView: ReturnType<typeof mountSetup> | null = null;
@@ -294,6 +304,33 @@ async function refresh(): Promise<void> {
       paint();
     }
   }
+  void syncMcpRegistration();
+}
+
+async function syncMcpRegistration(): Promise<void> {
+  const owner = ++mcpRequest;
+  let next: McpRegistration | null = null;
+  try {
+    next = await request<McpRegistration>('/mcp-registration');
+  } catch {
+    next = null; // Older service install without the endpoint: fall back to heartbeat-only wording.
+  }
+  if (owner !== mcpRequest) return;
+  mcpRegistration = next;
+  paint();
+}
+
+function mcpCtaState(): { title: string; body: string } | null {
+  const registration = mcpRegistration;
+  if (registration === null || !registration.checked) return null;
+  if (registration.registered && !registration.disabled) return null;
+  if (registration.registered && registration.disabled) {
+    return { title: 'Canvas MCP is disabled', body: 'Enable Canvas in Settings → MCP to let the agent publish and refine artifacts.' };
+  }
+  if (registration.name !== null) {
+    return { title: 'Canvas MCP points at an old command', body: 'The registered command no longer matches this install. Open setup and re-add Canvas in Settings → MCP.' };
+  }
+  return { title: 'Install the Canvas MCP tools', body: 'The agent cannot publish or refine artifacts until Canvas is added in Settings → MCP.' };
 }
 
 async function loadDetail(id: string, focus: boolean): Promise<void> {
@@ -746,14 +783,42 @@ function mountSetup(parent: Element) {
       const [status, health, heartbeat] = await Promise.all([
         host.serviceStatus(), request<Health>('/health'), request<Heartbeat | null>('/mcp-status'),
       ]);
+      let registration: McpRegistration | null = null;
+      try {
+        registration = await request<McpRegistration>('/mcp-registration');
+      } catch {
+        registration = null; // Older service without the endpoint.
+      }
       if (owner !== setupRequest) return;
       extensionBadge.update({ label: status.status === 'ready' ? 'Running' : status.status, tone: status.status === 'ready' ? 'success' : 'warning' });
       store.textContent = `Store: ${health.store}`;
       const seen = heartbeat ? Date.parse(heartbeat.seenAt) : NaN;
       const live = Number.isFinite(seen) && Date.now() - seen < 180_000;
-      mcpBadge.update({ label: live ? 'Connected' : 'Not seen recently', tone: live ? 'success' : 'warning' });
-      mcpNotice.update({ tone: live ? 'success' : 'warning', title: live ? 'Heartbeat received' : 'No recent heartbeat',
-        body: live && heartbeat ? `Last seen ${date(heartbeat.seenAt)}.` : 'Check the local server in Settings → MCP. An idle server may need an agent request to start.' });
+      const reg = registration !== null && registration.checked ? registration : null;
+      if (reg !== null && reg.name === null && !reg.registered) {
+        mcpBadge.update({ label: 'Not installed', tone: 'warning' });
+        mcpNotice.update({ tone: 'warning', title: 'Canvas MCP is not registered',
+          body: 'Add Canvas in Settings → MCP with the path below. The server starts on the first agent request.' });
+      } else if (reg !== null && reg.disabled) {
+        mcpBadge.update({ label: 'Disabled', tone: 'warning' });
+        mcpNotice.update({ tone: 'warning', title: 'Canvas MCP is disabled',
+          body: `Enable Canvas in Settings → MCP${reg.source ? ` (currently registered in ${reg.source})` : ''}.` });
+      } else if (reg !== null && !reg.registered) {
+        mcpBadge.update({ label: 'Old command', tone: 'warning' });
+        mcpNotice.update({ tone: 'warning', title: 'Canvas MCP points at an old command',
+          body: `The registered command no longer matches this install. Re-add Canvas in Settings → MCP with the path below.${reg.source ? ` Currently registered in ${reg.source}.` : ''}` });
+      } else if (reg !== null && reg.registered && !live) {
+        mcpBadge.update({ label: 'Waiting on agent', tone: 'warning' });
+        mcpNotice.update({ tone: 'warning', title: 'Registered — waiting for the first agent request',
+          body: `Canvas runs only while an agent request needs it. Open a chat and ask for an artifact.${reg.source ? ` Registered in ${reg.source}.` : ''}` });
+      } else if (live && heartbeat) {
+        mcpBadge.update({ label: 'Connected', tone: 'success' });
+        mcpNotice.update({ tone: 'success', title: 'Heartbeat received', body: `Last seen ${date(heartbeat.seenAt)}.` });
+      } else {
+        mcpBadge.update({ label: 'Not seen recently', tone: 'warning' });
+        mcpNotice.update({ tone: 'warning', title: 'No recent heartbeat',
+          body: 'Check the local server in Settings → MCP. An idle server may need an agent request to start.' });
+      }
       mcpPath = health.mcpPath ?? '';
       path.replaceChildren();
       if (!mcpPath) path.textContent = 'Restart the extension service to obtain its exact MCP path.';
@@ -801,13 +866,16 @@ function mountApp(root: HTMLElement) {
   const remoteRoot = element('div', notices);
   remoteRoot.hidden = !remote;
   const remoteNotice = mountBanner(remoteRoot, { tone: 'warning', title: 'Remote instance', body: 'Use Copy URL or Export. This browser cannot open the server’s loopback address.' });
+  const mcpCtaRoot = element('div', notices);
+  mcpCtaRoot.hidden = true;
+  const mcpCta = mountBanner(mcpCtaRoot, { tone: 'warning', title: 'Install the Canvas MCP tools', body: mcpCtaState()?.body ?? '', action: { label: 'Open setup', onClick: () => setSetup(true) } });
   const workspace = element('div', root, 'canvas-workspace');
   const library = mountLibrary(workspace);
   const inspectorSlot = element('div', workspace, 'canvas-inspector-slot');
   const placeholderRoot = element('div', inspectorSlot, 'canvas-placeholder');
   const placeholder = mountEmpty(placeholderRoot, { title: 'Select an artifact', body: 'Inspect its versions or ask the agent for a change.' });
-  handles.push(error, remoteNotice, placeholder);
-  return { root, notices, workspace, library, inspectorSlot, placeholderRoot, errorRoot, error,
+  handles.push(error, remoteNotice, mcpCta, placeholder);
+  return { root, notices, workspace, library, inspectorSlot, placeholderRoot, errorRoot, error, mcpCtaRoot, mcpCta,
     dispose: () => { library.dispose(); dispose(handles); root.replaceChildren(); },
   };
 }
@@ -816,6 +884,9 @@ function paint(): void {
   if (!app) return;
   app.errorRoot.hidden = listError === null;
   app.error.update({ body: listError ?? undefined });
+  const cta = mcpCtaState();
+  app.mcpCtaRoot.hidden = cta === null;
+  if (cta !== null) app.mcpCta.update(cta);
   app.workspace.dataset.selected = String(selectedId !== null);
   app.workspace.dataset.empty = String(artifacts.length === 0 && selectedId === null);
   app.library.update();

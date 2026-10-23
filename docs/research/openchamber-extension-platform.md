@@ -91,6 +91,12 @@ The 2.5.1 changelog adds a Browse button on the Extensions page that opens the c
 - A declared `service.entry` is missing.
 - `panel.id` does not match `^[a-z][a-z0-9-]*$`. Single-word ids are valid; excalidraw ships `"id": "excalidraw"`. Every failure in `inspectGuestPackage` (a missing `package.json` in the selected folder included) returns the same `invalid-manifest` code, which the Add dialog shows as one generic "panel.id must be kebab-case" toast. Select the package folder itself, not its parent.
 
+### MCP registration reach
+
+Settings → MCP in OpenChamber 2.5.1 writes entries into the user-layer OpenCode config: `mcp.servers` in the v2 shape (or a legacy v1 `mcp.<name>`), into the file resolved as `OPENCODE_CONFIG`, else `$OPENCODE_CONFIG_DIR` or `$XDG_CONFIG_HOME/opencode` or `~/.config/opencode/opencode.json(c)` (verified in the installed app's `@openchamber/web/server/lib/opencode/mcp.js` and `config-v2.js`). OpenChamber always writes the v2 shape.
+
+A panel cannot read the filesystem, so Canvas's extension service reads those files read-only for the extension (`service/mcp-registration.ts`, `/mcp-registration`): it strips JSONC comments and trailing commas, tolerates raw control characters in strings, matches entries whose `command` ends at the installed `mcp/server.js`, and covers only the user layer. Project-scope registrations live in a project's `.opencode/opencode.json`, which the service cannot attribute to the panel's project, and are out of reach. The MCP heartbeat still answers "is the server alive": the server only runs while an agent request needs it.
+
 ### Lifecycle
 
 | Event | Behavior |

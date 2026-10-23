@@ -32,10 +32,11 @@ Custom CSS is limited to the responsive list/inspector split, section headings, 
 - The grid uses flat tiles, labelled SDK buttons, and the host selection fill. The card body and the Inspect button both open the inspector.
 - The detail uses SDK buttons with decorative icons for Open, Copy URL, Export, favorite, attach, archive, and confirmed deletion. Versions gets a left-aligned heading and count; Ask the agent gets a heading and a labelled field. Favorite is metadata; it is not mixed into the tag badges.
 - Setup uses SDK badges, banners, actions, and code blocks under left-aligned headings with icons. The path wraps only at slashes; JSON scrolls horizontally.
+- The gallery notices carry a warning setup CTA only when the service confirms Canvas MCP is unregistered, disabled, or pointing at an old command. The banner is a mounted SDK banner with an Open setup action; uncertainty, a service failure, or a healthy registration show nothing. The Setup mirror states not installed, disabled, old command, waiting on agent, and connected.
 - The Work Status section uses an SDK badge and native text. The service owns the status; the section is transparent over the host panel.
 
 ## Verification
 
-`bun run test:browser` serves the actual built panel and status entries in an opaque `allow-scripts` iframe with a mock host. It covers AC-037 through AC-042: SDK-only controls, decorative icons inside labelled controls, six official resolved themes plus a host font/radius override, theme-only ready handling, retained draft/focus, control disposal, host.storage persistence, keyboard/menus/dialog, setup, empty, error/retry, grid, 320px rail, 720px wide panel, and 1200px page/setup/empty layouts.
+`bun run test:browser` serves the actual built panel and status entries in an opaque `allow-scripts` iframe with a mock host. It covers AC-037 through AC-042 plus AC-046 and AC-047: SDK-only controls, decorative icons inside labelled controls, six official resolved themes plus a host font/radius override, theme-only ready handling, retained draft/focus, control disposal, host.storage persistence, keyboard/menus/dialog, setup, empty, error/retry, grid, 320px rail, 720px wide panel, and 1200px page/setup/empty layouts, and the MCP registration CTA states.
 
 The suite uses resolved palette snapshots, not a separately handwritten mockup. Installed-app visual acceptance is still required; passing token and geometry tests is not proof that every installed or user-authored palette was inspected.

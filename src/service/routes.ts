@@ -14,6 +14,7 @@ import {
   ensureViewer,
   mintViewUrl,
 } from '../viewer/ensure';
+import { defaultMcpConfigCandidates, inspectMcpRegistration } from './mcp-registration';
 
 const SERVICE_VERSION = '0.1.0';
 const MAX_JSON_BODY = 128 * 1024;
@@ -26,6 +27,8 @@ export interface ServiceServerOptions {
   portFile: string;
   viewerEntry: string;
   mcpPath: string;
+  /** Test hook: URLs of OpenCode configs to inspect instead of the per-env defaults. */
+  mcpConfigCandidates?: readonly string[];
   viewerTimeoutMs?: number;
   host?: string;
   port?: number;
@@ -384,6 +387,12 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
           ? body.format
           : undefined;
       sendJson(response, 200, await exportArtifact(options.store, options.storeRoot, id, version, requestedFormat));
+      return;
+    }
+
+    if (url.pathname === '/mcp-registration' && request.method === 'GET') {
+      const candidates = options.mcpConfigCandidates ?? defaultMcpConfigCandidates();
+      sendJson(response, 200, await inspectMcpRegistration(candidates, options.mcpPath));
       return;
     }
 

@@ -8,6 +8,7 @@ declare global {
     __host: {
       setTheme(name: string, overrides?: Record<string, string>): void;
       setHeartbeat(value: string): void;
+      setRegistration(value: Record<string, unknown>): void;
       setListFailure(value: boolean): void;
       reload(): void;
       getState(): {
@@ -102,6 +103,21 @@ async function waitCanvasReady(frame: Frame): Promise<void> {
 
 async function openOptions(frame: Frame): Promise<void> {
   await frame.getByRole('button', { name: 'Options', exact: true }).click();
+}
+
+async function reloadPanel(page: Page, registration: Record<string, unknown>): Promise<Frame> {
+  await page.evaluate(value => window.__host.setRegistration(value), registration);
+  await page.evaluate(() => window.__host.reload());
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const next = page.frames().find(item => item.url().includes('/panel/index.html?reload='));
+    if (next) {
+      await next.locator('body').waitFor({ state: 'attached' });
+      await waitCanvasReady(next);
+      return next;
+    }
+    await page.waitForTimeout(30);
+  }
+  throw new Error('reloaded panel frame not found');
 }
 
 async function closePage(page: Page): Promise<void> {
@@ -338,6 +354,53 @@ assert.equal(widePanelLayout.overflow, false, 'wide panel overflows at 720px');
 check('AC-041', 'wide panel keeps the library and inspector visible', true);
 await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'panel-wide.png') });
 await closePage(widePanelPage);
+
+// AC-046: the gallery shows an MCP setup CTA only when the service confirms
+// the registration state, and its button opens the existing setup view.
+const mcpPage = await browser.newPage({ viewport: { width: 720, height: 900 } });
+mcpPage.on('pageerror', error => pageErrors.push(error.message));
+frame = await openSurface(mcpPage, 'panel', 620, 900);
+await waitCanvasReady(frame);
+assert.equal(await frame.getByText('Install the Canvas MCP tools').first().isVisible(), false,
+  'setup CTA shown while the service cannot confirm registration');
+check('AC-046a', 'no setup CTA while the service cannot confirm registration', true);
+
+frame = await reloadPanel(mcpPage, { checked: true, registered: false, name: null, disabled: false, commandMatch: false, source: null });
+await frame.getByText('Install the Canvas MCP tools').waitFor();
+await frame.getByRole('button', { name: 'Open setup' }).click();
+await frame.getByRole('heading', { name: 'Set up Canvas' }).waitFor();
+await frame.getByText('Canvas MCP is not registered').waitFor();
+await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'setup-not-installed.png') });
+await frame.getByRole('button', { name: 'Back to gallery' }).click();
+check('AC-046b', 'unregistered service shows the install CTA that opens setup', true);
+
+frame = await reloadPanel(mcpPage, { checked: true, registered: true, name: 'canvas', disabled: false, commandMatch: true, source: null });
+assert.equal(await frame.getByText('Install the Canvas MCP tools').first().isVisible(), false, 'CTA shown on a healthy registration');
+check('AC-046c', 'no setup CTA on a healthy registration', true);
+
+frame = await reloadPanel(mcpPage, { checked: true, registered: true, name: 'canvas', disabled: true, commandMatch: true, source: '/home/parth/.config/opencode/opencode.json' });
+await frame.getByText('Canvas MCP is disabled').waitFor();
+await openOptions(frame);
+await frame.getByRole('menuitem', { name: 'Setup' }).click();
+await frame.getByText('Disabled', { exact: true }).waitFor();
+check('AC-047a', 'setup mirror reports a disabled registration', true);
+
+frame = await reloadPanel(mcpPage, { checked: true, registered: false, name: 'canvas', disabled: false, commandMatch: false, source: '/home/parth/.config/opencode/opencode.json' });
+await frame.getByText('Canvas MCP points at an old command').waitFor();
+await openOptions(frame);
+await frame.getByRole('menuitem', { name: 'Setup' }).click();
+await frame.getByText('Old command', { exact: true }).waitFor();
+check('AC-047b', 'setup mirror reports a mismatched command', true);
+
+frame = await reloadPanel(mcpPage, { checked: true, registered: true, name: 'canvas', disabled: false, commandMatch: true, source: null });
+assert.equal(await frame.getByText('Install the Canvas MCP tools').first().isVisible(), false, 'CTA shown on a healthy-but-idle registration');
+await openOptions(frame);
+await frame.getByRole('menuitem', { name: 'Setup' }).click();
+await frame.getByText('Waiting on agent', { exact: true }).waitFor();
+await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'setup-registration.png') });
+await frame.getByRole('button', { name: 'Back to gallery' }).click();
+check('AC-047c', 'setup mirror distinguishes registered-but-idle from unregistered', true);
+await closePage(mcpPage);
 
 const pagePage = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
 pagePage.on('pageerror', error => pageErrors.push(error.message));

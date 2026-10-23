@@ -20,11 +20,11 @@ Status: Phase 6 SDK UI migration built; installed acceptance pending. The galler
 - Runtime: `window.canvas` with storage, feedback, data, refresh, theme, and live update.
 - Pinned libraries: Chart.js, D3, and Mermaid, copied by the build with a SHA-256 manifest.
 - MCP server: `publish`, `update`, `list`, `read`, `archive`, and `result`, with `filePath` and `directoryPath` sources, an external-reference scan, and a heartbeat.
-- Extension service: `/health`, `/list`, `/artifact`, `/versions`, `/view-url`, `/feedback`, `/export`, `/mcp-status`, `/archive`, `/favorite`, `/restore`, `/trash`, `/untrash`.
-- Gallery panel: a master-detail artifact shelf built from the OpenChamber SDK UI kit, with project, all, archived, and trash scopes; search; tags; sort; list and grid; a persistent inspector on the full-screen page and on wide panels; version actions; restore; archive; delete; favorite; refine; attach; export; setup; remote warning.
+- Extension service: `/health`, `/list`, `/artifact`, `/versions`, `/view-url`, `/feedback`, `/export`, `/mcp-status`, `/mcp-registration`, `/archive`, `/favorite`, `/restore`, `/trash`, `/untrash`.
+- Gallery panel: a master-detail artifact shelf built from the OpenChamber SDK UI kit, with project, all, archived, and trash scopes; search; tags; sort; list and grid; a persistent inspector on the full-screen page and on wide panels; version actions; restore; archive; delete; favorite; refine; attach; export; setup; remote warning; and an MCP setup CTA that reads the OpenCode config registration.
 - Work Status section: artifact count, latest title, and a native MCP state badge.
 - Extension manifest: panel, page, status section, service, and Canvas tool card.
-- 60 tests covering storage, update modes, conflicts, traversal, locking, policy, feedback, state, viewer routes, SSE, bundle assets, MCP tools, file and folder sources, service routes, export, and trash.
+- 67 tests covering storage, update modes, conflicts, traversal, locking, policy, feedback, state, viewer routes, SSE, bundle assets, MCP tools, file and folder sources, service routes, export, MCP registration, and trash.
 
 Run:
 

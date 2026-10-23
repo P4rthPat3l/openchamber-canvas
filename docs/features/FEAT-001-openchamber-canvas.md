@@ -41,7 +41,7 @@ related_features: []
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode MCP client |
 | Feature flag | None in v1 |
-| Last verified | 60 unit tests pass. The browser suite passes AC-037 through AC-042 against the built panel and status entries in an opaque sandbox, with six official resolved themes and a host font/radius override. Typecheck, lint, build, manifest parse, and the design detector pass. Built service, MCP, and viewer e2e pass. Installed-app acceptance is pending. |
+| Last verified | 67 unit tests pass. The browser suite passes AC-037 through AC-042 and AC-046/AC-047 against the built panel and status entries in an opaque sandbox, with six official resolved themes and a host font/radius override. Typecheck, lint, build, manifest parse, and the design detector pass. Built service, MCP, and viewer e2e pass. Installed-app acceptance is pending. |
 
 ### At a Glance
 
@@ -1489,6 +1489,11 @@ Implemented in `a4911b2`. The browser suite in `tests/browser/panel.browser.ts` 
 - **AC-040:** Existing actions remain available in rail, full-screen, and grid views: search, scope, tags, sort, favorite, open, copy URL, export, attach, refine, version open/restore, archive/unarchive, trash/restore, and confirmed deletion. Empty views keep scope navigation reachable. Remote clients keep Copy URL and Export rather than an unusable Open action.
 - **AC-041:** SDK keyboard behavior works for search, lists, selects, and menus. Popups remain inside the smallest supported frame, open toward available space, close on Escape/outside press, and return focus. Loading, service failure/retry, no matches, missing/stale MCP, and setup states use native feedback components. Rail widths of 320px and 360px, a 720px wide panel, and a 1200px page have no horizontal overflow. The 720px panel and the full-screen page show the library and inspector together.
 - **AC-042:** View/sort preferences persist through `host.storage` in the opaque sandbox, without additional capabilities. A failed preference read/write does not block the gallery or overwrite a choice made while the read was pending.
+- **AC-043:** The service exposes `/mcp-registration` answering whether a Canvas MCP entry exists in the user-layer OpenCode config. When no OpenCode config can be read or parsed it reports `checked: false`, and the panel must not show a setup call to action on uncertainty.
+- **AC-044:** The registration check matches an entry by its command pointing at the installed `mcp/server.js`, in either the v2 `mcp.servers` shape or a legacy v1 `mcp` entry, tolerates comments and trailing commas, honors `disabled`/`enabled`, and matches an entry registered under another name.
+- **AC-045:** A `canvas`-named entry whose command differs from the installed path reads as unregistered with the known name, so the UI can say the command is stale.
+- **AC-046:** The gallery shows a warning setup call to action only when the service reports a checked registration that is not registered, is disabled, or points at an old command. The button opens the existing Setup view. A healthy registration, an unchecked state, or a service request failure keep the gallery clean.
+- **AC-047:** The Setup page's MCP mirror separates not installed, disabled, old command, waiting for the first agent request, and connected states instead of a single "Not seen recently" label; when the state cannot be checked it falls back to the heartbeat wording.
 
 Tests carry the AC IDs. `bun run test:browser` exercises the actual built panel and status entrypoints through a sandboxed mock host, not a separately handwritten screenshot page. Theme tests cover six official resolved OpenChamber palettes and a host-supplied font/radius snapshot. Installed-app acceptance remains a separate manual check.
 
@@ -1920,7 +1925,7 @@ The custom redraw in `4656110` was rejected. Reusing the host's colors did not m
 2. Custom CSS now covers the responsive list/detail split, section headings, decorative icons inside labelled SDK controls, flat grid tiles, version metadata rows, setup/status layout, and the native dialog frame. All interactive children are SDK controls. The code does not copy `.oc-sdk-*` markup, import private app React components, or override kit control appearance.
 3. Component handles and application state persist across updates. Service responses feed summary/detail state and then SDK `update` calls. Theme-ready snapshots apply `applyHostReady` without remounting; only directory changes reload data. Inspector, grid, and setup handles are disposed when their view is removed.
 4. View and sort preferences use `host.storage` instead of unavailable `localStorage`. `tsconfig.json` now includes `panel/` and `status/`, and the three pre-existing errors are fixed. No backend contract or manifest permission changed.
-5. `tests/browser/panel.browser.ts` serves the actual built panel and status entries in an opaque `allow-scripts` iframe with a mock host. It checks AC-037 through AC-042, including six official resolved themes, a host font/radius override, theme-only ready handling, retained draft/focus, control disposal, storage persistence, menus, dialog, setup, empty, error/retry, grid, 320px rail, 720px wide panel, and 1200px page layouts. At 720px and wider the panel and page keep the library beside the inspector.
+5. `tests/browser/panel.browser.ts` serves the actual built panel and status entries in an opaque `allow-scripts` iframe with a mock host. It checks AC-037 through AC-042 plus the MCP registration CTA states (AC-046, AC-047), including six official resolved themes, a host font/radius override, theme-only ready handling, retained draft/focus, control disposal, storage persistence, menus, dialog, setup, empty, error/retry, grid, 320px rail, 720px wide panel, and 1200px page layouts. At 720px and wider the panel and page keep the library beside the inspector.
 
 Changed files: `panel/main.ts`, `panel/style.css`, `panel/index.html`, `status/main.ts`, `status/style.css`, `status/index.html`, `tsconfig.json`, `package.json`, `bun.lock`, `tests/browser/host.html`, `tests/browser/panel.browser.ts`, and `tests/fixtures/openchamber-themes.json`. Playwright is a development-only dependency. The browser test uses the system Chrome at `/usr/bin/google-chrome`.
 
@@ -2156,6 +2161,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.8.1 | Phase 6: exact MCP path and copyable setup config, new-artifact highlight, `opencode.json` untracked | In progress | Parth |
 | 2026-10-23 | 0.9.0 | Gallery redesign: native master-detail, neutral kind tiles and labels, version ladder, quiet empty state, setup checklist, labelled MCP status, focus and stale-detail handling | In progress | Parth |
 | 2026-10-23 | 0.10.0 | SDK UI migration: native buttons/fields/search/selects/menus/lists/badges/banners/empty/spinner/separator controls, host theme/font/radius application without remount, host.storage preferences, panel/status typecheck, sandboxed browser suite AC-037–AC-042 | In progress | Parth |
+| 2026-10-23 | 0.11.0 | MCP setup CTA: service `/mcp-registration` reads the user-layer OpenCode config (v2/v1 entries, comment-tolerant, command-matched), gallery warning CTA opening Setup when Canvas MCP is unregistered/disabled/stale, exact Setup mirror states; uncertainty reports checked:false and never nags | In progress | Parth |
 
 ## 31. Related Resources
 
