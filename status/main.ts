@@ -1,87 +1,93 @@
 import { connectHost } from '@openchamber/sdk';
-import { applyHostReady } from '@openchamber/sdk/ui';
-
-interface ArtifactSummary {
-  id: string;
-  title: string;
-}
-
-interface ListResponse {
-  artifacts: ArtifactSummary[];
-  errors: number;
-}
+import { applyHostReady, mountBadge, mountBanner, mountSpinner } from '@openchamber/sdk/ui';
+import type { ListResult } from '../src/store/types';
 
 const host = connectHost();
-const countEl = document.querySelector<HTMLSpanElement>('#count');
-const titleEl = document.querySelector<HTMLSpanElement>('#title');
-const mcpEl = document.querySelector<HTMLSpanElement>('#mcp');
-const mcpDot = document.querySelector<HTMLSpanElement>('#mcp-dot');
-
 let directory: string | null = null;
+let generation = 0;
 let started = false;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+let refreshing = false;
+let ui: ReturnType<typeof mountStatus> | null = null;
 
 async function request<T>(path: string): Promise<T> {
   const response = await host.serviceRequest({ method: 'GET', path });
   if (response.status >= 400) throw new Error(`Canvas service error (${response.status})`);
-  const parsed: unknown = JSON.parse(response.body);
-  return parsed as T;
+  return JSON.parse(response.body) as T;
 }
 
-function render(count: number | null, title: string, live: boolean): void {
-  if (countEl !== null) {
-    countEl.textContent =
-      count === null ? 'offline' : `${count} ${count === 1 ? 'artifact' : 'artifacts'}`;
-  }
-  if (titleEl !== null) titleEl.textContent = title;
-  if (mcpEl !== null) {
-    const label = live ? 'MCP connected' : 'MCP setup needed';
-    mcpEl.setAttribute('aria-label', label);
-    mcpEl.title = label;
-  }
-  if (mcpDot !== null) mcpDot.dataset.live = String(live);
+function mountStatus(root: HTMLElement) {
+  const loading = document.createElement('div');
+  const spinner = mountSpinner(loading, { label: 'Loading artifacts', size: 'sm' });
+  const row = document.createElement('div');
+  row.className = 'canvas-status-row';
+  row.hidden = true;
+  const text = document.createElement('div');
+  text.className = 'canvas-status-text';
+  const count = document.createElement('p');
+  count.className = 'canvas-status-count';
+  const latest = document.createElement('p');
+  latest.className = 'canvas-status-latest';
+  text.append(count, latest);
+  row.append(text);
+  const badge = mountBadge(row, { label: 'MCP not seen', tone: 'warning' });
+  const errorRoot = document.createElement('div');
+  errorRoot.hidden = true;
+  const error = mountBanner(errorRoot, { title: 'Canvas service unavailable', tone: 'error', action: { label: 'Retry', onClick: () => { void refresh(); } } });
+  root.append(loading, row, errorRoot);
+  return { loading, row, count, latest, badge, errorRoot,
+    dispose: () => { spinner.dispose(); badge.dispose(); error.dispose(); root.replaceChildren(); },
+  };
 }
 
 async function refresh(): Promise<void> {
+  const owner = ++generation;
+  refreshing = true;
   try {
     const params = new URLSearchParams({ limit: '200' });
     if (directory !== null) params.set('directory', directory);
-    const data = await request<ListResponse>(`/list?${params.toString()}`);
-    let live = false;
-    try {
-      const heartbeat = await request<Record<string, unknown> | null>('/mcp-status');
-      if (heartbeat !== null && isRecord(heartbeat) && typeof heartbeat.seenAt === 'string') {
-        const seen = Date.parse(heartbeat.seenAt);
-        live = !Number.isNaN(seen) && Date.now() - seen < 3 * 60_000;
-      }
-    } catch {
-      live = false;
-    }
-    const latest = data.artifacts[0];
-    render(data.artifacts.length, latest === undefined ? 'No artifacts in this project' : latest.title, live);
+    const [data, heartbeat] = await Promise.all([
+      request<ListResult>(`/list?${params}`),
+      request<{ seenAt: string } | null>('/mcp-status').catch(() => null),
+    ]);
+    if (owner !== generation || !ui) return;
+    const seen = heartbeat ? Date.parse(heartbeat.seenAt) : NaN;
+    const live = Number.isFinite(seen) && Date.now() - seen < 180_000;
+    ui.count.textContent = `${data.artifacts.length} ${data.artifacts.length === 1 ? 'artifact' : 'artifacts'}`;
+    ui.latest.textContent = data.artifacts[0]?.title ?? 'No artifacts yet';
+    ui.latest.title = ui.latest.textContent;
+    ui.badge.update({ label: live ? 'MCP connected' : 'MCP not seen', tone: live ? 'success' : 'warning' });
+    ui.row.hidden = false;
+    ui.errorRoot.hidden = true;
   } catch {
-    render(null, 'Canvas service unavailable', false);
+    if (owner === generation && ui) { ui.row.hidden = true; ui.errorRoot.hidden = false; }
+  } finally {
+    if (owner === generation) {
+      refreshing = false;
+      if (ui) ui.loading.hidden = true;
+    }
   }
-  await host.setHeight(76).catch(() => undefined);
 }
 
-host.onReady((context) => {
+host.onReady(context => {
   applyHostReady(context, document.documentElement);
-  directory = context.directory;
-  if (!started) {
-    started = true;
-    void refresh();
+  if (started) {
+    if (context.directory !== directory) { directory = context.directory; void refresh(); }
+    return;
   }
+  started = true;
+  directory = context.directory;
+  const root = document.querySelector<HTMLElement>('#root');
+  if (root === null) throw new Error('Canvas status root is missing');
+  ui = mountStatus(root);
+  void host.setHeight(76).catch(() => undefined);
+  void refresh();
 });
-
-host.onDirectory((next) => {
+host.onDirectory(next => {
+  if (next === directory) return;
   directory = next;
   void refresh();
 });
-
-window.setInterval(() => {
-  if (document.visibilityState === 'visible') void refresh();
+const poll = window.setInterval(() => {
+  if (started && !refreshing && document.visibilityState === 'visible') void refresh();
 }, 5000);
+window.addEventListener('pagehide', () => { clearInterval(poll); ui?.dispose(); host.dispose(); });

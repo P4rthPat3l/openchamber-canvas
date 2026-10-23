@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Canvas host probe</title>
+    <style>
+      html, body { margin: 0; background: #202020; color: #ddd; font: 13px system-ui; }
+      body { padding: 20px; display: flex; justify-content: center; box-sizing: border-box; }
+      iframe { display: block; border: 1px solid #555; background: #111; }
+    </style>
+  </head>
+  <body>
+    <script>
+      const THEMES = __THEMES__;
+      const CHANNEL = 'openchamber.sdk';
+      const API_VERSION = 1;
+      const params = new URLSearchParams(location.search);
+      const surface = params.get('surface') || 'panel';
+      const width = Number(params.get('width') || 360);
+      const height = Number(params.get('height') || 900);
+      const directory = '/home/parth/Production/openchamber-canvas';
+      const frame = document.createElement('iframe');
+      frame.src = surface === 'status' ? '/status/index.html' : '/panel/index.html';
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.style.width = `${width}px`;
+      frame.style.height = `${height}px`;
+      document.body.append(frame);
+
+      const now = Date.now();
+      const iso = (minutes) => new Date(now - minutes * 60000).toISOString();
+      const version = (id, minutes, files, bytes, restoredFrom = null) => ({
+        id, createdAt: iso(minutes), bytes, files, title: 'Version', restoredFrom,
+      });
+      const makeMeta = (id, title, kind, tags, favorite, archived, versions, libraries = ['chartjs']) => ({
+        schema: 2, id, title, kind, directory, projectName: 'openchamber-canvas',
+        sessionId: 'ses_canvas_test', tags, favorite,
+        createdAt: versions[0].createdAt, updatedAt: versions[versions.length - 1].createdAt,
+        archivedAt: archived ? iso(5) : null, currentVersion: versions[versions.length - 1].id,
+        pinnedVersion: null, librarySet: 'canvas-2026-10', libraries, versions, live: [],
+        openCount: 2, lastOpenedAt: null, dedupeKey: null,
+      });
+      const metas = {
+        'artifact-revenue': makeMeta('artifact-revenue', 'Revenue by region', 'html',
+          ['dashboard', 'finance'], true, false,
+          [version('v1', 900, 1, 940), version('v2', 300, 2, 1800), version('v3', 12, 2, 1810, 'v2')]),
+        'artifact-onboarding': makeMeta('artifact-onboarding', 'Onboarding flow', 'bundle',
+          ['product'], false, false, [version('v1', 1440, 3, 2400)], ['chartjs', 'd3']),
+        'artifact-notes': makeMeta('artifact-notes', 'Q3 research notes', 'markdown',
+          ['research'], false, true, [version('v1', 2200, 1, 420)], []),
+      };
+      const feedback = { 'artifact-revenue': 2 };
+      const state = {
+        theme: Object.keys(THEMES)[0] || 'openchamber-dark',
+        overrides: {},
+        heartbeat: null,
+        storage: {},
+        actions: [],
+        requests: [],
+        failList: false,
+        trashed: [],
+        metas,
+      };
+      if (params.get('empty') === '1') state.metas = {};
+
+      const themePayload = () => {
+        const selected = THEMES[state.theme] || THEMES[Object.keys(THEMES)[0]];
+        return { mode: selected.mode, tokens: { ...selected.tokens, ...state.overrides } };
+      };
+      const summary = (meta) => ({
+        id: meta.id, title: meta.title, kind: meta.kind, directory: meta.directory,
+        projectName: meta.projectName, updatedAt: meta.updatedAt, versions: meta.versions.length,
+        currentVersion: meta.currentVersion, tags: meta.tags, favorite: meta.favorite,
+        archived: meta.archivedAt !== null, feedbackCount: feedback[meta.id] || 0,
+      });
+      const findMeta = (id) => state.metas[id] || state.trashed.find((item) => item.id === id);
+      const sendReady = () => {
+        const payloadTheme = themePayload();
+        document.body.style.background = payloadTheme.tokens.background;
+        frame.contentWindow.postMessage({
+          channel: CHANNEL, v: API_VERSION, type: 'ready',
+          payload: {
+            theme: payloadTheme, locale: 'en', directory, session: null, surface,
+            connection: { connected: true, account: 'probe' }, settings: {}, item: null,
+          },
+        }, '*');
+      };
+      const reply = (message, payload = {}) => {
+        frame.contentWindow.postMessage({
+          channel: CHANNEL, v: API_VERSION, type: 'result', id: message.id, ok: true, payload,
+        }, '*');
+      };
+      const fail = (message, error = 'Canvas probe failure') => {
+        frame.contentWindow.postMessage({
+          channel: CHANNEL, v: API_VERSION, type: 'result', id: message.id, ok: false, error,
+        }, '*');
+      };
+      const json = (status, data) => ({ status, body: JSON.stringify(data) });
+      const service = (request) => {
+        const url = new URL(request.path, 'http://canvas');
+        const body = request.body ? JSON.parse(request.body) : {};
+        const path = url.pathname;
+        state.requests.push({ method: request.method, path: url.pathname + url.search, body });
+        if (path === '/list') {
+          if (state.failList) return json(503, { error: { message: 'Probe list failure' } });
+          const archived = url.searchParams.get('archived') === 'true';
+          const items = Object.values(state.metas).filter((meta) => archived ? meta.archivedAt !== null : meta.archivedAt === null);
+          return json(200, { artifacts: items.map(summary), errors: 0 });
+        }
+        if (path === '/trash') return json(200, { artifacts: state.trashed.map(summary), errors: 0 });
+        if (path === '/health') return json(200, {
+          ok: true, pid: 42, uptime: 12, store: '/tmp/canvas-probe-store', version: '0.1.0',
+          mcpPath: '/home/parth/Production/openchamber-canvas/mcp/server.js',
+        });
+        if (path === '/mcp-status') return json(200, state.heartbeat ? { seenAt: state.heartbeat } : null);
+        if (path === '/view-url') return json(200, { url: 'http://localhost:4199/view/canvas', expiresAt: now + 60000 });
+        if (path.startsWith('/export/')) return json(200, { path: '/tmp/canvas-export.html', format: 'html', bytes: 1810 });
+        if (path.startsWith('/favorite/')) {
+          const meta = findMeta(path.slice('/favorite/'.length));
+          if (!meta) return json(404, { error: { message: 'Missing artifact' } });
+          meta.favorite = Boolean(body.favorite);
+          return json(200, { favorite: meta.favorite });
+        }
+        if (path.startsWith('/archive/')) {
+          const meta = findMeta(path.slice('/archive/'.length));
+          if (!meta) return json(404, { error: { message: 'Missing artifact' } });
+          meta.archivedAt = body.archived ? new Date().toISOString() : null;
+          return json(200, { archived: meta.archivedAt !== null });
+        }
+        if (path.startsWith('/trash/')) {
+          const meta = findMeta(path.slice('/trash/'.length));
+          if (!meta) return json(404, { error: { message: 'Missing artifact' } });
+          delete state.metas[meta.id];
+          state.trashed.push(meta);
+          return json(200, { trashed: true });
+        }
+        if (path.startsWith('/untrash/')) {
+          const id = path.slice('/untrash/'.length);
+          const index = state.trashed.findIndex((item) => item.id === id);
+          if (index < 0) return json(404, { error: { message: 'Missing artifact' } });
+          const [meta] = state.trashed.splice(index, 1);
+          state.metas[meta.id] = meta;
+          return json(200, { trashed: false });
+        }
+        if (path.startsWith('/restore/')) {
+          const meta = findMeta(path.slice('/restore/'.length));
+          if (!meta) return json(404, { error: { message: 'Missing artifact' } });
+          const next = version(`v${meta.versions.length + 1}`, 0, 2, 1830, body.version);
+          meta.versions.push(next);
+          meta.currentVersion = next.id;
+          meta.updatedAt = next.createdAt;
+          return json(200, { version: next.id });
+        }
+        if (path.startsWith('/artifact/')) {
+          const meta = findMeta(path.slice('/artifact/'.length));
+          if (!meta) return json(404, { error: { message: 'Missing artifact' } });
+          return json(200, meta);
+        }
+        return json(404, { error: { message: `Unknown probe route ${path}` } });
+      };
+
+      addEventListener('message', (event) => {
+        if (event.source !== frame.contentWindow) return;
+        const data = event.data;
+        if (!data || data.channel !== CHANNEL || data.v !== API_VERSION) return;
+        if (data.type === 'hello') { sendReady(); return; }
+        if (data.type === 'storage') {
+          const payload = data.payload;
+          if (payload.op === 'get') {
+            if (!Object.prototype.hasOwnProperty.call(state.storage, payload.key)) return reply(data, { storage: true, op: 'get', found: false });
+            return reply(data, { storage: true, op: 'get', found: true, value: state.storage[payload.key] });
+          }
+          if (payload.op === 'set') {
+            state.storage[payload.key] = payload.value;
+            return reply(data, { storage: true, op: 'set' });
+          }
+          if (payload.op === 'delete') {
+            delete state.storage[payload.key];
+            return reply(data, { storage: true, op: 'delete' });
+          }
+          if (payload.op === 'keys') return reply(data, { storage: true, op: 'keys', keys: Object.keys(state.storage) });
+          return fail(data, 'Unsupported storage operation');
+        }
+        if (data.type === 'service-request') return reply(data, service(data.payload));
+        if (data.type === 'service-status') return reply(data, { status: 'ready' });
+        if (data.type === 'toast') { state.actions.push({ type: 'toast', payload: data.payload }); return reply(data); }
+        if (data.type === 'compose') { state.actions.push({ type: 'compose', payload: data.payload }); return reply(data); }
+        if (data.type === 'clipboard-write') { state.actions.push({ type: 'clipboard', payload: data.payload }); return reply(data); }
+        if (data.type === 'attach') { state.actions.push({ type: 'attach', payload: data.payload }); return reply(data); }
+        if (data.type === 'open-url') { state.actions.push({ type: 'open-url', payload: data.payload }); return reply(data); }
+        if (data.type === 'badge') { state.actions.push({ type: 'badge', payload: data.payload }); return reply(data); }
+        if (data.type === 'resize') { state.actions.push({ type: 'resize', payload: data.payload }); return reply(data); }
+        if (data.type === 'open-surface') { state.actions.push({ type: 'open-surface', payload: data.payload }); return reply(data); }
+        if (data.type === 'set-badge' || data.type === 'set-status') return reply(data);
+        fail(data, `Unsupported probe message ${data.type}`);
+      });
+
+      window.__host = {
+        setTheme(name, overrides) {
+          if (THEMES[name]) {
+            state.theme = name;
+            state.overrides = overrides || {};
+            sendReady();
+          }
+        },
+        setHeartbeat(value) { state.heartbeat = value; },
+        setListFailure(value) { state.failList = value; },
+        reload() { frame.src = `${surface === 'status' ? '/status/index.html' : '/panel/index.html'}?reload=${Date.now()}`; },
+        getState() { return JSON.parse(JSON.stringify(state)); },
+        getFrame() { return frame; },
+      };
+    </script>
+  </body>
+</html>

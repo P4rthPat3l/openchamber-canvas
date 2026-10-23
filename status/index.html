@@ -7,40 +7,7 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <div id="root">
-      <div class="cv-status">
-        <span class="cv-status-mark" aria-hidden="true">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect x="3" y="3" width="18" height="18" rx="4" />
-            <path d="M8 16v-4M12 16V8M16 16v-6" />
-          </svg>
-        </span>
-        <div class="cv-status-main">
-          <div class="cv-status-head">
-            <span class="cv-status-name">Canvas</span>
-            <span class="cv-status-count" id="count">Reading</span>
-          </div>
-          <div class="cv-status-latest" id="title" aria-live="polite">Checking artifacts</div>
-        </div>
-        <span
-          class="cv-status-connection"
-          id="mcp"
-          role="status"
-          aria-label="MCP not connected"
-          title="MCP not connected"
-        >
-          <span class="cv-status-dot" id="mcp-dot" aria-hidden="true"></span>
-          <span class="cv-status-label" id="mcp-label">MCP</span>
-        </span>
-      </div>
-    </div>
+    <div id="root" aria-live="polite"></div>
     <script src="./main.js"></script>
   </body>
 </html>
