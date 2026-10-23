@@ -2,7 +2,7 @@
 
 A project gallery for agent-generated artifacts. Each artifact opens in OpenChamber's browser panel, keeps its versions, refreshes in place, and can send user feedback back to the agent.
 
-Status: Phase 4 done. The artifact store, view policy, viewer server, runtime, feedback and state, pinned libraries, MCP server, and extension service are implemented and tested. Phase 5, the gallery panel and extension manifest, is next.
+Status: Phase 5 built. The artifact store, viewer, runtime, MCP server, service, gallery panel, and Work Status section are implemented. Manual install and acceptance are pending.
 
 - Plan and feature document: [docs/features/FEAT-001-openchamber-canvas.md](docs/features/FEAT-001-openchamber-canvas.md)
 - Platform research: [docs/research/openchamber-extension-platform.md](docs/research/openchamber-extension-platform.md)
@@ -18,7 +18,10 @@ Status: Phase 4 done. The artifact store, view policy, viewer server, runtime, f
 - Runtime: `window.canvas` with storage, feedback, data, refresh, theme, and live update.
 - Pinned libraries: Chart.js, D3, and Mermaid, copied by the build with a SHA-256 manifest.
 - MCP server: `publish`, `update`, `list`, `read`, `archive`, and `result`, with `filePath` and `directoryPath` sources, an external-reference scan, and a heartbeat.
-- Extension service: `/health`, `/list`, `/artifact`, `/versions`, `/view-url`, `/feedback`, `/export`, `/mcp-status`, `/archive`, `/favorite`, `/restore`, `/trash`, and `/untrash`.
+- Extension service: `/health`, `/list`, `/artifact`, `/versions`, `/view-url`, `/feedback`, `/export`, `/mcp-status`, `/archive`, `/favorite`, `/restore`, `/trash`, `/untrash`.
+- Gallery panel: project, all, archived, and trash scopes; search; tags; sort; list and grid; detail; versions; restore; archive; delete; favorite; refine; attach; export; setup; remote warning.
+- Work Status section: artifact count, latest title, and MCP heartbeat dot.
+- Extension manifest: panel, page, status section, service, and Canvas tool card.
 - 60 tests covering storage, update modes, conflicts, traversal, locking, policy, feedback, state, viewer routes, SSE, bundle assets, MCP tools, file and folder sources, service routes, export, and trash.
 
 Run:
@@ -30,9 +33,19 @@ bun test
 bun run build
 ```
 
-`bun run build` builds `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js`, and copies the pinned libraries into `viewer/libraries/`.
+`bun run build` builds `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js`, and copies the pinned libraries into `viewer/libraries/`.
 
 `opencode.json` in the project root is a development MCP config. It points at the built `mcp/server.js`. A fresh clone needs `bun run build` before the MCP can start. OpenChamber installs the real MCP entry through Settings → MCP.
+
+## Install
+
+1. Run `bun run build`.
+2. Open Settings → Extensions → Add.
+3. Paste `/home/parth/Production/openchamber-canvas`.
+4. Approve the `service` permission.
+5. Open **Canvas** on the right rail.
+
+For a normal user install, add the MCP server in Settings → MCP with command `node` and the absolute path to `mcp/server.js`. The project `opencode.json` already does this for development.
 
 ## What it will be
 

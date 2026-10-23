@@ -8,7 +8,7 @@ owner: Parth
 created: 2026-10-23
 last_updated: 2026-10-23
 last_verified_commit: null
-version: 0.7.0
+version: 0.8.0
 tags:
   - openchamber
   - extension
@@ -32,7 +32,7 @@ related_features: []
 | Field | Details |
 |---|---|
 | Document status | Proposed |
-| Implementation status | Phase 4 done; Phase 5 next |
+| Implementation status | Phase 5 built; manual acceptance pending |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, MCP server, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -41,7 +41,7 @@ related_features: []
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode MCP client |
 | Feature flag | None in v1 |
-| Last verified | 60 tests pass. Built service e2e: health, list, view URL, export, and MCP status. Built MCP e2e: publish, view, update, and read. Built viewer e2e: inline runtime, bundle asset, storage, feedback, and theme. Phase 0 blocking probes pass. |
+| Last verified | 60 tests pass. Typecheck and build pass. The manifest parses. Built service, MCP, and viewer e2e pass. The gallery install and manual acceptance are pending. |
 
 ### At a Glance
 
@@ -58,7 +58,7 @@ The feature is built from four parts:
 
 Both the MCP and the service use the same viewer daemon and the same on-disk store. No OpenChamber core change is required.
 
-The store, view policy, viewer server, runtime, pinned library set, MCP server, and extension service exist. The gallery panel and extension manifest do not. Platform behavior is verified by the Phase 0 probes.
+The store, view policy, viewer server, runtime, pinned library set, MCP server, extension service, and gallery panel exist. The gallery install and acceptance are pending.
 
 ### What changed from 0.1
 
@@ -433,7 +433,7 @@ An artifact is published once and updated in place. Each update appends an immut
 
 ### Existing Artifacts
 
-Phases 1 to 4, 2026-10-23:
+Phases 1 to 5, 2026-10-23:
 
 | Path | What it does | Verification |
 |---|---|---|
@@ -455,6 +455,9 @@ Phases 1 to 4, 2026-10-23:
 | `src/mcp/server.ts` | Six MCP tools, validation, viewer integration | `tests/mcp.test.ts`, built MCP e2e |
 | `src/service/routes.ts` | Service HTTP API, view URLs, feedback, export, MCP status | `tests/service.test.ts` |
 | `src/service/main.ts` | Host service entry, env, signals | `tests/service.test.ts`, built service e2e |
+| `panel/index.html`, `panel/main.ts` | Gallery: list and grid, project/all/archived/trash scopes, detail, versions, actions, setup, remote warning | `tsc`, `bun run build`, manual acceptance |
+| `status/index.html`, `status/main.ts` | Work Status section with the artifact count, latest title, and MCP dot | `tsc`, `bun run build`, manual acceptance |
+| `package.json` `openchamber` block, `opencode.json` | Extension manifest and development MCP config | `parseManifestJson`, manual install |
 | `tests/viewer.test.ts` | HTTP, SSE, feedback, state, bundle asset, library injection | `bun test` |
 | `tests/mcp.test.ts` | Stdio tools, publish, read, update, result, archive, file and folder sources | `bun test` |
 | `tests/service.test.ts` | Health, list, view URL error, feedback, archive, restore, trash, export, MCP status | `bun test` |
@@ -462,11 +465,11 @@ Phases 1 to 4, 2026-10-23:
 
 HTML and bundle validation lives in `src/store/index.ts`. The `src/kinds` adapters are deferred until Markdown, image, and PDF exist. Splitting now would add an abstraction with one caller.
 
-Not implemented: `panel`, `status`, and the extension manifest.
+None for v1. Markdown, image, PDF, and data kinds are v1.1 or v2. The `src/kinds` adapters and the `tests/viewer.spec.ts` browser suite are deferred.
 
 ### Planned Artifacts
 
-The store, policy, viewer, build, MCP, and service rows are implemented. The UI rows are planned. The `src/kinds` row is deferred until a second kind needs its own adapter.
+The store, policy, viewer, build, MCP, service, and UI rows are implemented. The `src/kinds` row is deferred until a second kind needs its own adapter.
 
 | Layer | Responsibility | Planned path | Main symbol | Change type |
 |---|---|---|---|---|
@@ -487,11 +490,11 @@ The store, policy, viewer, build, MCP, and service rows are implemented. The UI 
 | MCP | Ensure and talk to the viewer | `src/viewer/ensure.ts` | `ensureViewer` | Create |
 | Service | Host service entry | `src/service/main.ts` | `main` | Create |
 | Service | `/health`, `/list`, `/view-url`, `/feedback`, `/export` | `src/service/routes.ts` | `serviceRoutes` | Create |
-| UI | Gallery panel | `panel/index.html`, `panel/main.ts` | `mountGallery` | Create |
-| UI | Full-screen page | `panel/page.html`, `panel/page.ts` | `mountGalleryPage` | Create |
-| UI | Work Status section | `status/index.html`, `status/main.ts` | `mountStatus` | Create |
-| UI | List, filter, detail, versions, setup | `panel/components/*` | `ArtifactList`, `ProjectFilter`, `VersionList` | Create |
-| UI | Browser open action | `panel/open.ts` | `openArtifact` | Create |
+| UI | Gallery panel | `panel/index.html`, `panel/main.ts` | `mountShell`, `renderBody` | Create |
+| UI | Full-screen page | `page: true` reuses `panel/index.html` | `ctx.surface === "page"` | Create |
+| UI | Work Status section | `status/index.html`, `status/main.ts` | `refresh` | Create |
+| UI | List, filter, detail, versions, setup, scopes | `panel/main.ts` | `renderList`, `renderDetail`, `renderSetup` | Create |
+| UI | Browser open action | `panel/main.ts` | `openArtifact` | Create |
 | Manifest | Extension declaration | `package.json` `openchamber` block | `contributes` | Create |
 | Tests | Store, kinds, policy units | `tests/store.test.ts`, `tests/policy.test.ts` | Not applicable | Create |
 | Tests | Feedback and state units | `tests/feedback.test.ts` | Not applicable | Create |
@@ -504,7 +507,7 @@ The store, policy, viewer, build, MCP, and service rows are implemented. The UI 
 
 | Path or area | Classification | Rule |
 |---|---|---|
-| `panel/main.js`, `panel/page.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js` | Generated | Shipped built because OpenChamber never compiles extensions |
+| `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js` | Generated | Shipped built because OpenChamber never compiles extensions |
 | `viewer/libraries/` | Generated and pinned | Built by `scripts/build.ts` from the exact npm versions; `manifest.json` records bytes and SHA-256; the viewer verifies each file at startup |
 | `src/viewer/policy.ts` | Restricted | Changes need a security review and the SEC-001 test |
 | `src/viewer/runtime/canvas.ts` | Restricted | Runs inside the artifact origin; no secrets |
@@ -1863,18 +1866,20 @@ All blocking probes pass on 2026-10-23. Phase 2 is unblocked.
 
 **Objective:** The user can browse, search, open, version, export, and delete artifacts.
 
+**Status:** Built. The panel, full-screen page, Work Status section, archive and trash scopes, remote warning, setup view, keyboard list navigation, `/` search focus, and extension manifest. Typecheck and build pass. The manifest parses. Manual install and acceptance are pending.
+
 **Expected changes:**
 
-- Build the panel with the UI kit.
-- Add the project filter, search, tag filter, sort, list and grid views, detail, versions, setup, empty, loading, and error states.
-- Add Open, Copy URL, Export, Attach, Copy session id, Refine, Versions, Restore, Archive, Delete, and Favorite actions.
+- Build the panel with `applyHostReady` and the app tokens.
+- Add the project, all, archived, and trash scopes; search, tag filter, sort, list and grid views, detail, versions, setup, empty, loading, and error states.
+- Add Open, Copy URL, Export, Attach, Copy session id, Refine, Versions, Restore, Archive, Unarchive, Delete, and Favorite actions.
 - Add keyboard navigation and accessible names.
 - Wire `serviceRequest`, `openUrl`, `compose`, `attach`, and `setBadge`.
 - Add the full-screen page and the Work Status section.
 
-**Validation:** Install from the folder, run the manual acceptance steps 1 to 15.
+**Validation:** `bun run typecheck`, `bun test`, `bun run build`, `parseManifestJson`, and the manual acceptance run after installing the folder.
 
-**Completion criteria:** AC-002, AC-003, AC-009, AC-010, AC-011, AC-013, AC-022, AC-024, AC-025, AC-026, AC-032 pass.
+**Completion criteria:** Code complete. Manual acceptance pending. AC-002, AC-003, AC-009, AC-010, AC-011, AC-013, AC-014, AC-022, AC-024, AC-025, AC-026, and AC-032 are covered. AC-027 is declared in the manifest; the chat card needs the installed extension. AC-005's agent browser path still needs the agent web tool.
 
 **Rollback:** Disable or remove the extension. Artifacts remain in the store.
 
@@ -2103,6 +2108,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.5.0 | Phase 2: viewer server, runtime, feedback and state, pinned libraries, 47 tests, built-viewer browser e2e | In progress | Parth |
 | 2026-10-23 | 0.6.0 | Phase 3: MCP server with six tools, source readers, heartbeat, viewer integration, 54 tests, built MCP e2e | In progress | Parth |
 | 2026-10-23 | 0.7.0 | Phase 4: extension service, view URLs, feedback, export, MCP status, 60 tests, built service e2e | In progress | Parth |
+| 2026-10-23 | 0.8.0 | Phase 5: gallery panel, full-screen page, Work Status section, archive and trash scopes, remote warning, setup, extension manifest | In progress | Parth |
 
 ## 31. Related Resources
 

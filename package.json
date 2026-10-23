@@ -5,6 +5,41 @@
   "type": "module",
   "description": "A project gallery for agent-generated artifacts in OpenChamber.",
   "license": "MIT",
+  "openchamber": {
+    "apiVersion": 1,
+    "engines": {
+      "openchamber": ">=2.5.1"
+    },
+    "contributes": {
+      "panel": {
+        "id": "canvas",
+        "name": "Canvas",
+        "icon": "artboard",
+        "entry": "panel/index.html"
+      },
+      "page": true,
+      "statusSection": {
+        "entry": "status/index.html",
+        "title": "Canvas",
+        "height": 76,
+        "requiresProject": true
+      },
+      "service": {
+        "entry": "service/main.js",
+        "runtime": "host"
+      },
+      "tools": [
+        {
+          "match": "mcp.canvas.*",
+          "name": "Canvas",
+          "icon": "artboard",
+          "title": "{input.title}",
+          "subtitle": "{output.kind} v{output.version}",
+          "output": "markdown"
+        }
+      ]
+    }
+  },
   "engines": {
     "bun": ">=1.4.0",
     "node": ">=24.0.0"
@@ -24,6 +59,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
+    "@openchamber/sdk": "2.5.1",
     "fflate": "0.8.3",
     "zod": "4.6.7"
   }

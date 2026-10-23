@@ -374,6 +374,42 @@ export class ArtifactStore {
     return { artifacts: artifacts.slice(0, limit), errors };
   }
 
+  async listTrash(): Promise<ArtifactSummary[]> {
+    await this.ensureInit();
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(this.trashRoot, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const artifacts: ArtifactSummary[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const raw = await readJson(path.join(this.trashRoot, entry.name, 'meta.json'));
+        const meta = parseMeta(raw);
+        artifacts.push({
+          id: meta.id,
+          title: meta.title,
+          kind: meta.kind,
+          directory: meta.directory,
+          projectName: meta.projectName,
+          updatedAt: meta.updatedAt,
+          versions: meta.versions.length,
+          currentVersion: meta.currentVersion,
+          tags: meta.tags,
+          favorite: meta.favorite,
+          archived: meta.archivedAt !== null,
+          feedbackCount: 0,
+        });
+      } catch {
+        continue;
+      }
+    }
+    artifacts.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return artifacts;
+  }
+
   async archive(id: string, archived: boolean): Promise<ArtifactMeta> {
     return this.updateMeta(id, (meta, now) => ({
       ...meta,

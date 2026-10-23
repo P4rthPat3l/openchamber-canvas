@@ -4,7 +4,7 @@ Feature documentation lives in `docs/features/`. Read the relevant feature docum
 
 ## Status
 
-This repository is in Phase 4 done, Phase 5 next. The artifact store, view policy, viewer server, runtime, pinned libraries, MCP server, and extension service exist. The Phase 0 blocking probes pass: P1, P4, P6, P8, P9, and P12.
+This repository is in Phase 5 built, manual acceptance pending. The artifact store, view policy, viewer server, runtime, pinned libraries, MCP server, extension service, gallery panel, status section, and extension manifest exist. The Phase 0 blocking probes pass.
 
 ## Stack
 

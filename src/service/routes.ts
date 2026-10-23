@@ -349,6 +349,11 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
       return;
     }
 
+    if (url.pathname === '/trash' && request.method === 'GET') {
+      sendJson(response, 200, { artifacts: await options.store.listTrash() });
+      return;
+    }
+
     const trashMatch = /^\/trash\/([^/]+)$/.exec(url.pathname);
     if (trashMatch !== null && request.method === 'POST') {
       const id = decode(trashMatch[1] ?? '');

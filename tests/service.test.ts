@@ -199,6 +199,8 @@ describe('canvas service', () => {
     const trashed = await postJson(fixture, `/trash/${id}`, {});
     expect(trashed.status).toBe(200);
     expect((await get(fixture, `/artifact/${id}`)).status).toBe(404);
+    const trashList = await get(fixture, '/trash');
+    expect(((await trashList.json()) as { artifacts: unknown[] }).artifacts).toHaveLength(1);
     const untrashed = await postJson(fixture, `/untrash/${id}`, {});
     expect(untrashed.status).toBe(200);
     expect((await get(fixture, `/artifact/${id}`)).status).toBe(200);
