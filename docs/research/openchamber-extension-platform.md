@@ -89,7 +89,7 @@ The 2.5.1 changelog adds a Browse button on the Extensions page that opens the c
 - A declared entry HTML file or its relative scripts are missing.
 - `panel.icon` names an `.svg` that is missing.
 - A declared `service.entry` is missing.
-- `panel.id` is not kebab-case, or a path escapes the package.
+- `panel.id` does not match `^[a-z][a-z0-9-]*$`. Single-word ids are valid; excalidraw ships `"id": "excalidraw"`. Every failure in `inspectGuestPackage` (a missing `package.json` in the selected folder included) returns the same `invalid-manifest` code, which the Add dialog shows as one generic "panel.id must be kebab-case" toast. Select the package folder itself, not its parent.
 
 ### Lifecycle
 
@@ -400,7 +400,7 @@ Findings:
 - The default SDK action is a tinted button, not Canvas's custom solid primary fill. Fields, buttons, triggers, and menus have app-owned depth and theme-specific treatment. Layout stays flat; status banners use a tint without a border. Focus uses the native control treatment, not an additional Canvas ring.
 - `applyHostReady` supplies surface/foreground pairs and computed `--oc-primary-text`, `--oc-success-text`, `--oc-warning-text`, `--oc-error-text`, and `--oc-info-text`. Base accent/status colors are fills, not interchangeable text colors. Selection uses selection tokens, not primary.
 - Apply every ready snapshot, but do not rebuild the screen for a theme-only or session-only snapshot. Keep mounted fields, drafts, focus, selection, and request state intact.
-- The kit's `mountList` supports title, subtitle, leading text, meta, badge, and selection. It has no arbitrary row-action slot or grid-card API. The kit also has no public dialog primitive or icon-button property. Those limits do not justify recreating supported controls. Compose unsupported layout around real SDK buttons; keep the existing native dialog with SDK actions.
+- The kit's `mountList` supports title, subtitle, leading text, meta, badge, and selection. It has no arbitrary row-action slot or grid-card API. The kit also has no public dialog primitive or icon-button property. Those limits do not justify recreating supported controls. Compose unsupported layout around real SDK buttons, and use decorative inline SVG icons inside labelled SDK controls where an icon helps; keep the existing native dialog with SDK actions.
 - Guest storage is `host.storage`, not browser `localStorage`. The latter is unavailable under the extension's opaque-origin sandbox.
 - At audit time, `tsconfig.json` omitted `panel/` and `status/`. A disposable extended-config check found two nullable-root errors and one SVG-versus-HTMLElement error in `panel/main.ts`; the ordinary typecheck had not checked these files.
 
@@ -408,6 +408,6 @@ Probe result: a disposable browser probe using the installed SDK in an `allow-sc
 
 ### Resolution
 
-Commit `a4911b2` implements the migration. The panel, setup view, and Work Status section mount `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountBadge`, `mountBanner`, `mountEmpty`, `mountSpinner`, and `mountSeparator`. Custom CSS is limited to composition the kit lacks. View/sort preferences use `host.storage`; `panel/` and `status/` are in `tsconfig.json`; the three errors are fixed.
+Commit `a4911b2` implements the migration. The panel, setup view, and Work Status section mount `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountBadge`, `mountBanner`, `mountEmpty`, and `mountSpinner`. Decorative inline SVG icons sit inside labelled controls and custom section headings. Custom CSS is limited to composition the kit lacks. View/sort preferences use `host.storage`; `panel/` and `status/` are in `tsconfig.json`; the three errors are fixed.
 
-`tests/browser/panel.browser.ts` serves the built panel and status entries in an opaque iframe with a mock host. It verifies AC-037 through AC-042, six official resolved palette snapshots, a host font/radius override, theme-only snapshots without refetch or remount, retained draft/focus, disposal, menus, dialog, setup, empty, error/retry, grid, 320px rail, and 1200px page/setup/empty layouts. `bun run test:browser` is the entry point. Installed-app visual acceptance remains pending.
+`tests/browser/panel.browser.ts` serves the built panel and status entries in an opaque iframe with a mock host. It verifies AC-037 through AC-042, six official resolved palette snapshots, a host font/radius override, theme-only snapshots without refetch or remount, retained draft/focus, disposal, menus, dialog, setup, empty, error/retry, grid, 320px rail, 720px wide panel, and 1200px page/setup/empty layouts. `bun run test:browser` is the entry point. Installed-app visual acceptance remains pending.
