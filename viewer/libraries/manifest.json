@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "set": "canvas-2026-10",
+  "libraries": {
+    "chartjs": {
+      "file": "chartjs.js",
+      "bytes": 210082,
+      "sha256": "87364cc2b2a76a6684929e7d6b80b18a897794db38400caff1fcf1791c6925d2"
+    },
+    "d3": {
+      "file": "d3.js",
+      "bytes": 279706,
+      "sha256": "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"
+    },
+    "mermaid": {
+      "file": "mermaid.js",
+      "bytes": 5494801,
+      "sha256": "a8a6a6f805b074a8261a2825c86f99c8054acb3b35f50bb7e24a4f9f2c3c3b9f"
+    }
+  }
+}
