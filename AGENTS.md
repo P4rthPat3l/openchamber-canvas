@@ -4,7 +4,7 @@ Feature documentation lives in `docs/features/`. Read the relevant feature docum
 
 ## Status
 
-This repository is in Phase 5 built, Phase 6 polish in progress. The extension is installed. The artifact store, view policy, viewer server, runtime, pinned libraries, MCP server, extension service, gallery panel, status section, and extension manifest exist. The Phase 0 blocking probes pass.
+This repository is in Phase 5 built, Phase 6 SDK UI migration built. The extension is installed. The artifact store, view policy, viewer server, runtime, pinned libraries, MCP server, extension service, gallery panel, status section, and extension manifest exist. The Phase 0 blocking probes pass. Installed-app acceptance of the SDK UI migration is pending.
 
 ## Stack
 
@@ -13,7 +13,7 @@ This repository is in Phase 5 built, Phase 6 polish in progress. The extension i
 - Node 24 runtime for the MCP server and the extension service. Both ship as bundled ESM or CJS files, because OpenChamber never compiles extensions.
 - `@openchamber/sdk` for the panel, the service contract, and the guest bundler.
 - `@modelcontextprotocol/sdk` for the MCP server.
-- No UI framework. The panel uses `applyHostReady` and the app theme tokens; its list rows are custom because the kit has no row actions.
+- No UI framework. Mount the public `@openchamber/sdk/ui` components for buttons, fields, search, selects, menus, lists, badges, banners, empty states, spinners, and separators. Custom CSS and plain HTML are only for composition the installed kit lacks: responsive split, grid, version metadata, setup/status layout, and the native dialog frame.
 
 ## Commands
 
@@ -23,10 +23,11 @@ Phase 1 commands:
 bun run typecheck
 bun run lint
 bun test
+bun run test:browser
 bun run build
 ```
 
-`lint` is a typecheck alias until a linter is added. `build` builds the panel, status, service, MCP, viewer, and runtime, and copies the pinned libraries into `viewer/libraries/`.
+`lint` is a typecheck alias until a linter is added. `build` builds the panel, status, service, MCP, viewer, and runtime, and copies the pinned libraries into `viewer/libraries/`. `test:browser` builds and runs the Playwright suite against the actual panel/status entries; it requires `/usr/bin/google-chrome`.
 
 ## Hard rules
 
@@ -35,6 +36,9 @@ bun run build
 - The service and the viewer daemon bind `127.0.0.1` only. No `0.0.0.0`.
 - The viewer daemon is the only process that serves artifact HTML. The MCP server writes the store and ensures the viewer; it does not serve a second copy.
 - Never remove `sandbox allow-scripts` from the view response to make annotation or storage work. Use the runtime shim, or accept the limitation.
+- Use the public `@openchamber/sdk/ui` controls rather than recreating buttons, fields, search, selects, menus, lists, badges, banners, empty states, or feedback. Do not import private OpenChamber React components or override kit control geometry, colors, shadows, type, selection, or focus. Custom CSS is only layout the kit lacks.
+- Apply `applyHostReady` on every host ready snapshot. Do not rebuild mounted controls for a theme-only snapshot; call `update` for controlled values and `dispose` when removing a view.
+- Use `host.storage`, not `localStorage`, for panel preferences. The extension iframe has an opaque origin.
 - Store paths are validated against the store root. No `..`, no symlink escape.
 - The extension asks for the `service` permission only. Do not add `filesystem`, `sessions`, or `prompt` without a documented reason.
 - The service token and view tokens are never logged, never sent to the panel, and never placed in artifact HTML.

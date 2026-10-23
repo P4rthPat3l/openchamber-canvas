@@ -2,13 +2,13 @@
 doc_type: feature
 feature_id: FEAT-001
 title: OpenChamber Canvas
-status: proposed
+status: active
 implementation_status: in_progress
 owner: Parth
 created: 2026-10-23
 last_updated: 2026-10-23
-last_verified_commit: null
-version: 0.9.0
+last_verified_commit: a4911b2
+version: 0.10.0
 tags:
   - openchamber
   - extension
@@ -31,8 +31,8 @@ related_features: []
 
 | Field | Details |
 |---|---|
-| Document status | Proposed |
-| Implementation status | Phase 5 built; Phase 6 polish in progress |
+| Document status | Active |
+| Implementation status | Phase 6 SDK migration built; installed acceptance pending |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, MCP server, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -41,7 +41,7 @@ related_features: []
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode MCP client |
 | Feature flag | None in v1 |
-| Last verified | 60 tests pass. Typecheck, build, the manifest parse, and the design detector pass. The gallery was redesigned and inspected at rail, page, empty, setup, status, and light-theme states. Built service, MCP, and viewer e2e pass. The installed gallery acceptance is pending. |
+| Last verified | 60 unit tests pass. The browser suite passes AC-037 through AC-042 against the built panel and status entries in an opaque sandbox, with six official resolved themes and a host font/radius override. Typecheck, lint, build, manifest parse, and the design detector pass. Built service, MCP, and viewer e2e pass. Installed-app acceptance is pending. |
 
 ### At a Glance
 
@@ -58,13 +58,15 @@ The feature is built from four parts:
 
 Both the MCP and the service use the same viewer daemon and the same on-disk store. No OpenChamber core change is required.
 
-The store, view policy, viewer server, runtime, pinned library set, MCP server, extension service, and gallery panel exist. The gallery install and acceptance are pending.
+The store, view policy, viewer server, runtime, pinned library set, MCP server, extension service, and gallery panel exist. The SDK UI migration is built; installed acceptance is pending.
 
 ### Design direction
 
-The gallery is a native OpenChamber surface, not a separate visual brand. It uses the app font, theme tokens, 9px radii, 1px borders, and primary color for selection and primary actions. The composition is a master-detail workspace: a flat artifact shelf with kind labels, a persistent inspector on the full-screen page, and a back-controlled inspector on the rail. The signature is the version ladder; the setup is a status-led checklist, not a config dump.
+The gallery is a native OpenChamber extension surface built from the public `@openchamber/sdk/ui` controls, not a separate visual brand or a copied set of app React components. The app supplies colors, fonts, radii, shadows, focus treatment, and selection states through `applyHostReady`; the SDK supplies buttons, fields, search, selects, menus, lists, badges, banners, empty states, spinners, and separators.
 
-See [PRODUCT.md](../../PRODUCT.md) for product truth and [canvas-gallery.md](../design/canvas-gallery.md) for the surface direction contract.
+Custom CSS owns only composition the installed kit cannot provide: the responsive list/inspector split, flat grid tiles, version metadata rows, setup/status layout, and the native confirmation dialog frame. Interactive children in those areas remain SDK controls. The rail and page use the same controls; the page keeps the shelf beside the inspector, while the rail replaces the shelf with the inspector and a Back control. View/sort preferences use `host.storage`.
+
+See [PRODUCT.md](../../PRODUCT.md) for product truth and [canvas-gallery.md](../design/canvas-gallery.md) for the surface rules.
 
 ### What changed from 0.1
 
@@ -496,11 +498,12 @@ The store, policy, viewer, build, MCP, service, and UI rows are implemented. The
 | MCP | Ensure and talk to the viewer | `src/viewer/ensure.ts` | `ensureViewer` | Create |
 | Service | Host service entry | `src/service/main.ts` | `main` | Create |
 | Service | `/health`, `/list`, `/view-url`, `/feedback`, `/export` | `src/service/routes.ts` | `serviceRoutes` | Create |
-| UI | Gallery panel | `panel/index.html`, `panel/main.ts` | `mountShell`, `renderBody` | Create |
-| UI | Full-screen page | `page: true` reuses `panel/index.html` | `ctx.surface === "page"` | Create |
-| UI | Work Status section | `status/index.html`, `status/main.ts` | `refresh` | Create |
-| UI | List, filter, detail, versions, setup, scopes | `panel/main.ts` | `renderList`, `renderDetail`, `renderSetup` | Create |
-| UI | Browser open action | `panel/main.ts` | `openArtifact` | Create |
+| UI | Gallery panel | `panel/index.html`, `panel/main.ts` | `mountApp`, `mountLibrary`, `mountInspector`, `mountSetup`, `paint` | Current |
+| UI | Full-screen page | `page: true` reuses `panel/index.html` | `ctx.surface === "page"` | Current |
+| UI | Work Status section | `status/index.html`, `status/main.ts` | `mountStatus`, `refresh` | Current |
+| UI | SDK controls | `@openchamber/sdk/ui` | `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountBadge`, `mountBanner`, `mountEmpty`, `mountSpinner`, `mountSeparator` | Current |
+| UI | List, filter, detail, versions, setup, scopes | `panel/main.ts` | `mountLibrary`, `mountInspector`, `mountSetup` | Current |
+| UI | Browser open action | `panel/main.ts` | `openArtifact` | Current |
 | Manifest | Extension declaration | `package.json` `openchamber` block | `contributes` | Create |
 | Tests | Store, kinds, policy units | `tests/store.test.ts`, `tests/policy.test.ts` | Not applicable | Create |
 | Tests | Feedback and state units | `tests/feedback.test.ts` | Not applicable | Create |
@@ -508,6 +511,7 @@ The store, policy, viewer, build, MCP, service, and UI rows are implemented. The
 | Tests | Service HTTP | `tests/service.test.ts` | Not applicable | Create |
 | Tests | MCP stdio | `tests/mcp.test.ts` | Not applicable | Create |
 | Tests | Viewer browser tests | `tests/viewer.spec.ts` | Playwright | Create |
+| Tests | Native UI and theme browser suite | `tests/browser/panel.browser.ts`, `tests/browser/host.html`, `tests/fixtures/openchamber-themes.json` | Playwright with the built entries in an opaque mock host | Current |
 
 ### Generated or Restricted Areas
 
@@ -1475,7 +1479,20 @@ No test exists yet. Every rule below is untested until Phase 1 and is marked wit
 **Then** the MCP reads the file and stores a complete new version  
 **And** the tool input contains no HTML
 
-### Edge Cases
+### Native SDK UI migration acceptance criteria
+
+Implemented in `a4911b2`. The browser suite in `tests/browser/panel.browser.ts` checks the actual built entries through a sandboxed mock host. Existing artifact/service/viewer contracts are unchanged.
+
+- **AC-037:** Supported controls in the panel, setup, and status section are mounted through `@openchamber/sdk/ui`. This includes buttons, fields, search, selects, menus, artifact lists, badges, notices, loading, and empty states. Canvas does not recreate or override the kit's control colors, typography, shadows, focus states, or selection states. Grid placement, version metadata, and the native delete-dialog frame may remain custom because the installed kit lacks those composed views.
+- **AC-038:** Every ready snapshot updates the host theme. A theme-only update changes native control colors and supplied font/radius without remounting the controls, losing drafts/focus/selection, or triggering data requests. Custom metadata uses the appropriate host foreground and computed status-text tokens, with no Canvas palette or fixed control type scale.
+- **AC-039:** Controlled SDK values are fed back through `handle.update`. Polling updates list/state handles without replacing a focused field. Removing an inspector, menu, grid, or setup view disposes its mounted controls; repeated navigation does not leave popups or listeners behind.
+- **AC-040:** Existing actions remain available in rail, full-screen, and grid views: search, scope, tags, sort, favorite, open, copy URL, export, attach, refine, version open/restore, archive/unarchive, trash/restore, and confirmed deletion. Empty views keep scope navigation reachable. Remote clients keep Copy URL and Export rather than an unusable Open action.
+- **AC-041:** SDK keyboard behavior works for search, lists, selects, and menus. Popups remain inside the smallest supported frame, open toward available space, close on Escape/outside press, and return focus. Loading, service failure/retry, no matches, missing/stale MCP, and setup states use native feedback components. Rail widths of 320px and 360px and a 1200px page have no horizontal overflow.
+- **AC-042:** View/sort preferences persist through `host.storage` in the opaque sandbox, without additional capabilities. A failed preference read/write does not block the gallery or overwrite a choice made while the read was pending.
+
+Tests carry the AC IDs. `bun run test:browser` exercises the actual built panel and status entrypoints through a sandboxed mock host, not a separately handwritten screenshot page. Theme tests cover six official resolved OpenChamber palettes and a host-supplied font/radius snapshot. Installed-app acceptance remains a separate manual check.
+
+### Edge cases
 
 | Case ID | Scenario | Expected behavior | Test type |
 |---|---|---|---|
@@ -1876,16 +1893,16 @@ All blocking probes pass on 2026-10-23. Phase 2 is unblocked.
 
 **Expected changes:**
 
-- Build the panel with `applyHostReady` and the app tokens.
+- Use `applyHostReady` and the public `@openchamber/sdk/ui` controls for the gallery, setup, and status.
 - Add the project, all, archived, and trash scopes; search, tag filter, sort, list and grid views, detail, versions, setup, empty, loading, and error states.
 - Add Open, Copy URL, Export, Attach, Copy session id, Refine, Versions, Restore, Archive, Unarchive, Delete, and Favorite actions.
 - Add keyboard navigation and accessible names.
 - Wire `serviceRequest`, `openUrl`, `compose`, `attach`, and `setBadge`.
 - Add the full-screen page and the Work Status section.
 
-**Validation:** `bun run typecheck`, `bun test`, `bun run build`, `parseManifestJson`, and the manual acceptance run after installing the folder.
+**Validation:** `bun run typecheck`, `bun run lint`, `bun test`, `bun run test:browser`, `bun run build`, `parseManifestJson`, and the manual acceptance run after installing the folder.
 
-**Completion criteria:** Code complete. Manual acceptance pending. AC-002, AC-003, AC-009, AC-010, AC-011, AC-013, AC-014, AC-022, AC-024, AC-025, AC-026, and AC-032 are covered. AC-027 is declared in the manifest; the chat card needs the installed extension. AC-005's agent browser path still needs the agent web tool.
+**Completion criteria:** Code complete. Manual acceptance pending. AC-002, AC-003, AC-009, AC-010, AC-011, AC-013, AC-014, AC-022, AC-024, AC-025, AC-026, AC-032, and AC-037 through AC-042 are covered. AC-027 is declared in the manifest; the chat card needs the installed extension. AC-005's agent browser path still needs the agent web tool.
 
 **Rollback:** Disable or remove the extension. Artifacts remain in the store.
 
@@ -1893,20 +1910,39 @@ All blocking probes pass on 2026-10-23. Phase 2 is unblocked.
 
 **Objective:** Close the loop between publish, view, feedback, and update.
 
-**Status:** In progress. The tool card is declared, the setup page shows the exact MCP path and a copyable config, the gallery marks a newly published artifact, and `opencode.json` is no longer tracked because OpenChamber manages it. The gallery was redesigned as a native master-detail surface with neutral kind tiles, a version ladder, a quiet empty state, a status-led setup checklist, and a labelled MCP status. The 500-artifact measurement and the desktop and web acceptance runs are pending.
+**Status:** In progress. The tool card is declared, the setup page shows the exact MCP path and a copyable config, and `opencode.json` is no longer tracked because OpenChamber manages it. The gallery uses the public OpenChamber SDK UI kit across the rail, full-screen page, setup view, and Work Status section; custom CSS is limited to composition the installed kit lacks. The 500-artifact measurement and installed desktop and web acceptance runs are pending.
 
-**Expected changes:**
+#### Native SDK migration, current
 
-- Add the tool card in the manifest and test the link in chat.
-- Add the artifact chip and the `compose` refine action.
-- Add the setup checklist with the MCP JSON and heartbeat.
-- Add the "new artifact" highlight and the auto-open fallback.
+The custom redraw in `4656110` was rejected. Reusing the host's colors did not make its controls native. Commit `a4911b2` replaces the custom control system with the installed SDK UI kit; it is not another CSS restyle.
+
+1. The panel toolbar, artifact lists, inspector actions and field, setup feedback and actions, and status feedback now mount SDK controls. Duplicate Canvas marks, kind tiles, custom focus rings, and custom button/select/search/list implementations were removed.
+2. Custom CSS now covers only the responsive list/detail split, flat grid tiles, version metadata rows, setup/status layout, and the native dialog frame. All interactive children are SDK controls. The code does not copy `.oc-sdk-*` markup, import private app React components, or override kit control appearance.
+3. Component handles and application state persist across updates. Service responses feed summary/detail state and then SDK `update` calls. Theme-ready snapshots apply `applyHostReady` without remounting; only directory changes reload data. Inspector, grid, and setup handles are disposed when their view is removed.
+4. View and sort preferences use `host.storage` instead of unavailable `localStorage`. `tsconfig.json` now includes `panel/` and `status/`, and the three pre-existing errors are fixed. No backend contract or manifest permission changed.
+5. `tests/browser/panel.browser.ts` serves the actual built panel and status entries in an opaque `allow-scripts` iframe with a mock host. It checks AC-037 through AC-042, including six official resolved themes, a host font/radius override, theme-only ready handling, retained draft/focus, control disposal, storage persistence, menus, dialog, setup, empty, error/retry, grid, 320px rail, and 1200px page layouts.
+
+Changed files: `panel/main.ts`, `panel/style.css`, `panel/index.html`, `status/main.ts`, `status/style.css`, `status/index.html`, `tsconfig.json`, `package.json`, `bun.lock`, `tests/browser/host.html`, `tests/browser/panel.browser.ts`, and `tests/fixtures/openchamber-themes.json`. Playwright is a development-only dependency. The browser test uses the system Chrome at `/usr/bin/google-chrome`.
+
+Proven: the browser suite passes in the opaque sandbox against the built entries; the disposable pre-plan probe passed with the installed SDK 2.5.1 on controlled fields, theme changes, keyboard selection, menu dismissal, and 320px layout.
+
+Risks and fallbacks:
+
+- **NUI-R1:** The public kit has no grid-card, arbitrary row-action, dialog, or icon-button API. Canvas keeps minimal content/layout wrappers and native dialog semantics, with labelled SDK controls inside. It does not import private host components or drop existing actions.
+- **NUI-R2:** The mock host uses six official resolved palettes and a font/radius override; it does not prove every installed or user-authored palette by sight. Controls inherit arbitrary valid host tokens at runtime. Installed-theme acceptance remains pending.
+- **NUI-R3:** Native geometry simplified the previous multi-row toolbar and icon-tile composition. Secondary actions moved into SDK menus. No control was shrunk or restyled to preserve the rejected design.
+
+Rollback: revert `a4911b2` and rebuild the extension. Artifact files, service routes, viewer policy, and MCP registration are unaffected.
+
+**Remaining work:**
+
 - Measure listing with 500 artifacts and viewer memory with 20 open artifacts.
-- Run the full acceptance run on desktop and web.
+- Run the installed acceptance pass on desktop and web: rail, page, setup, empty, grid, dialog, and Work Status.
+- Verify the chat tool card, the agent browser path, and feedback delivery in the installed app.
 
-**Validation:** Acceptance run, AC-005, AC-014, AC-017, AC-027.
+**Validation:** Installed acceptance run, AC-005, AC-014, AC-017, and AC-027.
 
-**Completion criteria:** The primary journey works without manual refresh.
+**Completion criteria:** The primary journey works without manual refresh and the installed SDK UI matches the host in both themes.
 
 ### Phase 7: v1.1 kind expansion
 
@@ -2119,6 +2155,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.8.0 | Phase 5: gallery panel, full-screen page, Work Status section, archive and trash scopes, remote warning, setup, extension manifest | In progress | Parth |
 | 2026-10-23 | 0.8.1 | Phase 6: exact MCP path and copyable setup config, new-artifact highlight, `opencode.json` untracked | In progress | Parth |
 | 2026-10-23 | 0.9.0 | Gallery redesign: native master-detail, neutral kind tiles and labels, version ladder, quiet empty state, setup checklist, labelled MCP status, focus and stale-detail handling | In progress | Parth |
+| 2026-10-23 | 0.10.0 | SDK UI migration: native buttons/fields/search/selects/menus/lists/badges/banners/empty/spinner/separator controls, host theme/font/radius application without remount, host.storage preferences, panel/status typecheck, sandboxed browser suite AC-037–AC-042 | In progress | Parth |
 
 ## 31. Related Resources
 

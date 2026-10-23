@@ -379,3 +379,35 @@ These probes answer the platform questions the plan depends on.
 - [OpenChamber roadmap](https://openchamber.dev/roadmap)
 - [MCP specification: tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)
 - [OpenCode MCP servers](https://opencode.ai/docs/mcp-servers)
+
+## 15. Native extension UI audit
+
+Inspected on 2026-10-23 against the installed `@openchamber/sdk@2.5.1` and Canvas commit `4656110`. The working tree was clean at the start of the audit. Upstream `main` documentation describes the design intent; the installed SDK declarations and implementation determine which APIs Canvas can use. The findings describe that pre-migration commit; the resolution below records the current state.
+
+Sources:
+
+- [UI kit guide](https://docs.openchamber.dev/sdk/ui/).
+- [Official SDK Playground](https://github.com/openchamber/openchamber/blob/main/packages/sdk/examples/hello-kit/panel/main.ts) and [task workspace](https://github.com/openchamber/openchamber/blob/main/packages/sdk/examples/tasks-demo/panel/workspace.ts).
+- [OpenChamber UI guidance](https://github.com/openchamber/openchamber/blob/main/.agents/skills/openchamber-ui-guidance/SKILL.md) and [surfaces](https://github.com/openchamber/openchamber/blob/main/.agents/skills/openchamber-ui-guidance/references/surfaces.md).
+- [Theme roles](https://github.com/openchamber/openchamber/blob/main/.agents/skills/theme-system/references/tokens-and-examples.md).
+- Installed SDK `dist/ui/index.d.ts`, `style.js`, `theme.js`, `list.js`, `select.js`, and `menu.js`.
+
+Findings:
+
+- At commit `4656110`, Canvas imported `applyHostReady` but did not mount any SDK controls. Its custom controls therefore did not receive the kit's appearance and interaction rules.
+- Use `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountTabs`, `mountBadge`, `mountBanner`, `mountSpinner`, `mountEmpty`, and `mountSeparator` wherever those primitives fit. Keep the returned handles, call `update` for controlled values, and call `dispose` when removing a control.
+- SDK controls are the supported extension equivalents of the app's internal React controls. Importing private app components or copying their Tailwind styles is not the extension integration path.
+- The default SDK action is a tinted button, not Canvas's custom solid primary fill. Fields, buttons, triggers, and menus have app-owned depth and theme-specific treatment. Layout stays flat; status banners use a tint without a border. Focus uses the native control treatment, not an additional Canvas ring.
+- `applyHostReady` supplies surface/foreground pairs and computed `--oc-primary-text`, `--oc-success-text`, `--oc-warning-text`, `--oc-error-text`, and `--oc-info-text`. Base accent/status colors are fills, not interchangeable text colors. Selection uses selection tokens, not primary.
+- Apply every ready snapshot, but do not rebuild the screen for a theme-only or session-only snapshot. Keep mounted fields, drafts, focus, selection, and request state intact.
+- The kit's `mountList` supports title, subtitle, leading text, meta, badge, and selection. It has no arbitrary row-action slot or grid-card API. The kit also has no public dialog primitive or icon-button property. Those limits do not justify recreating supported controls. Compose unsupported layout around real SDK buttons; keep the existing native dialog with SDK actions.
+- Guest storage is `host.storage`, not browser `localStorage`. The latter is unavailable under the extension's opaque-origin sandbox.
+- At audit time, `tsconfig.json` omitted `panel/` and `status/`. A disposable extended-config check found two nullable-root errors and one SVG-versus-HTMLElement error in `panel/main.ts`; the ordinary typecheck had not checked these files.
+
+Probe result: a disposable browser probe using the installed SDK in an `allow-scripts` iframe verified controlled search/select/field values, keyboard list selection, menu Escape, theme changes without remounting, draft/focus retention, and no horizontal overflow at 320px. Its light/dark tokens were synthetic API fixtures, not evidence that every actual OpenChamber palette has been visually accepted. The probe source was removed after the audit.
+
+### Resolution
+
+Commit `a4911b2` implements the migration. The panel, setup view, and Work Status section mount `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountBadge`, `mountBanner`, `mountEmpty`, `mountSpinner`, and `mountSeparator`. Custom CSS is limited to composition the kit lacks. View/sort preferences use `host.storage`; `panel/` and `status/` are in `tsconfig.json`; the three errors are fixed.
+
+`tests/browser/panel.browser.ts` serves the built panel and status entries in an opaque iframe with a mock host. It verifies AC-037 through AC-042, six official resolved palette snapshots, a host font/radius override, theme-only snapshots without refetch or remount, retained draft/focus, disposal, menus, dialog, setup, empty, error/retry, grid, 320px rail, and 1200px page/setup/empty layouts. `bun run test:browser` is the entry point. Installed-app visual acceptance remains pending.

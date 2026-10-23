@@ -29,7 +29,7 @@ The user works in an OpenChamber project with the agent in the main chat. The ex
 - Artifact HTML is untrusted and runs only in the browser panel, never in the extension page.
 - The viewer and service bind loopback. The view response keeps `sandbox allow-scripts`.
 - The MCP is a separate Settings → MCP install. The extension bundles the server file but cannot register it.
-- The UI must use the OpenChamber theme tokens and feel native to the app; the panel is not a separate brand surface.
+- The UI must use the public OpenChamber SDK UI components and theme tokens and feel native to the app; the panel is not a separate brand surface. Custom CSS is limited to composition the installed kit lacks.
 
 ## Evidence on Hand
 
