@@ -521,9 +521,6 @@ function mountLibrary(parent: Element) {
   let gridHandles: Disposable[] = [];
   let rowsSignature = '';
   let controlsSignature = '';
-  for (const root of [favoritesRoot, listRoot]) {
-    root.querySelector('[role="listbox"]')?.setAttribute('title', 'Double-click a row to open');
-  }
 
   // The kit list rebuilds its rows on every selection change, so the two
   // clicks of a double-click land on different elements. Track the last row

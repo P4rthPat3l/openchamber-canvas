@@ -2174,6 +2174,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.11.2 | Version resolution walks up from the running file, so the bundled `service/main.js` and `mcp/server.js` find `package.json` in the installed layout instead of crashing the service with `ENOENT` (0.1.4) | In progress | Parth |
 | 2026-10-23 | 0.11.3 | Library quick open: an Open button beside the artifact count acts on the selected row, and double-clicking a row opens it, both in the 720px and full-screen layouts (0.1.5) | In progress | Parth |
 | 2026-10-24 | 0.11.4 | One-command MCP setup: the Setup page shows and copies `opencode mcp add canvas --global -- node '<path>'`, which writes the v2 entry the registration check already accepts; README install steps use it (0.1.6) | In progress | Parth |
+| 2026-10-24 | 0.11.5 | Removed the list tooltip that advertised double-click in the rail, where the first click opens the inspector instead (0.1.7) | In progress | Parth |
 
 ## 31. Related Resources
 

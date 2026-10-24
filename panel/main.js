@@ -3086,9 +3086,6 @@ ${GUEST_UI_LOOK_CSS}`;
     let gridHandles = [];
     let rowsSignature = "";
     let controlsSignature = "";
-    for (const root of [favoritesRoot, listRoot]) {
-      root.querySelector('[role="listbox"]')?.setAttribute("title", "Double-click a row to open");
-    }
     let lastRowClick = null;
     const rowIdAt = (event) => {
       const target = event.target instanceof Element ? event.target.closest('[role="option"]') : null;
