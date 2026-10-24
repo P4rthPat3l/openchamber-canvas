@@ -2743,6 +2743,23 @@ ${GUEST_UI_LOOK_CSS}`;
     handles.push(button2);
     return button2;
   }
+  function shellArg(value) {
+    return `'${value.replaceAll("'", "'\\''")}'`;
+  }
+  function renderShellCommand(target, command, path) {
+    target.replaceChildren();
+    const quoted = shellArg(path);
+    const inner = quoted.slice(1, -1);
+    target.append(document.createTextNode(command.slice(0, command.length - quoted.length) + (quoted[0] ?? "")));
+    let start = 0;
+    for (let index = 0;index < inner.length; index++) {
+      if (inner[index] !== "/")
+        continue;
+      target.append(document.createTextNode(inner.slice(start, index + 1)), document.createElement("wbr"));
+      start = index + 1;
+    }
+    target.append(document.createTextNode(inner.slice(start) + (quoted.at(-1) ?? "")));
+  }
   async function copy(text, label) {
     await host.writeClipboard(text);
     await host.toast({ kind: "success", message: `${label} copied.` });
@@ -3438,15 +3455,17 @@ Read it with canvas_read first, then update it with canvas_update and the curren
     element("h2", mcpRow, "", "MCP server");
     const mcpBadge = mountBadge(mcpRow, { label: "Checking" });
     const mcpNotice = mountBanner(mcp, { tone: "info", title: "Checking the MCP heartbeat" });
-    element("p", mcp, "canvas-muted", "The extension cannot register an MCP server. Add Canvas in Settings → MCP.");
-    const path = element("pre", mcp, "canvas-code canvas-path");
+    element("p", mcp, "canvas-muted", "The extension cannot register an MCP server. Run this once on the OpenChamber server, or paste the JSON in Settings → MCP.");
+    const command = element("pre", mcp, "canvas-code canvas-command");
     const config = element("pre", mcp, "canvas-code");
     config.hidden = true;
     let mcpPath = "";
     let mcpConfig = "";
+    let mcpCommand = "";
     const configActions = element("div", mcp, "canvas-actions");
-    const copyConfig = action(configActions, handles, "Copy MCP config", () => copy(mcpConfig, "MCP config"), "default", "sm", "copy");
-    const copyPath = action(configActions, handles, "Copy path", () => copy(mcpPath, "MCP path"), "outline", "sm", "copy");
+    const copyCommand = action(configActions, handles, "Copy command", () => copy(mcpCommand, "MCP command"), "default", "sm", "copy");
+    const copyConfig = action(configActions, handles, "Copy MCP config", () => copy(mcpConfig, "MCP config"), "outline", "sm", "copy");
+    const copyPath = action(configActions, handles, "Copy path", () => copy(mcpPath, "MCP path"), "ghost", "sm", "copy");
     const showConfig = mountButtonWithIcon(configActions, { label: "Show JSON", variant: "ghost", size: "sm", onClick: () => {
       config.hidden = !config.hidden;
       showConfig.update({ label: config.hidden ? "Show JSON" : "Hide JSON" });
@@ -3456,6 +3475,7 @@ Read it with canvas_read first, then update it with canvas_update and the curren
     element("p", agent, "canvas-muted", "Publish a small test chart from the chat after the MCP server is connected.");
     const sample = action(agent, handles, "Add sample prompt to chat", () => askAgent(SAMPLE_PROMPT), "outline", "sm", "message");
     handles.push(error, extensionBadge, mcpBadge, mcpNotice, showConfig);
+    copyCommand.update({ disabled: true });
     copyConfig.update({ disabled: true });
     copyPath.update({ disabled: true });
     sample.update({ disabled: true });
@@ -3522,22 +3542,14 @@ Read it with canvas_read first, then update it with canvas_update and the curren
           });
         }
         mcpPath = health.mcpPath ?? "";
-        path.replaceChildren();
-        if (!mcpPath)
-          path.textContent = "Restart the extension service to obtain its exact MCP path.";
-        else {
-          let start = 0;
-          for (let index = 0;index < mcpPath.length; index++) {
-            if (mcpPath[index] !== "/")
-              continue;
-            path.append(document.createTextNode(mcpPath.slice(start, index + 1)), document.createElement("wbr"));
-            start = index + 1;
-          }
-          if (start < mcpPath.length)
-            path.append(document.createTextNode(mcpPath.slice(start)));
-        }
+        mcpCommand = mcpPath ? `opencode mcp add canvas --global -- node ${shellArg(mcpPath)}` : "";
+        if (mcpCommand)
+          renderShellCommand(command, mcpCommand, mcpPath);
+        else
+          command.textContent = "Restart the extension service to obtain its exact MCP path.";
         mcpConfig = JSON.stringify({ mcp: { servers: { canvas: { type: "local", command: ["node", mcpPath] } } } }, null, 2);
         config.textContent = mcpConfig;
+        copyCommand.update({ disabled: !mcpPath });
         copyConfig.update({ disabled: !mcpPath });
         copyPath.update({ disabled: !mcpPath });
         sample.update({ disabled: !live });

@@ -41,7 +41,13 @@ bun run build
 
 `bun run build` builds `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js`, and copies the pinned libraries into `viewer/libraries/`.
 
-`opencode.json` is managed by OpenChamber and is not tracked. The extension bundles `mcp/server.js`, but an extension cannot register an MCP server. Add it in Settings → MCP. The setup page in the gallery shows the exact JSON for this install, and `docs/mcp.example.json` is a template.
+`opencode.json` is managed by OpenChamber and is not tracked. The extension bundles `mcp/server.js`, but an extension cannot register an MCP server. The Setup page shows a one-command registration with the exact path:
+
+```bash
+opencode mcp add canvas --global -- node '/absolute/path/to/openchamber-canvas/mcp/server.js'
+```
+
+It needs the OpenCode CLI on the PATH of the machine running OpenChamber. Settings → MCP accepts the same entry as JSON; `docs/mcp.example.json` is a template.
 
 ## Install
 
@@ -50,7 +56,7 @@ bun run build
 3. Paste `/home/parth/Production/openchamber-canvas`.
 4. Approve the `service` permission.
 5. Open **Canvas** on the right rail.
-6. Open **Canvas → Setup** and copy the MCP config. Add it in Settings → MCP, or paste it into an OpenCode config.
+6. Open **Canvas → Setup**. Run the shown `opencode mcp add` command on the OpenChamber server, or copy the JSON into Settings → MCP.
 
 The MCP is a separate process. Without it the gallery can browse, open, export, and show feedback, but the agent cannot publish or update artifacts. `canvas_*` tools appear only after the MCP is registered.
 
