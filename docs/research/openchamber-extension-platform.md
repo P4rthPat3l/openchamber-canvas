@@ -268,6 +268,7 @@ This is why Canvas needs a separate viewer process that outlives the MCP server.
 
 - The desktop browser panel is a real browser with persistent logins, DevTools, reload, hard reload, zoom, device presets, and a light/dark override.
 - Annotation is desktop-only. It attaches element, region, or freehand marks plus a screenshot and the user's note to the chat message.
+- The annotate machinery is Electron renderer code, not an extension surface. The Files pane and the browser panel share one embedding component (`contextPanel.mode.files` and `contextPanel.mode.browser` in the renderer bundle); the markup toggle (`contextPanel.browser.annotate.*`) lives in the same bundle, which references a `webview`-style embedding, `executeJavaScript` injection, and `capturePage` screenshots. The picker overlay runs inside the embedded page itself; nothing of it is reachable from a sandboxed extension iframe or artifact viewer.
 - The agent can drive the panel with the `openchamber_web` tool: open, snapshot, click, type, scroll, back, forward, inspect, capture, resize.
 - The 2.5.1 changelog confirms that a local address opened by an extension opens in the browser panel.
 - Clipboard reads work only for a focused page on the literal `localhost` hostname. Pages on `127.0.0.1` or `[::1]` cannot read the clipboard through JavaScript.
