@@ -77,6 +77,25 @@ async function call(
 const page = `<!doctype html><html><body><h1>Revenue</h1><script>const color = '#2563eb';</script></body></html>`;
 
 describe('canvas MCP', () => {
+  test('AC-055 AC-057 AC-058 AC-061: guarded metadata updates, project default, and pinned production versions', async () => {
+    const { client, store } = await makeClient();
+    const published = await call(client, 'publish', { title: 'Local', html: page });
+    expect(published.isError).toBe(false);
+    const id = String(published.value.id);
+    const baseVersion = String(published.value.version);
+    expect((await store.read(id)).manifest.rendering).toMatch(/^[a-f0-9]{64}$/);
+    const metadata = await call(client, 'update', { id, baseVersion, tags: ['metadata'] });
+    expect(metadata.isError).toBe(false);
+    expect(metadata.value.version).toBe(baseVersion);
+    expect(metadata.value.changedFiles).toEqual([]);
+    await call(client, 'publish', { title: 'Other project', directory: '/other/project', html: page });
+    const local = await call(client, 'list', {});
+    expect(local.value.total).toBe(1);
+    expect((await call(client, 'list', { allProjects: true })).value.total).toBe(2);
+    expect((await call(client, 'list', { allProjects: true, directory: projectRoot })).isError).toBe(true);
+    const missing = await client.callTool({ name: 'update', arguments: { id, html: page } });
+    expect(missing.isError).toBe(true);
+  });
   test('lists the six tools', async () => {
     const { client } = await makeClient();
     const tools = await client.listTools();

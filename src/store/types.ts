@@ -28,6 +28,7 @@ export interface AddFeedbackInput {
 export interface ListFeedbackOptions {
   since?: string;
   limit?: number;
+  offset?: number;
 }
 
 export interface RuntimeState {
@@ -55,6 +56,7 @@ export interface VersionManifest {
   createdAt: string;
   restoredFrom: string | null;
   files: ArtifactFileRecord[];
+  rendering?: string;
 }
 
 export interface VersionSummary {
@@ -64,6 +66,7 @@ export interface VersionSummary {
   files: number;
   title: string;
   restoredFrom: string | null;
+  rendering?: string;
 }
 
 export interface LiveSource {
@@ -112,6 +115,7 @@ export interface CreateArtifactInput {
   dedupeKey?: string | null;
   live?: LiveSource[];
   now?: Date;
+  baseVersion?: string;
 }
 
 export interface TextEdit {
@@ -120,6 +124,7 @@ export interface TextEdit {
 }
 
 export type UpdateInput =
+  | { mode: 'metadata'; title?: string; tags?: string[]; baseVersion: string }
   | {
       mode: 'replace';
       files: ArtifactFileInput[];
@@ -158,6 +163,7 @@ export interface CreateResult {
   version: string;
   meta: ArtifactMeta;
   deduped: boolean;
+  contentChanged: boolean;
 }
 
 export interface UpdateResult {
@@ -188,6 +194,10 @@ export interface ListFilter {
   tag?: string;
   limit?: number;
   includeArchived?: boolean;
+  archivedOnly?: boolean;
+  offset?: number;
+  sort?: 'updated' | 'title';
+  trash?: boolean;
 }
 
 export interface ArtifactSummary {
@@ -203,9 +213,13 @@ export interface ArtifactSummary {
   favorite: boolean;
   archived: boolean;
   feedbackCount: number;
+  pendingFeedbackCount?: number;
 }
 
 export interface ListResult {
   artifacts: ArtifactSummary[];
   errors: number;
+  total?: number;
+  tags?: string[];
+  pendingFeedbackCount?: number;
 }

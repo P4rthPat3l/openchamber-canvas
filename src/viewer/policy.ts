@@ -23,6 +23,8 @@ export interface ViewHeaderInput {
 export interface ViewToken {
   id: string;
   version: string;
+  follow?: boolean;
+  theme?: 'light' | 'dark';
 }
 
 const PERMISSIONS_POLICY = [
@@ -147,7 +149,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function encodePayload(payload: { id: string; version: string; expiresAt: number }): string {
+function encodePayload(payload: ViewToken & { expiresAt: number }): string {
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
 
@@ -156,13 +158,14 @@ export function signViewToken(
   id: string,
   version: string,
   expiresAt: number,
+  context: Pick<ViewToken, 'follow' | 'theme'> = {},
 ): string {
   assertArtifactId(id);
   assertVersionId(version);
   if (!Number.isFinite(expiresAt) || expiresAt <= 0) {
     throw new StoreError('INVALID_PATH', 'The view token expiry is invalid');
   }
-  const payload = encodePayload({ id, version, expiresAt });
+  const payload = encodePayload({ id, version, expiresAt, ...context });
   const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
   return `${payload}.${signature}`;
 }
@@ -191,5 +194,7 @@ export function verifyViewToken(secret: string, token: string, now = Date.now())
   if (typeof id !== 'string' || !ARTIFACT_ID_RE.test(id)) return null;
   if (typeof version !== 'string' || !VERSION_ID_RE.test(version)) return null;
   if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt <= now) return null;
-  return { id, version };
+  if (parsed.follow !== undefined && typeof parsed.follow !== 'boolean') return null;
+  if (parsed.theme !== undefined && parsed.theme !== 'light' && parsed.theme !== 'dark') return null;
+  return { id, version, ...(typeof parsed.follow === 'boolean' ? { follow: parsed.follow } : {}), ...(parsed.theme === 'light' || parsed.theme === 'dark' ? { theme: parsed.theme } : {}) };
 }

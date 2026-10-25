@@ -6,9 +6,9 @@ status: active
 implementation_status: in_progress
 owner: Parth
 created: 2026-10-23
-last_updated: 2026-10-23
-last_verified_commit: a4911b2
-version: 0.10.0
+last_updated: 2026-10-25
+last_verified_commit: null
+version: 1.0.0
 tags:
   - openchamber
   - extension
@@ -27,12 +27,14 @@ related_features: []
 
 > A project gallery for agent-generated artifacts that opens each one in OpenChamber's browser panel, keeps its versions, refreshes it in place, and carries user feedback back to the agent.
 
+The [security and revision hardening](#37-security-and-revision-hardening) is built in package 0.2.0. AC-050 through AC-065 define its behavior. Verification covers the uncommitted working tree, not a new Git commit; installed-app acceptance is pending.
+
 ## 1. Feature Snapshot
 
 | Field | Details |
 |---|---|
 | Document status | Active |
-| Implementation status | Phase 6 SDK migration built; installed acceptance pending |
+| Implementation status | 0.2.0 security and revision hardening built; installed acceptance pending |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, MCP server, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -41,7 +43,7 @@ related_features: []
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode MCP client |
 | Feature flag | None in v1 |
-| Last verified | 67 unit tests pass. The browser suite passes AC-037 through AC-042 and AC-046/AC-047 against the built panel and status entries in an opaque sandbox, with six official resolved themes and a host font/radius override. Typecheck, lint, build, manifest parse, and the design detector pass. Built service, MCP, and viewer e2e pass. Installed-app acceptance is pending. |
+| Last verified | 88 unit/integration tests pass. Typecheck and lint pass. The browser command passes against the actual gallery/status entries, bundled Node viewer/runtime/MCP, and light/dark authoring examples. It covers document isolation, fixed/following views, feedback handoff, drafts, search, and setup. The design detector reports no findings. Independent reviews received fixes and regression tests. Installed-app acceptance is pending. |
 
 ### At a Glance
 
@@ -433,9 +435,8 @@ An artifact is published once and updated in place. Each update appends an immut
 
 | State | Meaning | Allowed transitions | Side effects |
 |---|---|---|---|
-| New | Written by the artifact, not seen by the gallery | Delivered | Badge on the rail |
-| Delivered | The gallery composed a prompt with the feedback id | Read | The prompt includes the feedback id |
-| Read | The agent called `canvas_result` | None | The gallery marks it read |
+| Pending | Written by the artifact, not yet added to chat | Added to chat | Counts toward the pending badge |
+| Added to chat | The gallery successfully composed selected feedback, then recorded `deliveredAt` | May be deliberately added again | Does not mean sent or read; `canvas_result` does not change this state |
 
 ## 11. Implementation Map
 
@@ -470,6 +471,10 @@ Phases 1 to 5, 2026-10-23:
 | `tests/mcp.test.ts` | Stdio tools, publish, read, update, result, archive, file and folder sources | `bun test` |
 | `tests/service.test.ts` | Health, list, view URL error, feedback, archive, restore, trash, export, MCP status | `bun test` |
 | `tests/feedback.test.ts` | Feedback and runtime state units | `bun test` |
+| `src/viewer/rendering.ts` | Capture, verify, confine, and load shared immutable runtime/library snapshots | `tests/rendering.test.ts` |
+| `tests/ensure.test.ts` | Daemon compatibility, serialized restart, legacy refusal, and request deadlines | `bun test` |
+| `tests/browser/viewer.browser.ts`, `tests/browser/viewer-fixture.ts` | Real bundled Node viewer/runtime/MCP, document isolation, updates, feedback, and snapshots | `bun run test:browser` |
+| `examples/`, `tests/browser/examples.browser.ts` | Single-source chart/diagram and form mockup, light/dark browser coverage | `bun run test:browser` |
 
 HTML and bundle validation lives in `src/store/index.ts`. The `src/kinds` adapters are deferred until Markdown, image, and PDF exist. Splitting now would add an abstraction with one caller.
 
@@ -498,12 +503,12 @@ The store, policy, viewer, build, MCP, service, and UI rows are implemented. The
 | MCP | Ensure and talk to the viewer | `src/viewer/ensure.ts` | `ensureViewer` | Create |
 | Service | Host service entry | `src/service/main.ts` | `main` | Create |
 | Service | `/health`, `/list`, `/view-url`, `/feedback`, `/export` | `src/service/routes.ts` | `serviceRoutes` | Create |
-| UI | Gallery panel | `panel/index.html`, `panel/main.ts` | `mountApp`, `mountLibrary`, `mountInspector`, `mountSetup`, `paint` | Current |
-| UI | Full-screen page | `page: true` reuses `panel/index.html` | `ctx.surface === "page"` | Current |
-| UI | Work Status section | `status/index.html`, `status/main.ts` | `mountStatus`, `refresh` | Current |
-| UI | SDK controls | `@openchamber/sdk/ui` | `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountBadge`, `mountBanner`, `mountEmpty`, `mountSpinner` | Current |
-| UI | List, filter, detail, versions, setup, scopes | `panel/main.ts` | `mountLibrary`, `mountInspector`, `mountSetup` | Current |
-| UI | Browser open action | `panel/main.ts` | `openArtifact` | Current |
+| UI | Gallery panel | `panel/index.html`, `panel/main.ts` | `mountApp`, `mountLibrary`, `mountInspector`, `mountSetup`, `paint` | Inferred |
+| UI | Full-screen page | `page: true` reuses `panel/index.html` | `ctx.surface === "page"` | Inferred |
+| UI | Work Status section | `status/index.html`, `status/main.ts` | `mountStatus`, `refresh` | Inferred |
+| UI | SDK controls | `@openchamber/sdk/ui` | `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountBadge`, `mountBanner`, `mountEmpty`, `mountSpinner`, `mountCheckbox` | Inferred |
+| UI | List, filter, detail, versions, setup, scopes | `panel/main.ts` | `mountLibrary`, `mountInspector`, `mountSetup` | Inferred |
+| UI | Browser open action | `panel/main.ts` | `openArtifact` | Inferred |
 | Manifest | Extension declaration | `package.json` `openchamber` block | `contributes` | Create |
 | Tests | Store, kinds, policy units | `tests/store.test.ts`, `tests/policy.test.ts` | Not applicable | Create |
 | Tests | Feedback and state units | `tests/feedback.test.ts` | Not applicable | Create |
@@ -511,7 +516,7 @@ The store, policy, viewer, build, MCP, service, and UI rows are implemented. The
 | Tests | Service HTTP | `tests/service.test.ts` | Not applicable | Create |
 | Tests | MCP stdio | `tests/mcp.test.ts` | Not applicable | Create |
 | Tests | Viewer browser tests | `tests/viewer.spec.ts` | Playwright | Create |
-| Tests | Native UI and theme browser suite | `tests/browser/panel.browser.ts`, `tests/browser/host.html`, `tests/fixtures/openchamber-themes.json` | Playwright with the built entries in an opaque mock host | Current |
+| Tests | Native UI and theme browser suite | `tests/browser/panel.browser.ts`, `tests/browser/host.html`, `tests/fixtures/openchamber-themes.json` | Playwright with the built entries in an opaque mock host | Inferred |
 
 ### Generated or Restricted Areas
 
@@ -519,6 +524,7 @@ The store, policy, viewer, build, MCP, service, and UI rows are implemented. The
 |---|---|---|
 | `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js` | Generated | Shipped built because OpenChamber never compiles extensions |
 | `viewer/libraries/` | Generated and pinned | Built by `scripts/build.ts` from the exact npm versions; `manifest.json` records bytes and SHA-256; the viewer verifies each file at startup |
+| `viewer/build.json` | Generated | Build identity hashes viewer, runtime, and library manifest bytes; never hand-edit |
 | `src/viewer/policy.ts` | Restricted | Changes need a security review and the SEC-001 test |
 | `src/viewer/runtime/canvas.ts` | Restricted | Runs inside the artifact origin; no secrets |
 | `src/mcp/source.ts` | Restricted | Source paths stay inside the project; changes need traversal tests |
@@ -590,13 +596,13 @@ Result:
 }
 ```
 
-The tool description tells the agent to open `viewUrl` with `openchamber_web` and `browser.open` when that tool is available. It also says the gallery is the durable viewer if the URL expires.
+The tool description tells the agent to open `viewUrl` with the browser tool when available. The gallery is the durable viewer if the URL expires. Changed-content dedupe publication returns `contentChanged: true` and notifies existing following views. Omitted tags preserve existing tags.
 
 No `storePath` is returned. The agent does not need the user's home directory in its context.
 
 #### `update`
 
-An update never edits a stored version in place. It writes a complete new version directory, moves `currentVersion`, and notifies the viewer. The old version stays readable.
+Content updates never edit a stored version in place. They create a complete new version and notify following views. Metadata-only updates change the artifact title/tags without creating a content version or reloading views.
 
 There are four update modes. Exactly one mode per call.
 
@@ -686,8 +692,8 @@ The old version stays in the history. `restoredFrom` records the source.
 
 **`baseVersion` rules:**
 
-- Required for `edits`, `mode: "merge"`, and `restoreFrom`.
-- Recommended for full replacement and file snapshots. When present and stale, the update returns `CONFLICT` with the current version and writes nothing.
+- Required for every update, including full replacement, file/folder snapshots, metadata-only updates, and changed-content dedupe publishing.
+- A stale base returns `CONFLICT` with the current version and writes nothing. Identical dedupe publication may omit the base; equality and metadata changes are decided under the artifact lock.
 - The agent gets the version from `canvas_read`, `canvas_publish`, or the previous `canvas_update` result. It should pass it on every update.
 
 **Result:**
@@ -2434,3 +2440,114 @@ The store schema and version manifest are versioned for this reason. The `kind` 
 - OpenChamber roadmap: https://openchamber.dev/roadmap
 - OpenChamber changelog 2.5.1: https://openchamber.dev/changelog/
 - MCP tools specification: https://modelcontextprotocol.io/specification/2026-07-28/server/tools
+
+## 37. Security and revision hardening
+
+Status: **Inferred** in the uncommitted 0.2.0 working tree. Approved and built on 2026-10-25 after a source review, independent gallery review, and isolated runtime probes. This section takes precedence over contradictory earlier planned contracts for the changes listed here. Installed-app acceptance remains pending.
+
+### Outcome and scope
+
+Users can safely open every document in a bundle, reopen a saved version without following new versions, find older artifacts, and add version-specific feedback or revision instructions to chat without losing drafts. Agents get consistent conflict checks, metadata updates without republishing content, and a current-project list default. New content versions retain their rendering dependencies across extension updates.
+
+Keep the shared filesystem store, separate MCP/service/viewer processes, public SDK controls, loopback binding, and current extension permissions. Add reusable chart, diagram, and mockup examples. Do not add cloud sharing, collaboration, a visual editor, raster annotation, new artifact kinds, a database, or a UI framework. Do not rewrite the user's published real-estate artifact or alter OpenChamber configuration or the installed extension.
+
+### Evidence and architecture probes
+
+- The review baseline passed `bun run typecheck` and `bun test`, with 74 passing tests. The installed-app acceptance check is still pending.
+- An isolated Chrome probe followed a link from a bundle entry to `second.html`. The entry blocked `localStorage` and a request to a separate loopback test server. The secondary HTML response had no CSP and allowed both. The entry-only header branch in `src/viewer/server.ts` is the cause. Probe files and the temporary store were removed.
+- An isolated store probe confirmed that full replacement accepts a missing `baseVersion`, and publishing identical content with a new title or tags ignores those metadata changes. The temporary store was removed.
+- A planning probe copied a verified runtime/library set into a separate directory, changed the original files, and restarted the existing viewer against the copy. Both the injected runtime and the served library retained their original bytes before and after restart. The existing viewer can serve immutable dependency copies without changing browser origins or relaxing CSP. Scratch source and temporary files were removed before plan approval.
+- The existing viewer returns 404 for `/shutdown`. Legacy daemons cannot be assumed to support a shutdown protocol. New code must not kill an arbitrary PID to work around this.
+- The SDK supports the required buttons, fields, lists, banners, and menus. It lacks arbitrary row-action slots and a composed feedback/thread component. Compose those areas from SDK controls and noninteractive text. Preserve AC-048's list selection/Open behavior rather than replacing kit rows.
+- Drift inspection covered commits after `a4911b2` for the store, MCP, viewer, service, panel, tests, build, and package manifest. Source, not the older planned prose, determines the baseline.
+
+### Proposed contracts and data flow
+
+**Document responses.** Identify HTML documents by their served MIME/type rules, including `.html` and `.htm`, and send the same sandbox and resource restrictions for entry and secondary documents. Inject the runtime into secondary HTML as well. Keep SVG's stricter non-script sandbox and keep scripts, CSS, images, and other assets usable without treating them as trusted documents. Do not weaken tokens, CORS, path checks, or security headers.
+
+**Feedback.** The viewer writes the artifact/version-specific feedback record as today. The gallery reads paginated records from the service, displays payloads as text, and offers an explicit Add feedback to chat action. Only after `host.compose` succeeds does it mark the selected IDs as added to the composer. Existing `deliveredAt` records retain that meaning; UI labels must not imply the message was sent or the agent read it. The badge counts pending feedback, not all historical feedback. Add pagination metadata and pending totals without changing the feedback payload limit.
+
+**Revision state.** Keep unsent revision drafts in memory by artifact ID for the current panel session. Navigate between artifacts, scopes, and Setup without deleting them. Clear a draft only when its exact submitted text was successfully added to the composer. Layout order is Open/Copy URL/Export, revision field, feedback, recent versions, then technical details. Initially show the three newest versions and an SDK Show older versions control. Theme-only snapshots continue to update mounted controls without remounting or refetching.
+
+**View mode.** A newly minted current view follows updates by default. An explicitly requested historical version is a snapshot by default, even if that version happens to be current at the moment. Carry an explicit follow/snapshot mode through minting and subsequent runtime navigation. Snapshot views do not automatically navigate on content updates. Current views continue to follow MCP updates and gallery restores. Reopening from the gallery remains the recovery path for expired tokens or restarted viewers.
+
+**Mutation checks.** Require `baseVersion` for every existing-artifact content update, including full replacements and file/folder snapshots. Changed-content dedupe publishing must also check the caller's base version rather than silently replacing newer work. Unchanged dedupe publishing remains idempotent and can apply explicitly supplied title/tags under the artifact lock without creating a content version. Add metadata-only `update` calls with title and/or tags, a required `baseVersion`, and no content source. Return the unchanged content version and no changed files; do not reload open pages. A stale base or invalid combination writes nothing. Omitted metadata preserves existing values.
+
+**Listing.** Omitted MCP directory means the MCP working directory. An explicit all-projects option enables cross-project listing; reject ambiguous combinations. Service/store search, tag filtering, archived filtering, and sort run before pagination. Return matching total, pagination state, scope tag options, and pending-feedback totals so the panel does not infer them from one page. The gallery keeps search usable for zero matches, offers Load more, resets pagination on filter/scope/sort changes, and discards stale requests. Preserve trash restore behavior and use equivalent query/pagination semantics for Trash rather than hiding older deleted artifacts.
+
+**Rendering dependencies.** Store a content-addressed rendering snapshot under a hidden store directory. It contains the verified selected library files, runtime bytes, hashes, and a runtime API version. Add an optional rendering reference to the existing version-manifest schema so legacy manifests remain readable; production create/update paths write the reference for new versions. Rendering snapshots are shared by hash rather than copied into every artifact bundle. Viewer requests resolve the version's recorded snapshot, not whichever library files are currently installed. Restore carries the source version's rendering reference. Missing, tampered, or unsupported snapshots fail with an actionable error instead of silently substituting newer dependencies.
+
+**Legacy versions.** Existing manifests have no rendering reference. Keep them readable using the installed compatible renderer, and expose an explicit legacy/unpinned warning in source results and the gallery's version details. Do not alter old version files or claim that their original library/runtime bytes were recovered. New revisions of legacy content receive a pinned rendering reference; restoring a legacy version remains explicitly legacy.
+
+**Daemon compatibility.** Health includes an explicit protocol version and build identity. Reuse requires compatibility with the caller's expected protocol/build. Known new-protocol daemons support authenticated shutdown and bounded restart under the existing startup lock. Unauthenticated shutdown is rejected. Legacy/unknown daemons produce an actionable restart error instead of being reused or killed by PID. Setup displays the mismatch and an explicit restart action where the known protocol supports it. Restart invalidates old view URLs; the UI tells the user to reopen from the gallery. Build identity must represent executable content, not just a package-version string reread from an updated folder.
+
+**Authoring examples.** Add self-contained source examples under `examples/` for a chart, a diagram, and an interface mockup, plus a short authoring guide. The diagram defines nodes and flows once; the drawing, flow table, and selection details derive from those definitions. Use focused diagram views with complete table references, accessible selection controls, viewer theme/runtime APIs, and no CDN or open-network dependencies. Examples are published only when a user asks, not automatically installed in the artifact store.
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Gallery
+  participant Service
+  participant Store
+  participant Agent
+  participant Viewer
+  User->>Gallery: Inspect feedback or write a revision
+  Gallery->>Service: Read version-specific feedback
+  Service->>Store: Read records and pending counts
+  Store-->>Gallery: Records, versions, and pagination
+  User->>Gallery: Add selected feedback to chat
+  Gallery->>User: Compose a draft for review
+  Gallery->>Service: Mark composed IDs after success
+  User->>Agent: Send reviewed message
+  Agent->>Store: Update using current baseVersion
+  Store-->>Viewer: Notify after atomic version write
+  Viewer-->>User: Follow latest, or keep snapshot fixed
+```
+
+The user owns sending the message. A saved-version view stays fixed while a following view opens the new content version with its recorded rendering dependencies.
+
+### Acceptance criteria and named tests
+
+Every test added for this proposal must name its criterion ID. Paths marked Planned do not exist yet.
+
+| ID | Observable acceptance criterion | Tests |
+|---|---|---|
+| AC-050 | Entry and secondary HTML/HTM documents remain opaque and block outside requests after direct access and link navigation. Bundle scripts/styles/images still load; SVG remains non-scriptable; bad tokens/traversal still fail. | `tests/policy.test.ts`, `tests/viewer.test.ts`, Planned `tests/browser/viewer.browser.ts` |
+| AC-051 | Inspector feedback shows payload, version, timestamp, and Pending/Added to chat state; paging retrieves every record, including records sharing a timestamp. HTML-looking payloads render as text. Empty/loading/error/retry states exist. | `tests/feedback.test.ts`, `tests/service.test.ts`, `tests/browser/panel.browser.ts` |
+| AC-052 | Add feedback to chat composes only selected records and never sends a message. Compose failure leaves records pending. Success marks only those IDs; a marking failure reports partial success without automatically composing duplicates. Badge totals count pending records beyond the loaded page. | `tests/feedback.test.ts`, `tests/service.test.ts`, `tests/browser/panel.browser.ts` |
+| AC-053 | Artifact A's draft survives Back, artifact B, scope changes, Setup, polling, and theme updates. Successful composition clears only the submitted draft; composition failure or a concurrent edit retains it. Drafts do not move between artifacts. | `tests/browser/panel.browser.ts` |
+| AC-054 | Revision controls precede feedback/history. Three recent versions show initially; Show older versions reveals the rest without losing the draft. SDK controls, keyboard focus, and no horizontal overflow hold at 320/360/720/1200px. Keyboard split behavior uses the same 720px breakpoint as layout. | `tests/browser/panel.browser.ts` |
+| AC-055 | All content-update modes and changed-content dedupe publishing reject missing or stale base versions without a new version or partial metadata write. Concurrent writers cannot bypass the guard through full replacement. | `tests/store.test.ts`, `tests/mcp.test.ts` |
+| AC-056 | Default current views follow updates and gallery restores. Explicit version views remain at their saved version. View mode and theme survive following updates; custom onUpdate handlers retain their documented behavior. | `tests/service.test.ts`, `tests/viewer.test.ts`, Planned `tests/browser/viewer.browser.ts` |
+| AC-057 | Metadata-only updates and identical-content dedupe publishing apply supplied title/tags without copying HTML, advancing content history, or reloading open views. Omitted fields are preserved. Stale bases and conflicting input combinations fail atomically. | `tests/store.test.ts`, `tests/mcp.test.ts`, `tests/viewer.test.ts` |
+| AC-058 | MCP listing defaults to its working directory, explicit all-projects listing returns other projects, and ambiguous directory/all-projects combinations fail. File-based publishing keeps source resolution under the declared project root. | `tests/mcp.test.ts` |
+| AC-059 | Search/tag/archive/sort run across the complete store before pagination. A matching artifact older than the latest 200 remains findable. Load more, totals, tag choices, trash scope, and stale-request rejection work; zero matches do not hide search. | `tests/store.test.ts`, `tests/service.test.ts`, `tests/browser/panel.browser.ts` |
+| AC-060 | A checked, valid, enabled registration allows the sample prompt while MCP is idle. Missing, disabled, or stale registrations keep it disabled even if another heartbeat is fresh. Unchecked registration uses the existing heartbeat fallback. Composition never sends the prompt. | `tests/browser/panel.browser.ts` |
+| AC-061 | New production content versions record a verified runtime/library snapshot. Changing installed dependency files and restarting the daemon does not change those saved versions' served runtime/library bytes. Snapshots are reused by hash, paths remain confined, and tampering or unsupported API versions fail visibly. | Planned `tests/rendering.test.ts`, `tests/mcp.test.ts`, `tests/service.test.ts`, `tests/viewer.test.ts`, Planned `tests/browser/viewer.browser.ts` |
+| AC-062 | Restoring a pinned version preserves its rendering reference. Existing manifests remain readable without rewriting old versions and show a legacy warning. New revisions of legacy content are pinned; missing legacy dependencies do not silently disappear. | `tests/store.test.ts`, `tests/viewer.test.ts`, `tests/browser/panel.browser.ts`, Planned `tests/rendering.test.ts` |
+| AC-063 | Matching daemon protocol/build is reused. A known incompatible build is shut down only through authenticated control and restarted under the startup lock. Legacy/unknown identity is not reused or killed by PID. Concurrent startup, rejected shutdown, failed restart, and Setup recovery states are covered. | Planned `tests/ensure.test.ts`, `tests/service.test.ts`, `tests/viewer.test.ts`, `tests/browser/panel.browser.ts` |
+| AC-064 | The existing `bun run test:browser` command runs both the actual gallery entries and the actual built viewer/runtime. The security and saved-version tests exercise real browser behavior, not a stub runtime. Each new criterion has an ID-bearing test. | `package.json`, `tests/browser/panel.browser.ts`, Planned `tests/browser/viewer.browser.ts` |
+| AC-065 | Chart, diagram, and mockup examples load without external resources in the real viewer. Diagram drawing/table/details derive from one graph and agree on node/flow IDs. Selection works by keyboard as well as pointer; light and dark themes have bounded render checks. | Planned `examples/`, Planned `tests/browser/examples.browser.ts`, `package.json` |
+
+### Implementation phases and files
+
+1. **Close document isolation.** Update `src/viewer/server.ts` and `src/viewer/policy.ts`; add ID-bearing policy/HTTP tests and the real-viewer browser runner. Completion requires AC-050 reproducing the original bypass as a blocked operation while normal bundle assets still work. No security rollback may restore the vulnerable document-serving branch.
+2. **Make mutations consistent.** Update `src/store/types.ts`, `src/store/schema.ts`, `src/store/index.ts`, and `src/mcp/server.ts` for base guards, metadata-only updates, and dedupe semantics. Complete AC-055/AC-057/AC-058 before using these contracts in UI work. Update prior tests that deliberately allowed missing replacement bases.
+3. **Pin rendering and define viewer lifecycle.** Add Planned `src/viewer/rendering.ts` and the snapshot/compatibility tests; update viewer ensure/server/runtime, production store construction, build outputs, and service view/restore endpoints. Complete AC-056/AC-061/AC-062/AC-063. Snapshot writes are atomic and do not alter existing content versions. Keep legacy fallback explicit.
+4. **Complete feedback and search data access.** Update store feedback/list methods, shared contracts, MCP result/list, service routes, and relevant tests. Complete backend portions of AC-051/AC-052/AC-059. Apply filters before limiting; expose pending counts and complete pagination rather than fetching the full store into the panel.
+5. **Update the existing gallery composition.** Update `panel/main.ts`, layout-only CSS as needed, `tests/browser/host.html`, and panel browser tests. Complete AC-051 through AC-054, AC-059/AC-060, and Setup compatibility feedback. Preserve SDK mounting, disposal, host appearance updates, scope navigation, AC-048, and remote export behavior.
+6. **Ship examples and verification.** Add the example sources/guide and example browser checks. Wire the existing browser command to all browser runners, rebuild committed distribution files, update README/product/design/feature/index/conventions, and request an independent agent review of security/contracts and user-facing changes. Complete AC-064/AC-065 and resolve review findings before reporting done.
+
+### Risks, rollout, and fallback
+
+| Risk | Decision and fallback |
+|---|---|
+| Legacy versions lack recorded dependency bytes | Keep readable with an explicit legacy warning; never invent a historical hash. Exact reproducibility begins with new pinned versions. |
+| Existing daemons have no shutdown protocol | Do not reuse an incompatible or unknown daemon. Show manual restart guidance for legacy instances. Support authenticated restart for known new-protocol daemons. No broad process killing. |
+| Stricter baseVersion breaks callers relying on unguarded replace/dedupe | This is an intentional contract change. Update tool schemas/descriptions, examples, tests, and release notes together; package as the next minor release, `0.2.0`, before 1.0. |
+| Snapshot capture fails after a version source is prepared | Do not publish a version referencing a partial/missing snapshot. Report the dependency error and leave content/currentVersion unchanged. Reuse immutable snapshots; automatic garbage collection is outside this change. |
+| Feedback is composed but marking it fails | Show that it was added to chat but tracking failed. Keep the record pending and do not silently retry the compose operation. Existing composer text is never discarded. |
+| Polling reorders paginated results or responses race | Reset pages on filters/sort/scope and explicit refresh, refresh the loaded window consistently, and ignore obsolete requests. Do not let a stale page replace a newer search or clear a draft. |
+| Installed app differs from the browser host fixture | Automated runs exercise built entries and a real viewer. Report installed-app acceptance separately; do not edit the installed extension or configuration to manufacture a pass. |
+
+Verification uses `bun run typecheck`, `bun run lint`, `bun test`, `bun run test:browser`, then `bun run build`. Inspect desktop and rail layouts together once, fix the observed issues in a batch, then perform one confirmation pass. Tests, daemon probes, and example publication use isolated stores under `/tmp/opencode`, not the user's artifact store. Preserve the pre-existing research-note change. No commit, push, installation, or configuration change is authorized by this plan alone.

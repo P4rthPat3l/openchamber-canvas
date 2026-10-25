@@ -140,6 +140,25 @@ async function mintFor(
 }
 
 describe('viewer server', () => {
+  test('AC-050: secondary HTML has the entry sandbox and runtime', async () => {
+    const fixture = await makeViewer();
+    const created = await fixture.store.create({ title: 'Documents', kind: 'bundle', entry: 'index.html', directory: '/project', files: [
+      { path: 'index.html', content: page() }, { path: 'nested/page.htm', content: page('Secondary') },
+    ] });
+    const minted = await mintFor(fixture, created.id);
+    const response = await fetch(new URL('nested/page.htm', minted.url));
+    expect(response.headers.get('content-security-policy')).toContain('sandbox allow-scripts');
+    expect(await response.text()).toContain('__canvasRuntime');
+  });
+
+  test('AC-063: shutdown requires the viewer secret', async () => {
+    const fixture = await makeViewer();
+    expect((await fetch(`${fixture.base}/shutdown`, { method: 'POST' })).status).toBe(401);
+    const response = await fetch(`${fixture.base}/health`, { headers: fixture.auth });
+    const health = await response.json();
+    expect(health.protocol).toBe(2);
+    expect(typeof health.build).toBe('string');
+  });
   test('serves health only with the viewer secret', async () => {
     const fixture = await makeViewer();
     const health = await fetch(`${fixture.base}/health`, { headers: fixture.auth });

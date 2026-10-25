@@ -117,7 +117,7 @@ function parseVersionSummary(value: unknown): VersionSummary {
   const title = requireString(value, 'title', 200);
   const restoredFrom = nullableString(value, 'restoredFrom', 40);
   if (restoredFrom !== null && !VERSION_ID_RE.test(restoredFrom)) fail('restoredFrom is invalid');
-  return { id, createdAt, bytes, files, title, restoredFrom };
+  return { id, createdAt, bytes, files, title, restoredFrom, ...renderingReference(value) };
 }
 
 function parseFileRecord(value: unknown): ArtifactFileRecord {
@@ -191,7 +191,14 @@ export function parseVersionManifest(value: unknown): VersionManifest {
     createdAt,
     restoredFrom,
     files,
+    ...renderingReference(value),
   };
+}
+
+function renderingReference(value: Record<string, unknown>): { rendering?: string } {
+  if (value.rendering === undefined) return {};
+  if (typeof value.rendering !== 'string' || !SHA256_RE.test(value.rendering)) fail('rendering reference is invalid');
+  return { rendering: value.rendering };
 }
 
 export function parseMeta(value: unknown): ArtifactMeta {  if (!isRecord(value)) fail('meta must be an object');
@@ -321,4 +328,3 @@ export function parseRuntimeState(value: unknown): RuntimeState {
   }
   return state;
 }
-

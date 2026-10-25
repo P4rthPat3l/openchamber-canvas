@@ -2,7 +2,7 @@
 
 A project gallery for agent-generated artifacts. Each artifact opens in OpenChamber's browser panel, keeps its versions, refreshes in place, and can send user feedback back to the agent.
 
-Status: Phase 6 SDK UI migration built; installed acceptance pending. The gallery, setup view, and Work Status section use the public `@openchamber/sdk/ui` controls, with custom CSS limited to composition the installed kit lacks and decorative icons in section headings and labelled controls. The manual acceptance run is pending.
+Status: 0.2.0 security and revision hardening built; installed acceptance pending. The gallery, setup view, and Work Status section use the public `@openchamber/sdk/ui` controls. Custom CSS composes layouts without restyling those controls.
 
 - Plan and feature document: [docs/features/FEAT-001-openchamber-canvas.md](docs/features/FEAT-001-openchamber-canvas.md)
 - Product truth: [PRODUCT.md](PRODUCT.md)
@@ -14,9 +14,9 @@ Status: Phase 6 SDK UI migration built; installed acceptance pending. The galler
 ## What exists
 
 - Strict TypeScript project with Bun scripts.
-- Artifact store: create, replace, merge, exact edits, restore, read, list, archive, favorite, pin, trash, untrash, prune, feedback, runtime state.
+- Artifact store: guarded content updates, metadata-only updates, restore, complete paginated search, archive, favorites, trash, feedback delivery tracking, and runtime state.
 - View policy: sandboxed CSP, loopback CORS, per-artifact HMAC view tokens, safe path resolution.
-- Viewer server: `/health`, `/mint`, `/notify`, `/view`, `/events`, `/api`, `/libraries`, port file, idle exit.
+- Viewer server: sandboxed entry and secondary documents, fixed or following views, content-addressed rendering snapshots, authenticated shutdown, protocol/build compatibility, and idle exit.
 - Runtime: `window.canvas` with storage, feedback, data, refresh, theme, and live update.
 - Pinned libraries: Chart.js, D3, and Mermaid, copied by the build with a SHA-256 manifest.
 - MCP server: `publish`, `update`, `list`, `read`, `archive`, and `result`, with `filePath` and `directoryPath` sources, an external-reference scan, and a heartbeat.
@@ -24,7 +24,9 @@ Status: Phase 6 SDK UI migration built; installed acceptance pending. The galler
 - Gallery panel: a master-detail artifact shelf built from the OpenChamber SDK UI kit, with project, all, archived, and trash scopes; search; tags; sort; list and grid; a persistent inspector on the full-screen page and on wide panels; version actions; restore; archive; delete; favorite; refine; attach; export; setup; remote warning; and an MCP setup CTA that reads the OpenCode config registration.
 - Work Status section: artifact count, latest title, and a native MCP state badge.
 - Extension manifest: panel, page, status section, service, and Canvas tool card.
-- 67 tests covering storage, update modes, conflicts, traversal, locking, policy, feedback, state, viewer routes, SSE, bundle assets, MCP tools, file and folder sources, service routes, export, MCP registration, and trash.
+- Unit/integration tests cover storage, guarded mutations, traversal, policy, feedback pagination, rendering snapshots, daemon lifecycle, MCP, service routes, setup registration, and trash.
+- The inspector preserves revision drafts per artifact, exposes feedback for review and addition to chat, and initially shows three recent versions.
+- [Authoring examples](examples/README.md) for a chart, a focused data-flow diagram, and an interactive interface mockup.
 
 Run:
 
@@ -37,9 +39,9 @@ bun run test:browser
 bun run build
 ```
 
-`bun run test:browser` builds the entries and runs the Playwright browser suite against the actual panel and status files in an opaque iframe with a mock host. It uses the system Chrome at `/usr/bin/google-chrome`. It covers AC-037 through AC-042, including six official resolved themes, a host font/radius override, theme-only updates, retained draft and focus, menus, dialog, setup, empty and error states, and 320px/720px/1200px layouts.
+`bun run test:browser` builds the distribution, tests the actual panel/status entries in an opaque mock host, then launches the bundled viewer with Node and tests its real runtime and the authoring examples. Chrome at `/usr/bin/google-chrome` exercises isolation, fixed/following views, feedback, drafts, complete search, setup, six resolved themes, and rail/page layouts. Temporary stores and screenshots stay under `/tmp/opencode`.
 
-`bun run build` builds `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js`, and copies the pinned libraries into `viewer/libraries/`.
+`bun run build` builds `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js`, copies libraries into `viewer/libraries/`, and writes `viewer/build.json` with the viewer/runtime/library build identity. These distribution files are committed for Git URL installation.
 
 `opencode.json` is managed by OpenChamber and is not tracked. The extension bundles `mcp/server.js`, but an extension cannot register an MCP server. The Setup page shows a one-command registration with the exact path:
 
@@ -62,9 +64,19 @@ The MCP is a separate process. Without it the gallery can browse, open, export, 
 
 ## Verification
 
-The Phase 0 probes pass. The store, viewer, MCP, and service suites pass. The SDK UI migration is covered by the sandboxed browser suite against the built panel and status files. The gallery, status section, setup page, and tool card still need the installed extension; the manual acceptance run is the remaining check.
+The automated suites cover the source and built distribution. The installed extension, host routing, setup, and tool card still need the manual acceptance run. Browser fixtures do not replace installed-app verification.
 
-## What it will be
+## Updating to 0.2.0
+
+- `baseVersion` is required for every update, including full replacements and changed-content dedupe publishing. Read the current version before retrying a conflict.
+- To change only a title or tags, pass `id`, `baseVersion`, and the metadata. No HTML or new content version is needed.
+- `canvas.list` defaults to its working directory. Pass `allProjects: true` for cross-project listing. Search/filter/sort precede pagination.
+- New versions pin runtime and library bytes. Existing versions remain readable with an explicit legacy/unpinned warning; their original dependencies cannot be reconstructed.
+- An explicit version opens as a fixed snapshot. Opening without a version follows new revisions and restores.
+- Feedback marked Added to chat is in the composer, not necessarily sent or read. Only pending feedback contributes to the gallery badge.
+- Known incompatible daemons restart through authenticated control. Legacy daemons have no shutdown protocol and are not killed automatically. Close their Canvas views and stop the old Canvas viewer process manually, or wait for its 30-minute idle exit. Reopen from the gallery afterward; old view URLs expire on restart.
+
+## Architecture
 
 Four parts share one store at `~/.config/openchamber/artifacts`:
 
@@ -73,7 +85,7 @@ Four parts share one store at `~/.config/openchamber/artifacts`:
 - A detached viewer daemon that serves artifact HTML, the runtime API, and live updates on loopback.
 - An MCP server the agent calls to publish, read, update, list, archive, and collect feedback.
 
-The browser panel does the rendering, so artifacts keep full JavaScript and gain annotation and DevTools. Artifacts use a pinned local library set, so they work without a CDN. The viewer blocks the open network and the OpenChamber API.
+The browser panel renders sandboxed JavaScript artifacts and provides DevTools. Native annotation is not supported on these sandboxed pages. New content versions retain their selected library files and runtime in a shared immutable snapshot. The viewer blocks the open network and the OpenChamber API.
 
 ## How OpenChamber sees it
 

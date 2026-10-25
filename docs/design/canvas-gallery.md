@@ -31,7 +31,12 @@ Custom CSS is limited to the responsive list/inspector split, section headings, 
 - At 720px and wider, the rail panel and the full-screen page keep the library beside the inspector. The narrow rail replaces the library with the inspector and a Back control. The inspector actions sit in the title row, so no empty toolbar row consumes the first screen.
 - The grid uses flat tiles, labelled SDK buttons, and the host selection fill. The card body and the Inspect button both open the inspector.
 - The detail uses SDK buttons with decorative icons for Open, Copy URL, Export, favorite, attach, archive, and confirmed deletion. Versions gets a left-aligned heading and count; Ask the agent gets a heading and a labelled field. Favorite is metadata; it is not mixed into the tag badges.
+- The revision field follows Open/Copy URL/Export, ahead of feedback and history. Drafts belong to an artifact and survive Back, scope changes, Setup, and polling for the panel session.
+- Feedback uses SDK checkboxes, badges, buttons, loading, and error controls with noninteractive text payloads. Add feedback to chat is explicit and never sends. Ten records show initially with pagination; Pending and Added to chat describe composer status, not agent receipt.
+- Three recent versions show initially; an SDK control expands older history. Legacy versions visibly identify unpinned rendering dependencies.
+- Search, scope, tags, and sort run on the service before pagination. Show loaded/matching counts and a Load more button; zero matches never remove the search field. Keyboard split behavior uses the layout's 720px breakpoint.
 - Setup uses SDK badges, banners, actions, and code blocks under left-aligned headings with icons. The path wraps only at slashes; JSON scrolls horizontally.
+- A valid enabled registration allows the sample prompt before the MCP heartbeat is fresh. Viewer compatibility and known-protocol restart are explicit Setup actions. Restart tells the user to reopen views; legacy daemons require manual recovery.
 - The gallery notices carry a warning setup CTA only when the service confirms Canvas MCP is unregistered, disabled, or pointing at an old command. The banner is a mounted SDK banner with an Open setup action; uncertainty, a service failure, or a healthy registration show nothing. The Setup mirror states not installed, disabled, old command, waiting on agent, and connected.
 - The Work Status section uses an SDK badge and native text. The service owns the status; the section is transparent over the host panel.
 

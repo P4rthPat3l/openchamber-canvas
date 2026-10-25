@@ -123,6 +123,21 @@ function postJson(fixture: ServiceFixture, pathname: string, body: unknown): Pro
 }
 
 describe('canvas service', () => {
+  test('AC-051 AC-052 AC-059 AC-063: feedback pages, pending totals, filtered list pages, and viewer status', async () => {
+    const fixture = await makeService();
+    for (let index = 0; index < 3; index++) await fixture.store.addFeedback(fixture.created.id, { version: fixture.created.version, data: { index } });
+    const first = await get(fixture, `/feedback/${fixture.created.id}?limit=2&offset=0`).then(response => response.json());
+    const second = await get(fixture, `/feedback/${fixture.created.id}?limit=2&offset=2`).then(response => response.json());
+    expect(first.total).toBe(3);
+    expect(first.responses.length + second.responses.length).toBe(3);
+    await postJson(fixture, `/feedback/${fixture.created.id}`, { ids: [first.responses[0].id] });
+    const listed = await get(fixture, '/list?query=Service&sort=title&limit=1&offset=0').then(response => response.json());
+    expect(listed.total).toBe(1);
+    expect(listed.pendingFeedbackCount).toBe(2);
+    expect((await get(fixture, '/list?query=Service&offset=1').then(response => response.json())).artifacts).toHaveLength(0);
+    expect((await get(fixture, '/viewer-status').then(response => response.json())).status).toBe('Not running');
+    expect((await fetch(`${fixture.base}/viewer-restart`, { method: 'POST' })).status).toBe(401);
+  });
   test('answers health only with the service token', async () => {
     const fixture = await makeService();
     const health = await get(fixture, '/health');

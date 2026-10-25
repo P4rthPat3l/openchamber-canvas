@@ -1,10 +1,10 @@
 // src/service/main.ts
-import * as path9 from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import * as path11 from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/store/index.ts
-import * as fs4 from "node:fs/promises";
-import * as path5 from "node:path";
+import * as fs5 from "node:fs/promises";
+import * as path6 from "node:path";
 import { TextDecoder as TextDecoder2 } from "node:util";
 
 // src/store/errors.ts
@@ -349,8 +349,133 @@ async function withArtifactLock(lockDir, action, options) {
   }
 }
 
-// src/store/schema.ts
+// src/viewer/rendering.ts
+import * as fs4 from "node:fs/promises";
 import * as path4 from "node:path";
+import { fileURLToPath } from "node:url";
+var RUNTIME_API = 1;
+function packageRoot() {
+  let directory = path4.dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0;depth < 4; depth++) {
+    if (path4.basename(directory) === "src")
+      return path4.dirname(directory);
+    if (["mcp", "service", "viewer"].includes(path4.basename(directory)) && path4.basename(path4.dirname(directory)) !== "src")
+      return path4.dirname(directory);
+    directory = path4.dirname(directory);
+  }
+  throw new StoreError("RENDERING_UNAVAILABLE", "Cannot locate the Canvas package");
+}
+function installedRendering() {
+  const root = packageRoot();
+  return { runtimeFile: path4.join(root, "viewer/runtime/canvas.js"), librariesDir: path4.join(root, "viewer/libraries") };
+}
+function record(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function library(value) {
+  if (!record(value) || typeof value.file !== "string" || path4.basename(value.file) !== value.file || typeof value.bytes !== "number" || typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(value.sha256)) {
+    throw new StoreError("RENDERING_UNAVAILABLE", "Invalid rendering file record");
+  }
+  return { file: value.file, bytes: value.bytes, sha256: value.sha256 };
+}
+function manifest(value) {
+  if (!record(value) || value.api !== RUNTIME_API || !record(value.libraries)) {
+    throw new StoreError("RENDERING_UNAVAILABLE", "Unsupported rendering API. Update Canvas or restore a compatible version.");
+  }
+  const libraries = {};
+  for (const [name, entry] of Object.entries(value.libraries).sort(([a], [b]) => a.localeCompare(b))) {
+    if (!/^[a-z0-9-]{1,32}$/.test(name))
+      throw new StoreError("RENDERING_UNAVAILABLE", "Invalid library name");
+    libraries[name] = library(entry);
+  }
+  return { api: value.api, runtime: library(value.runtime), libraries };
+}
+async function verified(directory, entry) {
+  const target = await assertRealpathWithin(directory, path4.join(directory, entry.file));
+  const bytes = await fs4.readFile(target);
+  if (bytes.byteLength !== entry.bytes || sha256(bytes) !== entry.sha256) {
+    throw new StoreError("RENDERING_UNAVAILABLE", "Rendering dependencies failed verification. Restore the original files or republish.");
+  }
+  return bytes;
+}
+async function captureRendering(root, source, names) {
+  const raw = await readJson(path4.join(source.librariesDir, "manifest.json"));
+  if (!record(raw) || !record(raw.libraries))
+    throw new StoreError("RENDERING_UNAVAILABLE", "Library manifest is unavailable");
+  const runtime = await fs4.readFile(source.runtimeFile);
+  const libraries = {};
+  const files = new Map([["runtime.js", runtime]]);
+  for (const name of [...new Set(names)].sort()) {
+    const entry = library(raw.libraries[name]);
+    const bytes = await verified(source.librariesDir, entry);
+    const filename = `${name}.js`;
+    libraries[name] = { ...entry, file: filename };
+    files.set(filename, bytes);
+  }
+  const content = { api: RUNTIME_API, runtime: { file: "runtime.js", bytes: runtime.byteLength, sha256: sha256(runtime) }, libraries };
+  const id = sha256(Buffer.from(JSON.stringify(content)));
+  const base = path4.join(root, ".rendering");
+  await ensureContainedDir(root, base);
+  const directory = path4.join(base, id);
+  await ensureContainedDir(root, path4.join(root, ".locks"));
+  await withArtifactLock(path4.join(root, ".locks", `rendering-${id}.lock`), async () => {
+    try {
+      await fs4.lstat(directory);
+      await loadRendering(root, id);
+      return;
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT")
+        throw error;
+    }
+    const temporary = await fs4.mkdtemp(path4.join(base, ".tmp-"));
+    try {
+      await assertRealpathWithin(root, temporary);
+      for (const [filename, bytes] of files)
+        await writeFileDurable(path4.join(temporary, filename), bytes);
+      await writeJsonDurable(path4.join(temporary, "manifest.json"), content);
+      await fs4.rename(temporary, directory);
+    } finally {
+      await fs4.rm(temporary, { recursive: true, force: true });
+    }
+  }, { retryMs: 50, timeoutMs: 5000, staleMs: 30000 });
+  return id;
+}
+async function ensureContainedDir(root, target) {
+  try {
+    await fs4.lstat(target);
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT")
+      throw error;
+    await fs4.mkdir(target, { recursive: true, mode: 448 });
+  }
+  await assertRealpathWithin(root, target);
+}
+async function loadRendering(root, id) {
+  if (!/^[a-f0-9]{64}$/.test(id))
+    throw new StoreError("RENDERING_UNAVAILABLE", "Invalid rendering snapshot");
+  try {
+    return await readRendering(root, id);
+  } catch (error) {
+    if (errorCode(error) === "ENOENT")
+      throw new StoreError("RENDERING_UNAVAILABLE", "Pinned rendering files are missing. Restore the original snapshot or republish the artifact.");
+    throw error;
+  }
+}
+async function readRendering(root, id) {
+  const directory = await assertRealpathWithin(root, path4.join(root, ".rendering", id));
+  const filename = await assertRealpathWithin(directory, path4.join(directory, "manifest.json"));
+  const content = manifest(await readJson(filename));
+  if (sha256(Buffer.from(JSON.stringify(content))) !== id)
+    throw new StoreError("RENDERING_UNAVAILABLE", "Rendering manifest failed verification");
+  const runtime = await verified(directory, content.runtime);
+  const libraries = {};
+  for (const [name, entry] of Object.entries(content.libraries))
+    libraries[name] = await verified(directory, entry);
+  return { id, runtime: runtime.toString("utf8"), libraries };
+}
+
+// src/store/schema.ts
+import * as path5 from "node:path";
 var KINDS = ["html", "bundle", "markdown", "image", "pdf", "data"];
 var LIVE_FORMATS = ["csv", "json", "text"];
 var LIVE_SOURCE_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
@@ -387,28 +512,28 @@ function isJsonValue(value, depth = 0) {
 function jsonByteLength(value) {
   return Buffer.byteLength(JSON.stringify(value) ?? "null", "utf8");
 }
-function requireString(record, key, maxLength) {
-  const value = record[key];
+function requireString(record2, key, maxLength) {
+  const value = record2[key];
   if (typeof value !== "string" || value.length === 0 || value.length > maxLength) {
     fail(`${key} must be a string of 1 to ${maxLength} characters`);
   }
   return value;
 }
-function requireInteger(record, key, minimum, maximum) {
-  const value = record[key];
+function requireInteger(record2, key, minimum, maximum) {
+  const value = record2[key];
   if (typeof value !== "number" || !Number.isInteger(value) || value < minimum || value > maximum) {
     fail(`${key} must be an integer from ${minimum} to ${maximum}`);
   }
   return value;
 }
-function requireBoolean(record, key) {
-  const value = record[key];
+function requireBoolean(record2, key) {
+  const value = record2[key];
   if (typeof value !== "boolean")
     fail(`${key} must be a boolean`);
   return value;
 }
-function nullableString(record, key, maxLength) {
-  const value = record[key];
+function nullableString(record2, key, maxLength) {
+  const value = record2[key];
   if (value === null)
     return null;
   if (typeof value !== "string" || value.length === 0 || value.length > maxLength) {
@@ -444,7 +569,7 @@ function parseVersionSummary(value) {
   const restoredFrom = nullableString(value, "restoredFrom", 40);
   if (restoredFrom !== null && !VERSION_ID_RE.test(restoredFrom))
     fail("restoredFrom is invalid");
-  return { id, createdAt, bytes, files, title, restoredFrom };
+  return { id, createdAt, bytes, files, title, restoredFrom, ...renderingReference(value) };
 }
 function parseFileRecord(value) {
   if (!isRecord(value))
@@ -528,8 +653,16 @@ function parseVersionManifest(value) {
     title,
     createdAt,
     restoredFrom,
-    files
+    files,
+    ...renderingReference(value)
   };
+}
+function renderingReference(value) {
+  if (value.rendering === undefined)
+    return {};
+  if (typeof value.rendering !== "string" || !SHA256_RE.test(value.rendering))
+    fail("rendering reference is invalid");
+  return { rendering: value.rendering };
 }
 function parseMeta(value) {
   if (!isRecord(value))
@@ -543,7 +676,7 @@ function parseMeta(value) {
   if (!isKind(value.kind))
     fail("meta kind is invalid");
   const directory = requireString(value, "directory", 4096);
-  if (!path4.isAbsolute(directory))
+  if (!path5.isAbsolute(directory))
     fail("meta directory must be absolute");
   const projectName = requireString(value, "projectName", 80);
   const sessionId = nullableString(value, "sessionId", 200);
@@ -692,10 +825,12 @@ class ArtifactStore {
   maxBundleFiles;
   maxFileBytes;
   initPromise = null;
+  renderingSource;
   constructor(options) {
-    this.root = path5.resolve(options.root);
-    this.trashRoot = path5.join(this.root, "trash");
-    this.locksRoot = path5.join(this.root, ".locks");
+    this.root = path6.resolve(options.root);
+    this.renderingSource = options.renderingSource;
+    this.trashRoot = path6.join(this.root, "trash");
+    this.locksRoot = path6.join(this.root, ".locks");
     this.now = options.now ?? (() => new Date);
     this.random = options.random ?? ((size) => new Uint8Array(randomBytes2(size)));
     this.lockRetryMs = options.lockRetryMs ?? 50;
@@ -720,6 +855,13 @@ class ArtifactStore {
   }
   async create(input) {
     await this.ensureInit();
+    if (input.dedupeKey) {
+      const key = sha256(Buffer.from(JSON.stringify([normalizeDirectory(input.directory), input.kind, input.dedupeKey.trim()])));
+      return withArtifactLock(path6.join(this.locksRoot, `dedupe-${key}.lock`), () => this.createLocked(input), this.lockOptions());
+    }
+    return this.createLocked(input);
+  }
+  async createLocked(input) {
     const now = input.now ?? this.now();
     const title = normalizeTitle(input.title);
     const directory = normalizeDirectory(input.directory);
@@ -735,17 +877,26 @@ class ArtifactStore {
     if (dedupeKey !== null) {
       const existing = await this.findByDedupeKey(dedupeKey, kind, directory);
       if (existing !== null) {
-        if (await this.hasSameFiles(existing.id, existing.version, files)) {
-          return existing;
-        }
-        const updated = await this.update(existing.id, {
-          mode: "replace",
-          files: files.map((file) => ({ path: file.path, content: file.bytes })),
-          entry,
-          title,
-          tags
-        });
-        return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true };
+        return withArtifactLock(this.lockPath(existing.id), async () => {
+          const current = await this.getMeta(existing.id);
+          const manifest2 = await this.readManifest(existing.id, current.currentVersion);
+          if (manifest2.entry === entry && await this.hasSameFiles(existing.id, current.currentVersion, files)) {
+            if (input.baseVersion !== undefined)
+              this.assertBaseVersion(current, input.baseVersion, "metadata");
+            const meta = { ...current, title, tags: input.tags === undefined ? current.tags : tags, updatedAt: this.now().toISOString() };
+            await writeJsonAtomic(path6.join(resolveArtifactDir(this.root, existing.id), "meta.json"), meta);
+            return { ...existing, meta, version: meta.currentVersion, contentChanged: false };
+          }
+          const updated = await this.updateLocked(existing.id, current, {
+            mode: "replace",
+            files: files.map((file) => ({ path: file.path, content: file.bytes })),
+            entry,
+            title,
+            tags: input.tags,
+            baseVersion: input.baseVersion
+          });
+          return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true, contentChanged: true };
+        }, this.lockOptions());
       }
     }
     const { id, artifactDir } = await this.allocateArtifact(title, now);
@@ -758,9 +909,12 @@ class ArtifactStore {
         files,
         now,
         restoredFrom: null,
-        existingVersions: []
+        existingVersions: [],
+        rendering: await this.capture(normalizeLibraries(input.libraries))
       });
       const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
+      if (version.manifest.rendering)
+        summary.rendering = version.manifest.rendering;
       const meta = {
         schema: 2,
         id,
@@ -784,57 +938,75 @@ class ArtifactStore {
         lastOpenedAt: null,
         dedupeKey
       };
-      await writeJsonAtomic(path5.join(artifactDir, "meta.json"), meta);
-      return { id, version: version.id, meta, deduped: false };
+      await writeJsonAtomic(path6.join(artifactDir, "meta.json"), meta);
+      return { id, version: version.id, meta, deduped: false, contentChanged: true };
     } catch (error) {
-      await fs4.rm(artifactDir, { recursive: true, force: true });
+      await fs5.rm(artifactDir, { recursive: true, force: true });
       throw error;
     }
   }
   async update(id, input) {
     await this.ensureInit();
     assertArtifactId(id);
-    const artifactDir = resolveArtifactDir(this.root, id);
     const lockDir = this.lockPath(id);
     return withArtifactLock(lockDir, async () => {
       const meta = await this.getMeta(id);
-      this.assertBaseVersion(meta, input.baseVersion, input.mode);
-      const now = this.now();
-      const plan = await this.planUpdate(id, meta, input);
-      const version = await this.writeVersion({
-        artifactDir,
-        kind: plan.kind,
-        title: plan.title,
-        entry: plan.entry,
-        files: plan.files,
-        now,
-        restoredFrom: plan.restoredFrom,
-        existingVersions: meta.versions.map((entry) => entry.id)
-      });
-      const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
-      const nextMeta = {
-        ...meta,
-        title: plan.title,
-        tags: plan.tags,
-        updatedAt: now.toISOString(),
-        currentVersion: version.id,
-        versions: [...meta.versions, summary]
-      };
-      const pruned = this.pruneMeta(nextMeta);
-      try {
-        await writeJsonAtomic(path5.join(artifactDir, "meta.json"), pruned.meta);
-      } catch (error) {
-        await fs4.rm(path5.join(artifactDir, "versions", version.id), { recursive: true, force: true });
-        throw error;
-      }
-      for (const prunedVersion of pruned.removed) {
-        const versionDir = resolveVersionDir(this.root, id, prunedVersion);
-        await fs4.rm(versionDir, { recursive: true, force: true }).catch(() => {
-          return;
-        });
-      }
-      return { id, version: version.id, changedFiles: plan.changedFiles, meta: pruned.meta };
+      return this.updateLocked(id, meta, input);
     }, this.lockOptions());
+  }
+  async updateLocked(id, meta, input) {
+    const artifactDir = resolveArtifactDir(this.root, id);
+    this.assertBaseVersion(meta, input.baseVersion, input.mode);
+    if (input.mode === "metadata") {
+      if (input.title === undefined && input.tags === undefined)
+        throw new StoreError("INVALID_UPDATE", "A metadata update needs title or tags");
+      const next = {
+        ...meta,
+        title: input.title === undefined ? meta.title : normalizeTitle(input.title),
+        tags: input.tags === undefined ? meta.tags : normalizeTags(input.tags),
+        updatedAt: this.now().toISOString()
+      };
+      await writeJsonAtomic(path6.join(artifactDir, "meta.json"), next);
+      return { id, version: meta.currentVersion, changedFiles: [], meta: next };
+    }
+    const now = this.now();
+    const plan = await this.planUpdate(id, meta, input);
+    const version = await this.writeVersion({
+      artifactDir,
+      kind: plan.kind,
+      title: plan.title,
+      entry: plan.entry,
+      files: plan.files,
+      now,
+      restoredFrom: plan.restoredFrom,
+      existingVersions: meta.versions.map((entry) => entry.id),
+      rendering: input.mode === "restore" ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries)
+    });
+    const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
+    if (version.manifest.rendering)
+      summary.rendering = version.manifest.rendering;
+    const nextMeta = {
+      ...meta,
+      title: plan.title,
+      tags: plan.tags,
+      updatedAt: now.toISOString(),
+      currentVersion: version.id,
+      versions: [...meta.versions, summary]
+    };
+    const pruned = this.pruneMeta(nextMeta);
+    try {
+      await writeJsonAtomic(path6.join(artifactDir, "meta.json"), pruned.meta);
+    } catch (error) {
+      await fs5.rm(path6.join(artifactDir, "versions", version.id), { recursive: true, force: true });
+      throw error;
+    }
+    for (const prunedVersion of pruned.removed) {
+      const versionDir = resolveVersionDir(this.root, id, prunedVersion);
+      await fs5.rm(versionDir, { recursive: true, force: true }).catch(() => {
+        return;
+      });
+    }
+    return { id, version: version.id, changedFiles: plan.changedFiles, meta: pruned.meta };
   }
   async read(id, version) {
     const meta = await this.getMeta(id);
@@ -843,8 +1015,8 @@ class ArtifactStore {
     if (!meta.versions.some((entry) => entry.id === versionId)) {
       throw new StoreError("NOT_FOUND", "Version not found");
     }
-    const manifest = await this.readManifest(id, versionId);
-    return { meta, version: versionId, manifest };
+    const manifest2 = await this.readManifest(id, versionId);
+    return { meta, version: versionId, manifest: manifest2 };
   }
   async readVersion(id, version) {
     const result = await this.read(id, version);
@@ -857,19 +1029,19 @@ class ArtifactStore {
   }
   async readFile(id, version, filePath) {
     const result = await this.read(id, version);
-    const record = result.manifest.files.find((file) => file.path === filePath);
-    if (record === undefined) {
+    const record2 = result.manifest.files.find((file) => file.path === filePath);
+    if (record2 === undefined) {
       throw new StoreError("PATH_NOT_FOUND", "File not found in this version");
     }
     const versionDir = resolveVersionDir(this.root, id, result.version);
-    return this.readFileAt(versionDir, record.path);
+    return this.readFileAt(versionDir, record2.path);
   }
   async getMeta(id) {
     await this.ensureInit();
     assertArtifactId(id);
     const artifactDir = resolveArtifactDir(this.root, id);
     try {
-      const raw = await readJson(path5.join(artifactDir, "meta.json"));
+      const raw = await readJson(path6.join(artifactDir, "meta.json"));
       const meta = parseMeta(raw);
       if (meta.id !== id) {
         throw new StoreError("INVALID_META", "meta.id does not match the directory");
@@ -891,34 +1063,44 @@ class ArtifactStore {
     const directory = filter.directory === undefined ? undefined : normalizeDirectory(filter.directory);
     const tag = filter.tag?.toLowerCase();
     const query = filter.query?.toLowerCase();
-    const entries = await fs4.readdir(this.root, { withFileTypes: true });
+    const listRoot = filter.trash ? this.trashRoot : this.root;
+    const entries = await fs5.readdir(listRoot, { withFileTypes: true });
     const artifacts = [];
+    const tags = new Set;
+    let pendingFeedbackCount = 0;
     let errors = 0;
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash" || entry.name === "exports")
         continue;
       let meta;
       try {
-        const raw = await readJson(path5.join(this.root, entry.name, "meta.json"));
+        const raw = await readJson(path6.join(listRoot, entry.name, "meta.json"));
         meta = parseMeta(raw);
       } catch {
         errors += 1;
         continue;
       }
-      if (meta.id !== entry.name) {
+      if (!filter.trash && meta.id !== entry.name) {
         errors += 1;
         continue;
       }
-      if (filter.includeArchived !== true && meta.archivedAt !== null)
+      if (!filter.trash && filter.archivedOnly && meta.archivedAt === null)
+        continue;
+      if (!filter.trash && !filter.archivedOnly && filter.includeArchived !== true && meta.archivedAt !== null)
         continue;
       if (directory !== undefined && !isWithin(directory, meta.directory))
         continue;
       if (filter.kind !== undefined && meta.kind !== filter.kind)
         continue;
+      for (const value of meta.tags)
+        tags.add(value);
+      const feedback = filter.trash ? [] : await this.allFeedback(meta.id);
+      const pending = feedback.filter((record2) => record2.deliveredAt === null).length;
+      pendingFeedbackCount += pending;
       if (tag !== undefined && !meta.tags.some((entryTag) => entryTag.toLowerCase() === tag))
         continue;
       if (query !== undefined) {
-        const matchesTitle = meta.title.toLowerCase().includes(query);
+        const matchesTitle = meta.title.toLowerCase().includes(query) || meta.projectName.toLowerCase().includes(query);
         const matchesTag = meta.tags.some((entryTag) => entryTag.toLowerCase().includes(query));
         if (!matchesTitle && !matchesTag)
           continue;
@@ -935,21 +1117,25 @@ class ArtifactStore {
         tags: meta.tags,
         favorite: meta.favorite,
         archived: meta.archivedAt !== null,
-        feedbackCount: await this.countFeedback(meta.id)
+        feedbackCount: feedback.length,
+        pendingFeedbackCount: pending
       });
     }
     artifacts.sort((left, right) => {
+      if (filter.sort === "title")
+        return left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
       const updated = right.updatedAt.localeCompare(left.updatedAt);
       return updated !== 0 ? updated : left.id.localeCompare(right.id);
     });
     const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
-    return { artifacts: artifacts.slice(0, limit), errors };
+    const offset = filter.offset ?? 0;
+    return { artifacts: artifacts.slice(offset, offset + limit), errors, total: artifacts.length, tags: [...tags].sort(), pendingFeedbackCount };
   }
   async listTrash() {
     await this.ensureInit();
     let entries;
     try {
-      entries = await fs4.readdir(this.trashRoot, { withFileTypes: true });
+      entries = await fs5.readdir(this.trashRoot, { withFileTypes: true });
     } catch {
       return [];
     }
@@ -958,7 +1144,7 @@ class ArtifactStore {
       if (!entry.isDirectory())
         continue;
       try {
-        const raw = await readJson(path5.join(this.trashRoot, entry.name, "meta.json"));
+        const raw = await readJson(path6.join(this.trashRoot, entry.name, "meta.json"));
         const meta = parseMeta(raw);
         artifacts.push({
           id: meta.id,
@@ -1008,9 +1194,9 @@ class ArtifactStore {
     await withArtifactLock(lockDir, async () => {
       await this.getMeta(id);
       const stamp = this.now().getTime();
-      let target = path5.join(this.trashRoot, `${id}-${stamp}`);
+      let target = path6.join(this.trashRoot, `${id}-${stamp}`);
       for (let attempt = 1;await pathExists(target); attempt += 1) {
-        target = path5.join(this.trashRoot, `${id}-${stamp}-${attempt}`);
+        target = path6.join(this.trashRoot, `${id}-${stamp}-${attempt}`);
       }
       await renameWithRetry(artifactDir, target);
     }, this.lockOptions());
@@ -1024,19 +1210,19 @@ class ArtifactStore {
       if (await pathExists(artifactDir)) {
         throw new StoreError("CONFLICT", "An artifact with this id already exists");
       }
-      const entries = await fs4.readdir(this.trashRoot, { withFileTypes: true });
+      const entries = await fs5.readdir(this.trashRoot, { withFileTypes: true });
       const candidates = entries.filter((entry) => entry.isDirectory() && entry.name.startsWith(`${id}-`)).map((entry) => entry.name).sort().reverse();
       const source = candidates[0];
       if (source === undefined) {
         throw new StoreError("NOT_FOUND", "No trashed artifact found");
       }
-      await renameWithRetry(path5.join(this.trashRoot, source), artifactDir);
+      await renameWithRetry(path6.join(this.trashRoot, source), artifactDir);
       return this.getMeta(id);
     }, this.lockOptions());
   }
   async countFeedback(id) {
     try {
-      const entries = await fs4.readdir(path5.join(this.root, id, "feedback"), { withFileTypes: true });
+      const entries = await fs5.readdir(path6.join(this.root, id, "feedback"), { withFileTypes: true });
       return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json")).length;
     } catch (error) {
       if (errorCode(error) === "ENOENT")
@@ -1063,7 +1249,7 @@ class ArtifactStore {
       if (!meta.versions.some((version) => version.id === input.version)) {
         throw new StoreError("NOT_FOUND", "Version not found");
       }
-      const record = {
+      const record2 = {
         schema: 1,
         id: `fb_${randomHex(12)}`,
         artifactId: id,
@@ -1073,19 +1259,30 @@ class ArtifactStore {
         data: input.data,
         deliveredAt: null
       };
-      const feedbackDir = path5.join(resolveArtifactDir(this.root, id), "feedback");
+      const feedbackDir = path6.join(resolveArtifactDir(this.root, id), "feedback");
       await ensureDir(feedbackDir);
-      await writeJsonAtomic(path5.join(feedbackDir, `${record.id}.json`), record);
-      return record;
+      await writeJsonAtomic(path6.join(feedbackDir, `${record2.id}.json`), record2);
+      return record2;
     }, this.lockOptions());
   }
   async listFeedback(id, options = {}) {
+    const records = await this.allFeedback(id, options.since);
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+    return records.slice(options.offset ?? 0, (options.offset ?? 0) + limit);
+  }
+  async feedbackPage(id, options = {}) {
+    const records = await this.allFeedback(id, options.since);
+    const offset = options.offset ?? 0;
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+    return { responses: records.slice(offset, offset + limit), total: records.length, pending: records.filter((record2) => record2.deliveredAt === null).length };
+  }
+  async allFeedback(id, since) {
     await this.ensureInit();
     assertArtifactId(id);
-    const feedbackDir = path5.join(resolveArtifactDir(this.root, id), "feedback");
+    const feedbackDir = path6.join(resolveArtifactDir(this.root, id), "feedback");
     let entries;
     try {
-      entries = await fs4.readdir(feedbackDir, { withFileTypes: true });
+      entries = await fs5.readdir(feedbackDir, { withFileTypes: true });
     } catch (error) {
       if (errorCode(error) === "ENOENT")
         return [];
@@ -1096,20 +1293,19 @@ class ArtifactStore {
       if (!entry.isFile() || !entry.name.endsWith(".json"))
         continue;
       try {
-        const raw = await readJson(path5.join(feedbackDir, entry.name));
-        const record = parseFeedbackRecord(raw);
-        if (record.artifactId !== id)
+        const raw = await readJson(path6.join(feedbackDir, entry.name));
+        const record2 = parseFeedbackRecord(raw);
+        if (record2.artifactId !== id)
           continue;
-        if (options.since !== undefined && record.createdAt <= options.since)
+        if (since !== undefined && record2.createdAt <= since)
           continue;
-        records.push(record);
+        records.push(record2);
       } catch {
         continue;
       }
     }
     records.sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
-    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
-    return records.slice(0, limit);
+    return records;
   }
   async markFeedbackDelivered(id, feedbackIds) {
     await this.ensureInit();
@@ -1118,19 +1314,19 @@ class ArtifactStore {
       return 0;
     return withArtifactLock(this.lockPath(id), async () => {
       await this.getMeta(id);
-      const feedbackDir = path5.join(resolveArtifactDir(this.root, id), "feedback");
+      const feedbackDir = path6.join(resolveArtifactDir(this.root, id), "feedback");
       const deliveredAt = this.now().toISOString();
       let count = 0;
       for (const feedbackId of feedbackIds) {
         if (typeof feedbackId !== "string" || !FEEDBACK_ID_RE2.test(feedbackId))
           continue;
-        const feedbackPath = path5.join(feedbackDir, `${feedbackId}.json`);
+        const feedbackPath = path6.join(feedbackDir, `${feedbackId}.json`);
         try {
           const raw = await readJson(feedbackPath);
-          const record = parseFeedbackRecord(raw);
-          if (record.artifactId !== id || record.deliveredAt !== null)
+          const record2 = parseFeedbackRecord(raw);
+          if (record2.artifactId !== id || record2.deliveredAt !== null)
             continue;
-          await writeJsonAtomic(feedbackPath, { ...record, deliveredAt });
+          await writeJsonAtomic(feedbackPath, { ...record2, deliveredAt });
           count += 1;
         } catch {
           continue;
@@ -1141,7 +1337,7 @@ class ArtifactStore {
   }
   async readState(id) {
     await this.getMeta(id);
-    const statePath = path5.join(resolveArtifactDir(this.root, id), "state.json");
+    const statePath = path6.join(resolveArtifactDir(this.root, id), "state.json");
     try {
       const raw = await readJson(statePath);
       return parseRuntimeState(raw);
@@ -1162,7 +1358,7 @@ class ArtifactStore {
     }
     return withArtifactLock(this.lockPath(id), async () => {
       await this.getMeta(id);
-      const statePath = path5.join(resolveArtifactDir(this.root, id), "state.json");
+      const statePath = path6.join(resolveArtifactDir(this.root, id), "state.json");
       let state = {};
       try {
         const raw = await readJson(statePath);
@@ -1188,7 +1384,7 @@ class ArtifactStore {
     assertArtifactId(id);
     await withArtifactLock(this.lockPath(id), async () => {
       await this.getMeta(id);
-      await fs4.rm(path5.join(resolveArtifactDir(this.root, id), "state.json"), { force: true });
+      await fs5.rm(path6.join(resolveArtifactDir(this.root, id), "state.json"), { force: true });
     }, this.lockOptions());
   }
   async ensureInit() {
@@ -1196,7 +1392,7 @@ class ArtifactStore {
     await this.initPromise;
   }
   lockPath(id) {
-    return path5.join(this.locksRoot, `${id}.lock`);
+    return path6.join(this.locksRoot, `${id}.lock`);
   }
   lockOptions() {
     return {
@@ -1219,7 +1415,7 @@ class ArtifactStore {
       assertArtifactId(id);
       const artifactDir = resolveArtifactDir(this.root, id);
       try {
-        await fs4.mkdir(artifactDir, { mode: 448 });
+        await fs5.mkdir(artifactDir, { mode: 448 });
         return { id, artifactDir };
       } catch (error) {
         if (errorCode(error) === "EEXIST")
@@ -1231,10 +1427,10 @@ class ArtifactStore {
   }
   async findByDedupeKey(key, kind, directory) {
     const metas = await this.readAllMetas();
-    const found = metas.find((meta) => meta.dedupeKey === key && meta.directory === directory);
-    if (found === undefined || found.kind !== kind)
+    const found = metas.find((meta) => meta.dedupeKey === key && meta.directory === directory && meta.kind === kind);
+    if (found === undefined)
       return null;
-    return { id: found.id, version: found.currentVersion, meta: found, deduped: true };
+    return { id: found.id, version: found.currentVersion, meta: found, deduped: true, contentChanged: false };
   }
   async hasSameFiles(id, version, files) {
     const current = await this.readVersion(id, version);
@@ -1250,13 +1446,13 @@ class ArtifactStore {
     return true;
   }
   async readAllMetas() {
-    const entries = await fs4.readdir(this.root, { withFileTypes: true });
+    const entries = await fs5.readdir(this.root, { withFileTypes: true });
     const metas = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "trash" || entry.name === "exports")
         continue;
       try {
-        const raw = await readJson(path5.join(this.root, entry.name, "meta.json"));
+        const raw = await readJson(path6.join(this.root, entry.name, "meta.json"));
         const meta = parseMeta(raw);
         if (meta.id === entry.name)
           metas.push(meta);
@@ -1267,12 +1463,8 @@ class ArtifactStore {
     return metas;
   }
   assertBaseVersion(meta, baseVersion, mode) {
-    const required = mode === "merge" || mode === "edits" || mode === "restore";
     if (baseVersion === undefined) {
-      if (required) {
-        throw new StoreError("INVALID_UPDATE", `baseVersion is required for ${mode}`);
-      }
-      return;
+      throw new StoreError("INVALID_UPDATE", `baseVersion is required for ${mode}`);
     }
     assertVersionId(baseVersion);
     if (baseVersion !== meta.currentVersion) {
@@ -1337,11 +1529,11 @@ class ArtifactStore {
         const current = await this.readVersion(id, meta.currentVersion);
         const targetPath = input.path ?? current.manifest.entry;
         assertRelativePath(targetPath);
-        const record = current.manifest.files.find((file) => file.path === targetPath);
-        if (record === undefined) {
+        const record2 = current.manifest.files.find((file) => file.path === targetPath);
+        if (record2 === undefined) {
           throw new StoreError("PATH_NOT_FOUND", "File not found in this version");
         }
-        if (!isTextMime(record.mime)) {
+        if (!isTextMime(record2.mime)) {
           throw new StoreError("UNSUPPORTED_FILE_TYPE", "Edits require a text file");
         }
         const target = current.files.find((file) => file.path === targetPath);
@@ -1405,12 +1597,12 @@ class ArtifactStore {
     return [...changed].sort();
   }
   async writeVersion(input) {
-    const versionsDir = path5.join(input.artifactDir, "versions");
+    const versionsDir = path6.join(input.artifactDir, "versions");
     await ensureDir(versionsDir);
     const version = newVersionId(input.now, input.existingVersions.at(-1));
     assertVersionId(version);
-    const tempDir = path5.join(input.artifactDir, `.tmp-${version}-${randomHex(6)}`);
-    await fs4.mkdir(tempDir, { mode: 448 });
+    const tempDir = path6.join(input.artifactDir, `.tmp-${version}-${randomHex(6)}`);
+    await fs5.mkdir(tempDir, { mode: 448 });
     try {
       const records = [];
       let totalBytes = 0;
@@ -1425,20 +1617,21 @@ class ArtifactStore {
         });
         totalBytes += file.bytes.byteLength;
       }
-      const manifest = {
+      const manifest2 = {
         schema: 1,
         kind: input.kind,
         entry: input.entry,
         title: input.title,
         createdAt: input.now.toISOString(),
         restoredFrom: input.restoredFrom,
-        files: records
+        files: records,
+        ...input.rendering ? { rendering: input.rendering } : {}
       };
-      await writeJsonDurable(path5.join(tempDir, "manifest.json"), manifest);
-      await renameWithRetry(tempDir, path5.join(versionsDir, version));
-      return { id: version, manifest, totalBytes };
+      await writeJsonDurable(path6.join(tempDir, "manifest.json"), manifest2);
+      await renameWithRetry(tempDir, path6.join(versionsDir, version));
+      return { id: version, manifest: manifest2, totalBytes };
     } catch (error) {
-      await fs4.rm(tempDir, { recursive: true, force: true });
+      await fs5.rm(tempDir, { recursive: true, force: true });
       throw error;
     }
   }
@@ -1446,7 +1639,7 @@ class ArtifactStore {
     assertVersionId(version);
     const versionDir = resolveVersionDir(this.root, id, version);
     try {
-      const raw = await readJson(path5.join(versionDir, "manifest.json"));
+      const raw = await readJson(path6.join(versionDir, "manifest.json"));
       return parseVersionManifest(raw);
     } catch (error) {
       if (errorCode(error) === "ENOENT") {
@@ -1454,6 +1647,9 @@ class ArtifactStore {
       }
       throw error;
     }
+  }
+  async capture(libraries) {
+    return this.renderingSource ? captureRendering(this.root, this.renderingSource, libraries) : undefined;
   }
   async updateMeta(id, mutate) {
     await this.ensureInit();
@@ -1463,7 +1659,7 @@ class ArtifactStore {
     return withArtifactLock(lockDir, async () => {
       const meta = await this.getMeta(id);
       const next = mutate(meta, this.now());
-      await writeJsonAtomic(path5.join(artifactDir, "meta.json"), next);
+      await writeJsonAtomic(path6.join(artifactDir, "meta.json"), next);
       return next;
     }, this.lockOptions());
   }
@@ -1471,7 +1667,7 @@ class ArtifactStore {
     try {
       const absolute = resolveWithin(versionDir, filePath);
       await assertRealpathWithin(versionDir, absolute);
-      return await fs4.readFile(absolute);
+      return await fs5.readFile(absolute);
     } catch (error) {
       if (errorCode(error) === "ENOENT") {
         throw new StoreError("NOT_FOUND", "File not found");
@@ -1648,7 +1844,7 @@ function normalizeFiles(input, allowEmpty = false) {
     }
     const mime = file.mime?.trim() || mimeForPath(file.path);
     if (mime === undefined || mime.length === 0 || mime.length > 128) {
-      throw new StoreError("UNSUPPORTED_FILE_TYPE", `Unsupported file type: ${path5.extname(file.path) || file.path}`);
+      throw new StoreError("UNSUPPORTED_FILE_TYPE", `Unsupported file type: ${path6.extname(file.path) || file.path}`);
     }
     files.push({ path: file.path, bytes: toBytes(file.content), mime });
   }
@@ -1708,14 +1904,14 @@ function validateFileSet(kind, files, entry, limits) {
     throw new StoreError("INVALID_ARTIFACT", "Entry must be an HTML file");
   }
 }
-function summarizeVersion(id, manifest, totalBytes) {
+function summarizeVersion(id, manifest2, totalBytes) {
   return {
     id,
-    createdAt: manifest.createdAt,
+    createdAt: manifest2.createdAt,
     bytes: totalBytes,
-    files: manifest.files.length,
-    title: manifest.title,
-    restoredFrom: manifest.restoredFrom
+    files: manifest2.files.length,
+    title: manifest2.title,
+    restoredFrom: manifest2.restoredFrom
   };
 }
 function countOccurrences(haystack, needle) {
@@ -1757,9 +1953,9 @@ function applyEdits(source, edits) {
 
 // src/service/routes.ts
 import * as crypto2 from "node:crypto";
-import * as fs7 from "node:fs/promises";
+import * as fs8 from "node:fs/promises";
 import * as http from "node:http";
-import * as path8 from "node:path";
+import * as path10 from "node:path";
 
 // node_modules/fflate/esm/index.mjs
 import { createRequire } from "module";
@@ -2406,7 +2602,19 @@ function zipSync(data, opts) {
 
 // src/viewer/ensure.ts
 import { spawn } from "node:child_process";
-import * as fs5 from "node:fs/promises";
+import * as fs6 from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import * as path7 from "node:path";
+var VIEWER_PROTOCOL = 2;
+function viewerBuild() {
+  try {
+    const value = JSON.parse(readFileSync(path7.join(packageRoot(), "viewer/build.json"), "utf8"));
+    if (isRecord2(value) && typeof value.id === "string")
+      return value.id;
+  } catch {}
+  return "unbuilt";
+}
+
 class ViewerUnavailableError extends Error {
   code = "VIEWER_UNAVAILABLE";
   constructor(message) {
@@ -2443,7 +2651,7 @@ async function readViewerState(portFile) {
     return null;
   }
 }
-async function isHealthy(state) {
+async function viewerHealth(state) {
   const controller = new AbortController;
   const timer = setTimeout(() => controller.abort(), 1500);
   try {
@@ -2451,23 +2659,70 @@ async function isHealthy(state) {
       headers: { authorization: `Bearer ${state.secret}` },
       signal: controller.signal
     });
-    return response.ok;
+    if (!response.ok)
+      return null;
+    const value = await response.json();
+    if (!isRecord2(value) || value.pid !== state.pid)
+      return null;
+    return { protocol: typeof value.protocol === "number" ? value.protocol : undefined, build: typeof value.build === "string" ? value.build : undefined };
   } catch {
-    return false;
+    return null;
   } finally {
     clearTimeout(timer);
   }
 }
+async function checkViewer(state) {
+  const health = await viewerHealth(state);
+  return health?.protocol === VIEWER_PROTOCOL && health.build === viewerBuild();
+}
+async function viewerStatus(portFile) {
+  const state = await readViewerState(portFile);
+  if (!state)
+    return { status: "Not running", restartable: false };
+  const health = await viewerHealth(state);
+  if (!health)
+    return { status: "Not running", restartable: false };
+  if (health.protocol !== VIEWER_PROTOCOL)
+    return { status: "Legacy viewer. Close Canvas views and stop the old Canvas viewer before reopening.", restartable: false };
+  return { status: health.build === viewerBuild() ? "Compatible" : "Update requires restart. Reopen Canvas views afterward.", restartable: true };
+}
+async function stopViewer(state) {
+  const health = await viewerHealth(state);
+  if (health?.protocol !== VIEWER_PROTOCOL)
+    throw new ViewerUnavailableError("Legacy viewer cannot be restarted automatically. Close Canvas views and stop the old Canvas viewer, then reopen from the gallery.");
+  const response = await fetch(`http://127.0.0.1:${state.port}/shutdown`, { method: "POST", headers: { authorization: `Bearer ${state.secret}` }, signal: AbortSignal.timeout(1500) });
+  if (!response.ok)
+    throw new ViewerUnavailableError("Viewer restart was rejected. Close Canvas views and retry.");
+  const deadline = Date.now() + 3000;
+  while (await viewerHealth(state)) {
+    if (Date.now() >= deadline)
+      throw new ViewerUnavailableError("Viewer did not stop. Close Canvas views and retry.");
+    await sleep(50);
+  }
+}
+async function restartViewer(options) {
+  const expected = await readViewerState(options.portFile);
+  return ensureViewerLocked(options, expected?.startedAt);
+}
 async function ensureViewer(options) {
+  return ensureViewerLocked(options);
+}
+async function ensureViewerLocked(options, restartStartedAt) {
   const timeoutMs = options.timeoutMs ?? 15000;
   const lockDir = `${options.portFile}.lock`;
   try {
     return await withArtifactLock(lockDir, async () => {
       const existing = await readViewerState(options.portFile);
-      if (existing !== null && await isHealthy(existing))
-        return existing;
+      if (existing !== null) {
+        const health = await viewerHealth(existing);
+        const restarting = restartStartedAt !== undefined && existing.startedAt === restartStartedAt;
+        if (!restarting && health?.protocol === VIEWER_PROTOCOL && health.build === viewerBuild())
+          return existing;
+        if (health)
+          await stopViewer(existing);
+      }
       await ensureDir(options.storeRoot);
-      await fs5.rm(options.portFile, { force: true });
+      await fs6.rm(options.portFile, { force: true });
       const child = spawn(process.execPath, [options.viewerEntry], {
         detached: true,
         stdio: "ignore",
@@ -2483,7 +2738,7 @@ async function ensureViewer(options) {
       const deadline = Date.now() + timeoutMs;
       for (;; ) {
         const state = await readViewerState(options.portFile);
-        if (state !== null && await isHealthy(state))
+        if (state !== null && await checkViewer(state))
           return state;
         if (Date.now() >= deadline) {
           throw new ViewerUnavailableError("The viewer did not start within the timeout.");
@@ -2504,7 +2759,8 @@ async function mintViewUrl(state, input) {
       authorization: `Bearer ${state.secret}`,
       "content-type": "application/json"
     },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(3000)
   });
   if (!response.ok) {
     throw new ViewerUnavailableError(`The viewer rejected the view request (${response.status}).`);
@@ -2518,11 +2774,29 @@ async function mintViewUrl(state, input) {
     expiresAt: typeof body.expiresAt === "number" ? body.expiresAt : 0
   };
 }
+async function notifyViewer(state, input) {
+  const response = await fetch(`http://127.0.0.1:${state.port}/notify`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${state.secret}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(3000)
+  });
+  if (!response.ok) {
+    throw new ViewerUnavailableError(`The viewer rejected the notify request (${response.status}).`);
+  }
+  const body = await response.json();
+  if (!isRecord2(body) || typeof body.notified !== "number")
+    return 0;
+  return body.notified;
+}
 
 // src/service/mcp-registration.ts
-import * as fs6 from "node:fs/promises";
+import * as fs7 from "node:fs/promises";
 import * as os2 from "node:os";
-import * as path6 from "node:path";
+import * as path8 from "node:path";
 var MAX_CONFIG_BYTES = 512 * 1024;
 var UNCHECKED_REGISTRATION = {
   checked: false,
@@ -2536,11 +2810,11 @@ function defaultMcpConfigCandidates(env = process.env) {
   const candidates = [];
   const custom = env["OPENCODE_CONFIG"]?.trim();
   if (custom !== undefined && custom.length > 0)
-    candidates.push(path6.resolve(custom));
+    candidates.push(path8.resolve(custom));
   const overrideDir = env["OPENCODE_CONFIG_DIR"]?.trim();
   const xdgDir = env["XDG_CONFIG_HOME"]?.trim();
-  const dir = overrideDir !== undefined && overrideDir.length > 0 ? overrideDir : xdgDir !== undefined && xdgDir.length > 0 ? path6.join(xdgDir, "opencode") : path6.join(os2.homedir(), ".config", "opencode");
-  candidates.push(path6.join(dir, "opencode.json"), path6.join(dir, "opencode.jsonc"));
+  const dir = overrideDir !== undefined && overrideDir.length > 0 ? overrideDir : xdgDir !== undefined && xdgDir.length > 0 ? path8.join(xdgDir, "opencode") : path8.join(os2.homedir(), ".config", "opencode");
+  candidates.push(path8.join(dir, "opencode.json"), path8.join(dir, "opencode.jsonc"));
   return candidates;
 }
 function isRecord3(value) {
@@ -2605,10 +2879,10 @@ function parseConfig(raw) {
 async function readEntries(file) {
   let raw;
   try {
-    const stat3 = await fs6.stat(file);
+    const stat3 = await fs7.stat(file);
     if (!stat3.isFile() || stat3.size > MAX_CONFIG_BYTES)
       return null;
-    raw = await fs6.readFile(file, "utf8");
+    raw = await fs7.readFile(file, "utf8");
   } catch {
     return null;
   }
@@ -2640,7 +2914,7 @@ function commandPointsAtEntry(entry, mcpPath) {
   const last = entry.command[entry.command.length - 1];
   if (typeof last !== "string" || last.length === 0)
     return false;
-  const commandPath = last.startsWith("~/") ? path6.join(os2.homedir(), last.slice(2)) : last;
+  const commandPath = last.startsWith("~/") ? path8.join(os2.homedir(), last.slice(2)) : last;
   return commandPath === mcpPath;
 }
 async function inspectMcpRegistration(candidates, mcpPath) {
@@ -2669,31 +2943,31 @@ async function inspectMcpRegistration(candidates, mcpPath) {
 }
 
 // src/mcp/version.ts
-import { existsSync, readFileSync } from "node:fs";
-import * as path7 from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync as readFileSync2 } from "node:fs";
+import * as path9 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 var FALLBACK_VERSION = "0.0.0";
 var MAX_DEPTH = 4;
 function versionFrom(startDir) {
   let dir = startDir;
   for (let depth = 0;depth < MAX_DEPTH; depth += 1) {
-    const candidate = path7.join(dir, "package.json");
+    const candidate = path9.join(dir, "package.json");
     if (existsSync(candidate)) {
       try {
-        const parsed = JSON.parse(readFileSync(candidate, "utf8"));
+        const parsed = JSON.parse(readFileSync2(candidate, "utf8"));
         if (typeof parsed.version === "string" && parsed.version.length > 0) {
           return parsed.version;
         }
       } catch {}
     }
-    const parent = path7.dirname(dir);
+    const parent = path9.dirname(dir);
     if (parent === dir)
       break;
     dir = parent;
   }
   return FALLBACK_VERSION;
 }
-var MCP_VERSION = versionFrom(path7.dirname(fileURLToPath(import.meta.url)));
+var MCP_VERSION = versionFrom(path9.dirname(fileURLToPath2(import.meta.url)));
 
 // src/service/routes.ts
 var SERVICE_VERSION = MCP_VERSION;
@@ -2761,12 +3035,12 @@ function requireToken(request, response, token) {
   }
   return true;
 }
-function parseInteger(value, name) {
+function parseInteger(value, name, minimum = 1) {
   if (value === null || value.length === 0)
     return;
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new HttpError(400, "INVALID_REQUEST", `${name} must be a positive integer`);
+  if (!Number.isInteger(parsed) || parsed < minimum) {
+    throw new HttpError(400, "INVALID_REQUEST", `${name} must be an integer of at least ${minimum}`);
   }
   return parsed;
 }
@@ -2840,19 +3114,23 @@ async function createServiceServer(options) {
         ok: true,
         pid: process.pid,
         uptime: Date.now() - startedAt,
-        store: path8.basename(options.storeRoot),
+        store: path10.basename(options.storeRoot),
         version: SERVICE_VERSION,
         mcpPath: options.mcpPath
       });
       return;
     }
-    if (url.pathname === "/list" && request.method === "GET") {
+    if ((url.pathname === "/list" || url.pathname === "/trash") && request.method === "GET") {
       const directory = url.searchParams.get("directory") ?? undefined;
       const query = url.searchParams.get("query") ?? undefined;
       const kindValue = url.searchParams.get("kind");
       const tag = url.searchParams.get("tag") ?? undefined;
       const limit = parseInteger(url.searchParams.get("limit"), "limit");
       const archived = url.searchParams.get("archived");
+      const offset = parseInteger(url.searchParams.get("offset"), "offset", 0);
+      const sort = url.searchParams.get("sort") ?? "updated";
+      if (sort !== "updated" && sort !== "title")
+        throw new HttpError(400, "INVALID_REQUEST", "sort is invalid");
       if (kindValue !== null && !isKind2(kindValue)) {
         throw new HttpError(400, "INVALID_REQUEST", "kind is invalid");
       }
@@ -2862,7 +3140,11 @@ async function createServiceServer(options) {
         kind: kindValue === null ? undefined : kindValue,
         tag,
         limit,
-        includeArchived: archived === "true" || archived === "1"
+        includeArchived: archived === "true" || archived === "1",
+        archivedOnly: archived === "true" || archived === "1",
+        offset,
+        sort,
+        trash: url.pathname === "/trash"
       });
       sendJson(response, 200, result);
       return;
@@ -2896,7 +3178,7 @@ async function createServiceServer(options) {
         viewerEntry: options.viewerEntry,
         timeoutMs: options.viewerTimeoutMs
       });
-      const minted = await mintViewUrl(viewer, { id: body.id, version, theme });
+      const minted = await mintViewUrl(viewer, { id: body.id, version, theme, follow: typeof body.follow === "boolean" ? body.follow : undefined });
       sendJson(response, 200, minted);
       return;
     }
@@ -2908,9 +3190,8 @@ async function createServiceServer(options) {
       if (request.method === "GET") {
         const since = url.searchParams.get("since") ?? undefined;
         const limit = parseInteger(url.searchParams.get("limit"), "limit");
-        sendJson(response, 200, {
-          responses: await options.store.listFeedback(id, { since, limit })
-        });
+        const offset = parseInteger(url.searchParams.get("offset"), "offset", 0);
+        sendJson(response, 200, await options.store.feedbackPage(id, { since, limit, offset }));
         return;
       }
       if (request.method === "POST") {
@@ -2959,11 +3240,25 @@ async function createServiceServer(options) {
         restoreFrom: body.version,
         baseVersion: body.baseVersion
       });
-      sendJson(response, 200, { version: updated.version });
+      const viewer = await readViewerState(options.portFile);
+      const warnings = [];
+      if (viewer) {
+        try {
+          await notifyViewer(viewer, { id, event: "changed", version: updated.version });
+        } catch {
+          warnings.push("Version restored, but open views could not refresh. Reopen from the gallery.");
+        }
+      }
+      sendJson(response, 200, { version: updated.version, warnings });
       return;
     }
-    if (url.pathname === "/trash" && request.method === "GET") {
-      sendJson(response, 200, { artifacts: await options.store.listTrash() });
+    if (url.pathname === "/viewer-status" && request.method === "GET") {
+      sendJson(response, 200, await viewerStatus(options.portFile));
+      return;
+    }
+    if (url.pathname === "/viewer-restart" && request.method === "POST") {
+      await restartViewer({ storeRoot: options.storeRoot, portFile: options.portFile, viewerEntry: options.viewerEntry, timeoutMs: options.viewerTimeoutMs });
+      sendJson(response, 200, { ok: true });
       return;
     }
     const trashMatch = /^\/trash\/([^/]+)$/.exec(url.pathname);
@@ -3001,7 +3296,7 @@ async function createServiceServer(options) {
     }
     if (url.pathname === "/mcp-status" && request.method === "GET") {
       try {
-        const raw = await readJson(path8.join(options.storeRoot, ".mcp-heartbeat.json"));
+        const raw = await readJson(path10.join(options.storeRoot, ".mcp-heartbeat.json"));
         sendJson(response, 200, isRecord4(raw) ? raw : null);
       } catch {
         sendJson(response, 200, null);
@@ -3019,15 +3314,15 @@ async function createServiceServer(options) {
 async function exportArtifact(store, storeRoot, id, version, requestedFormat) {
   const result = await store.readVersion(id, version);
   const format = requestedFormat ?? (result.meta.kind === "html" ? "html" : "zip");
-  const exportsDir = path8.join(storeRoot, "exports");
+  const exportsDir = path10.join(storeRoot, "exports");
   await ensureDir(exportsDir);
   if (format === "html") {
     const entry = result.files.find((file) => file.path === result.manifest.entry);
     if (entry === undefined) {
       throw new StoreError("ENTRY_NOT_FOUND", "The entry file is missing");
     }
-    const target2 = path8.join(exportsDir, `${id}-${result.version}.html`);
-    await fs7.writeFile(target2, entry.content, { mode: 384 });
+    const target2 = path10.join(exportsDir, `${id}-${result.version}.html`);
+    await fs8.writeFile(target2, entry.content, { mode: 384 });
     return { path: target2, format, bytes: entry.content.byteLength };
   }
   const entries = {};
@@ -3035,13 +3330,13 @@ async function exportArtifact(store, storeRoot, id, version, requestedFormat) {
     entries[file.path] = file.content;
   }
   const zipped = zipSync(entries);
-  const target = path8.join(exportsDir, `${id}-${result.version}.zip`);
-  await fs7.writeFile(target, zipped, { mode: 384 });
+  const target = path10.join(exportsDir, `${id}-${result.version}.zip`);
+  await fs8.writeFile(target, zipped, { mode: 384 });
   return { path: target, format, bytes: zipped.byteLength };
 }
 
 // src/service/main.ts
-var moduleDir = path9.dirname(fileURLToPath2(import.meta.url));
+var moduleDir = path11.dirname(fileURLToPath3(import.meta.url));
 async function main() {
   const port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
   const token = process.env.OPENCHAMBER_SERVICE_TOKEN;
@@ -3054,14 +3349,14 @@ async function main() {
     process.exit(1);
   }
   const configuredStore = process.env.CANVAS_STORE?.trim();
-  const storeRoot = configuredStore !== undefined && configuredStore.length > 0 ? path9.resolve(configuredStore) : defaultStoreRoot();
+  const storeRoot = configuredStore !== undefined && configuredStore.length > 0 ? path11.resolve(configuredStore) : defaultStoreRoot();
   const configuredPortFile = process.env.CANVAS_VIEWER_PORT_FILE?.trim();
-  const portFile = configuredPortFile !== undefined && configuredPortFile.length > 0 ? path9.resolve(configuredPortFile) : defaultViewerPortFile(storeRoot);
+  const portFile = configuredPortFile !== undefined && configuredPortFile.length > 0 ? path11.resolve(configuredPortFile) : defaultViewerPortFile(storeRoot);
   const configuredViewerEntry = process.env.CANVAS_VIEWER_ENTRY?.trim();
-  const viewerEntry = configuredViewerEntry !== undefined && configuredViewerEntry.length > 0 ? path9.resolve(configuredViewerEntry) : path9.join(moduleDir, "..", "viewer", "server.js");
+  const viewerEntry = configuredViewerEntry !== undefined && configuredViewerEntry.length > 0 ? path11.resolve(configuredViewerEntry) : path11.join(moduleDir, "..", "viewer", "server.js");
   const parsedTimeout = Number(process.env.CANVAS_VIEWER_TIMEOUT_MS ?? "");
   const viewerTimeoutMs = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : 15000;
-  const store = new ArtifactStore({ root: storeRoot });
+  const store = new ArtifactStore({ root: storeRoot, renderingSource: installedRendering() });
   await store.init();
   const service = await createServiceServer({
     store,
@@ -3069,7 +3364,7 @@ async function main() {
     storeRoot,
     portFile,
     viewerEntry,
-    mcpPath: path9.join(moduleDir, "..", "mcp", "server.js"),
+    mcpPath: path11.join(moduleDir, "..", "mcp", "server.js"),
     viewerTimeoutMs,
     host: "127.0.0.1",
     port

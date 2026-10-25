@@ -8,7 +8,10 @@ import { StoreError, isStoreError } from '../store/errors';
 import { ensureDir, readJson, writeJsonAtomic } from '../store/fs';
 import { defaultStoreRoot, defaultViewerPortFile, assertArtifactId } from '../store/paths';
 import { isJsonValue } from '../store/schema';
+import { loadRendering } from './rendering';
+import { VIEWER_PROTOCOL, viewerBuild } from './ensure';
 import type { JsonValue } from '../store/types';
+import type { ViewToken } from './policy';
 import {
   contentTypeFor,
   runtimeCorsHeaders,
@@ -43,6 +46,7 @@ export interface ViewerServerOptions {
   idleMs?: number;
   now?: () => number;
   onIdle?: () => void;
+  build?: string;
 }
 
 export interface ViewerServer {
@@ -200,6 +204,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
   const host = options.host ?? '127.0.0.1';
   const now = options.now ?? (() => Date.now());
   const startedAt = now();
+  const build = options.build ?? viewerBuild();
   const libraries = await loadLibraries(options.librariesDir);
   const runtimeSource = await readRuntimeSource(options.runtimeFile);
   const libraryTags = (names: string[]): string =>
@@ -208,6 +213,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       .map((name) => `<script src="/libraries/${name}.js"></script>`)
       .join('');
   const sseClients = new Map<string, Set<http.ServerResponse>>();
+  const viewContexts = new Map<http.ServerResponse, ViewToken>();
   let port = options.port ?? 0;
   let lastActivity = now();
   let isClosed = false;
@@ -305,6 +311,8 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
           uptime: now() - startedAt,
           store: path.basename(options.store.storeRoot),
           librarySet: libraries?.set ?? null,
+          protocol: VIEWER_PROTOCOL,
+          build,
         },
         runtimeCorsHeaders(),
       );
@@ -313,6 +321,23 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
 
     if (url.pathname === '/mint') {
       await handleMint(request, response);
+      return;
+    }
+    if (url.pathname === '/shutdown') {
+      if (!requireSecret(request, response, options.secret)) return;
+      if (request.method !== 'POST') throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Use POST');
+      sendJson(response, 200, { ok: true });
+      void close();
+      return;
+    }
+    if (url.pathname.startsWith('/rendering/')) {
+      const match = /^\/rendering\/([a-f0-9]{64})\/([a-z0-9-]+)\.js$/.exec(url.pathname);
+      if (!match) throw new HttpError(404, 'NOT_FOUND', 'Rendering file not found');
+      const rendering = await loadRendering(options.store.storeRoot, match[1] ?? '');
+      const bytes = rendering.libraries[match[2] ?? ''];
+      if (!bytes) throw new HttpError(404, 'NOT_FOUND', 'Rendering library not found');
+      response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'X-Content-Type-Options': 'nosniff', ...runtimeCorsHeaders(), 'Cross-Origin-Resource-Policy': 'cross-origin' });
+      response.end(bytes);
       return;
     }
     if (url.pathname === '/notify') {
@@ -365,14 +390,17 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
     }
     const result = await options.store.read(body.id, versionInput);
     const expiresAt = now() + VIEW_TOKEN_TTL_MS;
-    const token = signViewToken(options.secret, body.id, result.version, expiresAt);
-    const theme =
-      body.theme === 'light' || body.theme === 'dark' ? `?theme=${body.theme}` : '';
+    const follow = typeof body.follow === 'boolean' ? body.follow : versionInput === undefined;
+    const theme = body.theme === 'light' || body.theme === 'dark' ? body.theme : undefined;
+    const token = signViewToken(options.secret, body.id, result.version, expiresAt, { follow, theme });
+    const query = new URLSearchParams();
+    if (body.theme === 'light' || body.theme === 'dark') query.set('theme', body.theme);
+    query.set('follow', String(follow));
     sendJson(
       response,
       200,
       {
-        url: `http://${host}:${port}/view/${token}/${body.id}/${result.version}/${theme}`,
+        url: `http://${host}:${port}/view/${token}/${body.id}/${result.version}/?${query}`,
         expiresAt,
       },
       runtimeCorsHeaders(),
@@ -413,10 +441,15 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
     }
 
     const clients = sseClients.get(body.id);
-    const payload = `data: ${JSON.stringify(message)}\n\n`;
     for (const client of clients ?? []) {
       try {
-        client.write(payload);
+        const context = viewContexts.get(client);
+        const outgoing = { ...message };
+        if (event === 'changed' && typeof body.version === 'string') {
+          const token = signViewToken(options.secret, body.id, body.version, now() + VIEW_TOKEN_TTL_MS, { follow: true, theme: context?.theme });
+          outgoing.url = `http://${host}:${port}/view/${token}/${body.id}/${body.version}/`;
+        }
+        client.write(`data: ${JSON.stringify(outgoing)}\n\n`);
       } catch {
         clients?.delete(client);
       }
@@ -445,7 +478,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       throw new HttpError(501, 'UNSUPPORTED_KIND', `${kind} artifacts are not implemented yet`);
     }
     const relative = rest.length === 0 ? result.manifest.entry : rest;
-    if (relative === result.manifest.entry) {
+    if (relative === result.manifest.entry || contentTypeFor(relative).startsWith('text/html')) {
       const bytes = await options.store.readFile(id, version, relative);
       let html: string;
       try {
@@ -453,7 +486,18 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       } catch {
         throw new HttpError(500, 'INVALID_ARTIFACT', 'Entry is not valid UTF-8');
       }
-      const injected = injectRuntime(html, runtimeSource, libraryTags(result.meta.libraries));
+      let source = runtimeSource;
+      let tags = libraryTags(result.meta.libraries);
+      if (result.manifest.rendering) {
+        const rendering = await loadRendering(options.store.storeRoot, result.manifest.rendering);
+        source = rendering.runtime;
+        tags = Object.keys(rendering.libraries).map(name => `<script src="/rendering/${rendering.id}/${name}.js"></script>`).join('');
+      } else if (!runtimeSource || result.meta.libraries.some(name => !libraries?.libraries[name])) {
+        throw new StoreError('RENDERING_UNAVAILABLE', 'Legacy rendering dependencies are missing. Rebuild Canvas or republish with the installed libraries.');
+      }
+      const context = { followLatest: payload.follow ?? url.searchParams.get('follow') !== 'false', theme: payload.theme };
+      source = `window.__canvasView = ${JSON.stringify(context)};\n${source}`;
+      const injected = injectRuntime(html, source, tags);
       const headers = viewHeaders({ kind, host, port });
       headers['Content-Length'] = String(Buffer.byteLength(injected, 'utf8'));
       response.writeHead(200, headers);
@@ -543,6 +587,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
     response.write('data: ready\n\n');
     const clients = sseClients.get(id) ?? new Set<http.ServerResponse>();
     clients.add(response);
+    viewContexts.set(response, payload);
     sseClients.set(id, clients);
 
     let cleaned = false;
@@ -558,6 +603,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       cleaned = true;
       clearInterval(heartbeat);
       clients.delete(response);
+      viewContexts.delete(response);
       if (clients.size === 0) sseClients.delete(id);
     };
     request.on('close', cleanup);

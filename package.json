@@ -1,6 +1,6 @@
 {
   "name": "openchamber-canvas",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A project gallery for agent-generated artifacts in OpenChamber.",
@@ -48,7 +48,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "bun test",
-    "test:browser": "bun run build && bun tests/browser/panel.browser.ts",
+    "test:browser": "bun run build && bun tests/browser/panel.browser.ts && bun tests/browser/viewer.browser.ts && bun tests/browser/examples.browser.ts",
     "build": "bun run scripts/build.ts"
   },
   "devDependencies": {

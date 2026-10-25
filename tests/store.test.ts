@@ -81,6 +81,73 @@ async function createHtml(
 }
 
 describe('artifact store', () => {
+  test('AC-055: every content replacement and changed dedupe publish requires a current base', async () => {
+    const root = await makeRoot();
+    const { store } = makeStore(root);
+    const created = await createHtml(store, { dedupeKey: 'guarded' });
+    const files = [{ path: 'index.html', content: page('<h1>New</h1>') }];
+    await expectStoreError(store.update(created.id, { mode: 'replace', files }), 'INVALID_UPDATE');
+    await expectStoreError(createHtml(store, { dedupeKey: 'guarded', files }), 'INVALID_UPDATE');
+    const next = await store.update(created.id, { mode: 'replace', files, baseVersion: created.version });
+    await expectStoreError(store.update(created.id, { mode: 'replace', files, baseVersion: created.version }), 'CONFLICT');
+    const concurrent = await Promise.allSettled([
+      store.update(created.id, { mode: 'replace', files, baseVersion: next.version }),
+      store.update(created.id, { mode: 'replace', files, baseVersion: next.version }),
+    ]);
+    expect(concurrent.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect((await store.getMeta(created.id)).versions).toHaveLength(3);
+  });
+
+  test('AC-057: metadata-only changes and identical dedupe keep the content version', async () => {
+    const root = await makeRoot();
+    const { store } = makeStore(root);
+    const created = await createHtml(store, { dedupeKey: 'metadata' });
+    const updated = await store.update(created.id, { mode: 'metadata', baseVersion: created.version, tags: ['revised'] });
+    expect(updated.version).toBe(created.version);
+    expect(updated.changedFiles).toEqual([]);
+    expect(updated.meta.versions).toHaveLength(1);
+    const deduped = await store.create({ title: 'Renamed', kind: 'html', directory: created.meta.directory, dedupeKey: 'metadata', files: [{ path: 'index.html', content: page() }] });
+    expect(deduped.meta.title).toBe('Renamed');
+    expect(deduped.meta.tags).toEqual(['revised']);
+    expect(deduped.version).toBe(created.version);
+    expect(deduped.meta.versions).toHaveLength(1);
+  });
+
+  test('AC-055 AC-057: concurrent dedupe, entry changes, and omitted tags retain correct semantics', async () => {
+    const root = await makeRoot();
+    const { store } = makeStore(root);
+    const source = { title: 'Shared', kind: 'bundle' as const, directory: '/project', dedupeKey: 'shared', entry: 'a.html', tags: ['keep'], files: [{ path: 'a.html', content: 'A' }, { path: 'b.html', content: 'B' }] };
+    const [left, right] = await Promise.all([store.create(source), store.create(source)]);
+    expect(left.id).toBe(right.id);
+    await expectStoreError(store.create({ ...source, entry: 'b.html' }), 'INVALID_UPDATE');
+    const changed = await store.create({ ...source, entry: 'b.html', tags: undefined, baseVersion: left.version });
+    expect(changed.contentChanged).toBe(true);
+    expect(changed.meta.tags).toEqual(['keep']);
+    expect((await store.read(left.id)).manifest.entry).toBe('b.html');
+    const results = await Promise.allSettled([
+      store.update(left.id, { mode: 'replace', baseVersion: changed.version, files: [{ path: 'index.html', content: 'New content' }], entry: 'index.html' }),
+      store.create({ ...source, entry: 'b.html' }),
+    ]);
+    const published = results[1];
+    if (published?.status === 'fulfilled') expect((await store.readVersion(left.id, published.value.version)).files.find(file => file.path === 'a.html')?.content.toString()).toBe('A');
+    expect((await store.getMeta(left.id)).tags).toEqual(['keep']);
+  });
+
+  test('AC-059: filtering and title sort precede pagination across more than 200 artifacts', async () => {
+    const root = await makeRoot();
+    const { store, advance } = makeStore(root);
+    const old = await createHtml(store, { title: 'Old searchable', tags: ['historic'] });
+    for (let index = 0; index < 201; index++) { advance(); await createHtml(store, { title: `New ${String(index).padStart(3, '0')}` }); }
+    const found = await store.list({ query: 'Old searchable' });
+    expect(found.total).toBe(1);
+    expect(found.artifacts[0]?.id).toBe(old.id);
+    const page = await store.list({ sort: 'title', offset: 200, limit: 50 });
+    expect(page.total).toBe(202);
+    expect(page.artifacts).toHaveLength(2);
+    expect(page.tags).toContain('historic');
+    await store.trash(old.id);
+    expect((await store.list({ trash: true, query: 'Old searchable' })).artifacts[0]?.id).toBe(old.id);
+  }, 30_000);
   test('creates an html artifact with a manifest and a meta file', async () => {
     const root = await makeRoot();
     const { store } = makeStore(root);
@@ -301,6 +368,7 @@ describe('artifact store', () => {
     advance();
     const second = await createHtml(store, {
       dedupeKey: 'turn-1',
+      baseVersion: first.version,
       files: [{ path: 'index.html', content: page('<h1>Turn 2</h1>') }],
     });
 
@@ -338,12 +406,14 @@ describe('artifact store', () => {
     const { store, advance } = makeStore(root);
     const first = await createHtml(store, { dedupeKey: 'turn-1' });
     advance();
-    await createHtml(store, {
+    const second = await createHtml(store, {
       dedupeKey: 'turn-1',
+      baseVersion: first.version,
       files: [{ path: 'index.html', content: page('<h1>Turn 2</h1>') }],
     });
     const third = await createHtml(store, {
       dedupeKey: 'turn-1',
+      baseVersion: second.version,
       files: [{ path: 'index.html', content: page('<h1>Turn 3</h1>') }],
     });
 

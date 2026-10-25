@@ -1,5 +1,8 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
+import { packageRoot } from './rendering';
 
 import { ensureDir, readJson, sleep } from '../store/fs';
 import { withArtifactLock } from '../store/lock';
@@ -11,6 +14,17 @@ export interface ViewerState {
   secret: string;
   startedAt: string;
 }
+
+export const VIEWER_PROTOCOL = 2;
+export function viewerBuild(): string {
+  try {
+    const value: unknown = JSON.parse(readFileSync(path.join(packageRoot(), 'viewer/build.json'), 'utf8'));
+    if (isRecord(value) && typeof value.id === 'string') return value.id;
+  } catch { /* Source-only tests do not require a distribution build. */ }
+  return 'unbuilt';
+}
+
+interface ViewerHealth { protocol?: number; build?: string }
 
 export interface EnsureViewerOptions {
   storeRoot: string;
@@ -54,7 +68,7 @@ export async function readViewerState(portFile: string): Promise<ViewerState | n
   }
 }
 
-async function isHealthy(state: ViewerState): Promise<boolean> {
+async function viewerHealth(state: ViewerState): Promise<ViewerHealth | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1500);
   try {
@@ -62,19 +76,53 @@ async function isHealthy(state: ViewerState): Promise<boolean> {
       headers: { authorization: `Bearer ${state.secret}` },
       signal: controller.signal,
     });
-    return response.ok;
+    if (!response.ok) return null;
+    const value: unknown = await response.json();
+    if (!isRecord(value) || value.pid !== state.pid) return null;
+    return { protocol: typeof value.protocol === 'number' ? value.protocol : undefined, build: typeof value.build === 'string' ? value.build : undefined };
   } catch {
-    return false;
+    return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
 export async function checkViewer(state: ViewerState): Promise<boolean> {
-  return isHealthy(state);
+  const health = await viewerHealth(state);
+  return health?.protocol === VIEWER_PROTOCOL && health.build === viewerBuild();
+}
+
+export async function viewerStatus(portFile: string): Promise<{ status: string; restartable: boolean }> {
+  const state = await readViewerState(portFile);
+  if (!state) return { status: 'Not running', restartable: false };
+  const health = await viewerHealth(state);
+  if (!health) return { status: 'Not running', restartable: false };
+  if (health.protocol !== VIEWER_PROTOCOL) return { status: 'Legacy viewer. Close Canvas views and stop the old Canvas viewer before reopening.', restartable: false };
+  return { status: health.build === viewerBuild() ? 'Compatible' : 'Update requires restart. Reopen Canvas views afterward.', restartable: true };
+}
+
+async function stopViewer(state: ViewerState): Promise<void> {
+  const health = await viewerHealth(state);
+  if (health?.protocol !== VIEWER_PROTOCOL) throw new ViewerUnavailableError('Legacy viewer cannot be restarted automatically. Close Canvas views and stop the old Canvas viewer, then reopen from the gallery.');
+  const response = await fetch(`http://127.0.0.1:${state.port}/shutdown`, { method: 'POST', headers: { authorization: `Bearer ${state.secret}` }, signal: AbortSignal.timeout(1500) });
+  if (!response.ok) throw new ViewerUnavailableError('Viewer restart was rejected. Close Canvas views and retry.');
+  const deadline = Date.now() + 3000;
+  while (await viewerHealth(state)) {
+    if (Date.now() >= deadline) throw new ViewerUnavailableError('Viewer did not stop. Close Canvas views and retry.');
+    await sleep(50);
+  }
+}
+
+export async function restartViewer(options: EnsureViewerOptions): Promise<ViewerState> {
+  const expected = await readViewerState(options.portFile);
+  return ensureViewerLocked(options, expected?.startedAt);
 }
 
 export async function ensureViewer(options: EnsureViewerOptions): Promise<ViewerState> {
+  return ensureViewerLocked(options);
+}
+
+async function ensureViewerLocked(options: EnsureViewerOptions, restartStartedAt?: string): Promise<ViewerState> {
   const timeoutMs = options.timeoutMs ?? 15_000;
   const lockDir = `${options.portFile}.lock`;
 
@@ -83,7 +131,12 @@ export async function ensureViewer(options: EnsureViewerOptions): Promise<Viewer
       lockDir,
       async () => {
         const existing = await readViewerState(options.portFile);
-        if (existing !== null && (await isHealthy(existing))) return existing;
+        if (existing !== null) {
+          const health = await viewerHealth(existing);
+          const restarting = restartStartedAt !== undefined && existing.startedAt === restartStartedAt;
+          if (!restarting && health?.protocol === VIEWER_PROTOCOL && health.build === viewerBuild()) return existing;
+          if (health) await stopViewer(existing);
+        }
 
         await ensureDir(options.storeRoot);
         await fs.rm(options.portFile, { force: true });
@@ -103,7 +156,7 @@ export async function ensureViewer(options: EnsureViewerOptions): Promise<Viewer
         const deadline = Date.now() + timeoutMs;
         for (;;) {
           const state = await readViewerState(options.portFile);
-          if (state !== null && (await isHealthy(state))) return state;
+          if (state !== null && (await checkViewer(state))) return state;
           if (Date.now() >= deadline) {
             throw new ViewerUnavailableError('The viewer did not start within the timeout.');
           }
@@ -122,7 +175,7 @@ export async function ensureViewer(options: EnsureViewerOptions): Promise<Viewer
 
 export async function mintViewUrl(
   state: ViewerState,
-  input: { id: string; version?: string; theme?: 'light' | 'dark' },
+  input: { id: string; version?: string; theme?: 'light' | 'dark'; follow?: boolean },
 ): Promise<{ url: string; expiresAt: number }> {
   const response = await fetch(`http://127.0.0.1:${state.port}/mint`, {
     method: 'POST',
@@ -131,6 +184,7 @@ export async function mintViewUrl(
       'content-type': 'application/json',
     },
     body: JSON.stringify(input),
+    signal: AbortSignal.timeout(3000),
   });
   if (!response.ok) {
     throw new ViewerUnavailableError(`The viewer rejected the view request (${response.status}).`);
@@ -156,6 +210,7 @@ export async function notifyViewer(
       'content-type': 'application/json',
     },
     body: JSON.stringify(input),
+    signal: AbortSignal.timeout(3000),
   });
   if (!response.ok) {
     throw new ViewerUnavailableError(`The viewer rejected the notify request (${response.status}).`);

@@ -20,6 +20,8 @@ import {
 } from './fs';
 import { newArtifactId, newVersionId } from './id';
 import { withArtifactLock } from './lock';
+import { captureRendering } from '../viewer/rendering';
+import type { RenderingSource } from '../viewer/rendering';
 import {
   assertArtifactId,
   assertRelativePath,
@@ -99,6 +101,7 @@ export interface ArtifactStoreOptions {
   maxBundleBytes?: number;
   maxBundleFiles?: number;
   maxFileBytes?: number;
+  renderingSource?: RenderingSource;
 }
 
 export class ArtifactStore {
@@ -116,9 +119,11 @@ export class ArtifactStore {
   private readonly maxBundleFiles: number;
   private readonly maxFileBytes: number;
   private initPromise: Promise<void> | null = null;
+  private readonly renderingSource: RenderingSource | undefined;
 
   constructor(options: ArtifactStoreOptions) {
     this.root = path.resolve(options.root);
+    this.renderingSource = options.renderingSource;
     this.trashRoot = path.join(this.root, 'trash');
     this.locksRoot = path.join(this.root, '.locks');
     this.now = options.now ?? (() => new Date());
@@ -149,6 +154,14 @@ export class ArtifactStore {
 
   async create(input: CreateArtifactInput): Promise<CreateResult> {
     await this.ensureInit();
+    if (input.dedupeKey) {
+      const key = sha256(Buffer.from(JSON.stringify([normalizeDirectory(input.directory), input.kind, input.dedupeKey.trim()])));
+      return withArtifactLock(path.join(this.locksRoot, `dedupe-${key}.lock`), () => this.createLocked(input), this.lockOptions());
+    }
+    return this.createLocked(input);
+  }
+
+  private async createLocked(input: CreateArtifactInput): Promise<CreateResult> {
     const now = input.now ?? this.now();
     const title = normalizeTitle(input.title);
     const directory = normalizeDirectory(input.directory);
@@ -166,19 +179,21 @@ export class ArtifactStore {
     if (dedupeKey !== null) {
       const existing = await this.findByDedupeKey(dedupeKey, kind, directory);
       if (existing !== null) {
-        if (await this.hasSameFiles(existing.id, existing.version, files)) {
-          return existing;
-        }
-        // Same dedupeKey but a changed source: append a version instead of
-        // silently dropping the new content.
-        const updated = await this.update(existing.id, {
-          mode: 'replace',
-          files: files.map((file) => ({ path: file.path, content: file.bytes })),
-          entry,
-          title,
-          tags,
-        });
-        return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true };
+        return withArtifactLock(this.lockPath(existing.id), async () => {
+          const current = await this.getMeta(existing.id);
+          const manifest = await this.readManifest(existing.id, current.currentVersion);
+          if (manifest.entry === entry && await this.hasSameFiles(existing.id, current.currentVersion, files)) {
+            if (input.baseVersion !== undefined) this.assertBaseVersion(current, input.baseVersion, 'metadata');
+            const meta = { ...current, title, tags: input.tags === undefined ? current.tags : tags, updatedAt: this.now().toISOString() };
+            await writeJsonAtomic(path.join(resolveArtifactDir(this.root, existing.id), 'meta.json'), meta);
+            return { ...existing, meta, version: meta.currentVersion, contentChanged: false };
+          }
+          const updated = await this.updateLocked(existing.id, current, {
+            mode: 'replace', files: files.map(file => ({ path: file.path, content: file.bytes })),
+            entry, title, tags: input.tags, baseVersion: input.baseVersion,
+          });
+          return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true, contentChanged: true };
+        }, this.lockOptions());
       }
     }
 
@@ -193,8 +208,10 @@ export class ArtifactStore {
         now,
         restoredFrom: null,
         existingVersions: [],
+        rendering: await this.capture(normalizeLibraries(input.libraries)),
       });
       const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
+      if (version.manifest.rendering) summary.rendering = version.manifest.rendering;
       const meta: ArtifactMeta = {
         schema: 2,
         id,
@@ -219,7 +236,7 @@ export class ArtifactStore {
         dedupeKey,
       };
       await writeJsonAtomic(path.join(artifactDir, 'meta.json'), meta);
-      return { id, version: version.id, meta, deduped: false };
+      return { id, version: version.id, meta, deduped: false, contentChanged: true };
     } catch (error) {
       await fs.rm(artifactDir, { recursive: true, force: true });
       throw error;
@@ -229,50 +246,67 @@ export class ArtifactStore {
   async update(id: string, input: UpdateInput): Promise<UpdateResult> {
     await this.ensureInit();
     assertArtifactId(id);
-    const artifactDir = resolveArtifactDir(this.root, id);
     const lockDir = this.lockPath(id);
 
     return withArtifactLock(
       lockDir,
       async () => {
         const meta = await this.getMeta(id);
-        this.assertBaseVersion(meta, input.baseVersion, input.mode);
-        const now = this.now();
-        const plan = await this.planUpdate(id, meta, input);
-        const version = await this.writeVersion({
-          artifactDir,
-          kind: plan.kind,
-          title: plan.title,
-          entry: plan.entry,
-          files: plan.files,
-          now,
-          restoredFrom: plan.restoredFrom,
-          existingVersions: meta.versions.map((entry) => entry.id),
-        });
-        const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
-        const nextMeta: ArtifactMeta = {
-          ...meta,
-          title: plan.title,
-          tags: plan.tags,
-          updatedAt: now.toISOString(),
-          currentVersion: version.id,
-          versions: [...meta.versions, summary],
-        };
-        const pruned = this.pruneMeta(nextMeta);
-        try {
-          await writeJsonAtomic(path.join(artifactDir, 'meta.json'), pruned.meta);
-        } catch (error) {
-          await fs.rm(path.join(artifactDir, 'versions', version.id), { recursive: true, force: true });
-          throw error;
-        }
-        for (const prunedVersion of pruned.removed) {
-          const versionDir = resolveVersionDir(this.root, id, prunedVersion);
-          await fs.rm(versionDir, { recursive: true, force: true }).catch(() => undefined);
-        }
-        return { id, version: version.id, changedFiles: plan.changedFiles, meta: pruned.meta };
+        return this.updateLocked(id, meta, input);
       },
       this.lockOptions(),
     );
+  }
+
+  private async updateLocked(id: string, meta: ArtifactMeta, input: UpdateInput): Promise<UpdateResult> {
+    const artifactDir = resolveArtifactDir(this.root, id);
+    this.assertBaseVersion(meta, input.baseVersion, input.mode);
+    if (input.mode === 'metadata') {
+      if (input.title === undefined && input.tags === undefined) throw new StoreError('INVALID_UPDATE', 'A metadata update needs title or tags');
+      const next = {
+        ...meta,
+        title: input.title === undefined ? meta.title : normalizeTitle(input.title),
+        tags: input.tags === undefined ? meta.tags : normalizeTags(input.tags),
+        updatedAt: this.now().toISOString(),
+      };
+      await writeJsonAtomic(path.join(artifactDir, 'meta.json'), next);
+      return { id, version: meta.currentVersion, changedFiles: [], meta: next };
+    }
+    const now = this.now();
+    const plan = await this.planUpdate(id, meta, input);
+    const version = await this.writeVersion({
+      artifactDir,
+      kind: plan.kind,
+      title: plan.title,
+      entry: plan.entry,
+      files: plan.files,
+      now,
+      restoredFrom: plan.restoredFrom,
+      existingVersions: meta.versions.map(entry => entry.id),
+      rendering: input.mode === 'restore' ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries),
+    });
+    const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
+    if (version.manifest.rendering) summary.rendering = version.manifest.rendering;
+    const nextMeta: ArtifactMeta = {
+      ...meta,
+      title: plan.title,
+      tags: plan.tags,
+      updatedAt: now.toISOString(),
+      currentVersion: version.id,
+      versions: [...meta.versions, summary],
+    };
+    const pruned = this.pruneMeta(nextMeta);
+    try {
+      await writeJsonAtomic(path.join(artifactDir, 'meta.json'), pruned.meta);
+    } catch (error) {
+      await fs.rm(path.join(artifactDir, 'versions', version.id), { recursive: true, force: true });
+      throw error;
+    }
+    for (const prunedVersion of pruned.removed) {
+      const versionDir = resolveVersionDir(this.root, id, prunedVersion);
+      await fs.rm(versionDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+    return { id, version: version.id, changedFiles: plan.changedFiles, meta: pruned.meta };
   }
 
   async read(id: string, version?: string): Promise<ReadResult> {
@@ -337,30 +371,38 @@ export class ArtifactStore {
     const directory = filter.directory === undefined ? undefined : normalizeDirectory(filter.directory);
     const tag = filter.tag?.toLowerCase();
     const query = filter.query?.toLowerCase();
-    const entries = await fs.readdir(this.root, { withFileTypes: true });
+    const listRoot = filter.trash ? this.trashRoot : this.root;
+    const entries = await fs.readdir(listRoot, { withFileTypes: true });
     const artifacts: ArtifactSummary[] = [];
+    const tags = new Set<string>();
+    let pendingFeedbackCount = 0;
     let errors = 0;
 
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'trash' || entry.name === 'exports') continue;
       let meta: ArtifactMeta;
       try {
-        const raw = await readJson(path.join(this.root, entry.name, 'meta.json'));
+        const raw = await readJson(path.join(listRoot, entry.name, 'meta.json'));
         meta = parseMeta(raw);
       } catch {
         errors += 1;
         continue;
       }
-      if (meta.id !== entry.name) {
+      if (!filter.trash && meta.id !== entry.name) {
         errors += 1;
         continue;
       }
-      if (filter.includeArchived !== true && meta.archivedAt !== null) continue;
+      if (!filter.trash && filter.archivedOnly && meta.archivedAt === null) continue;
+      if (!filter.trash && !filter.archivedOnly && filter.includeArchived !== true && meta.archivedAt !== null) continue;
       if (directory !== undefined && !isWithin(directory, meta.directory)) continue;
       if (filter.kind !== undefined && meta.kind !== filter.kind) continue;
+      for (const value of meta.tags) tags.add(value);
+      const feedback = filter.trash ? [] : await this.allFeedback(meta.id);
+      const pending = feedback.filter(record => record.deliveredAt === null).length;
+      pendingFeedbackCount += pending;
       if (tag !== undefined && !meta.tags.some((entryTag) => entryTag.toLowerCase() === tag)) continue;
       if (query !== undefined) {
-        const matchesTitle = meta.title.toLowerCase().includes(query);
+        const matchesTitle = meta.title.toLowerCase().includes(query) || meta.projectName.toLowerCase().includes(query);
         const matchesTag = meta.tags.some((entryTag) => entryTag.toLowerCase().includes(query));
         if (!matchesTitle && !matchesTag) continue;
       }
@@ -376,16 +418,19 @@ export class ArtifactStore {
         tags: meta.tags,
         favorite: meta.favorite,
         archived: meta.archivedAt !== null,
-        feedbackCount: await this.countFeedback(meta.id),
+        feedbackCount: feedback.length,
+        pendingFeedbackCount: pending,
       });
     }
 
     artifacts.sort((left, right) => {
+      if (filter.sort === 'title') return left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
       const updated = right.updatedAt.localeCompare(left.updatedAt);
       return updated !== 0 ? updated : left.id.localeCompare(right.id);
     });
     const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
-    return { artifacts: artifacts.slice(0, limit), errors };
+    const offset = filter.offset ?? 0;
+    return { artifacts: artifacts.slice(offset, offset + limit), errors, total: artifacts.length, tags: [...tags].sort(), pendingFeedbackCount };
   }
 
   async listTrash(): Promise<ArtifactSummary[]> {
@@ -547,6 +592,19 @@ export class ArtifactStore {
   }
 
   async listFeedback(id: string, options: ListFeedbackOptions = {}): Promise<FeedbackRecord[]> {
+    const records = await this.allFeedback(id, options.since);
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+    return records.slice(options.offset ?? 0, (options.offset ?? 0) + limit);
+  }
+
+  async feedbackPage(id: string, options: ListFeedbackOptions = {}): Promise<{ responses: FeedbackRecord[]; total: number; pending: number }> {
+    const records = await this.allFeedback(id, options.since);
+    const offset = options.offset ?? 0;
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+    return { responses: records.slice(offset, offset + limit), total: records.length, pending: records.filter(record => record.deliveredAt === null).length };
+  }
+
+  private async allFeedback(id: string, since?: string): Promise<FeedbackRecord[]> {
     await this.ensureInit();
     assertArtifactId(id);
     const feedbackDir = path.join(resolveArtifactDir(this.root, id), 'feedback');
@@ -564,7 +622,7 @@ export class ArtifactStore {
         const raw = await readJson(path.join(feedbackDir, entry.name));
         const record = parseFeedbackRecord(raw);
         if (record.artifactId !== id) continue;
-        if (options.since !== undefined && record.createdAt <= options.since) continue;
+        if (since !== undefined && record.createdAt <= since) continue;
         records.push(record);
       } catch {
         continue;
@@ -573,8 +631,7 @@ export class ArtifactStore {
     records.sort(
       (left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
     );
-    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
-    return records.slice(0, limit);
+    return records;
   }
 
   async markFeedbackDelivered(id: string, feedbackIds: string[]): Promise<number> {
@@ -718,9 +775,9 @@ export class ArtifactStore {
     directory: string,
   ): Promise<CreateResult | null> {
     const metas = await this.readAllMetas();
-    const found = metas.find((meta) => meta.dedupeKey === key && meta.directory === directory);
-    if (found === undefined || found.kind !== kind) return null;
-    return { id: found.id, version: found.currentVersion, meta: found, deduped: true };
+    const found = metas.find((meta) => meta.dedupeKey === key && meta.directory === directory && meta.kind === kind);
+    if (found === undefined) return null;
+    return { id: found.id, version: found.currentVersion, meta: found, deduped: true, contentChanged: false };
   }
 
   private async hasSameFiles(
@@ -759,12 +816,8 @@ export class ArtifactStore {
     baseVersion: string | undefined,
     mode: UpdateInput['mode'],
   ): void {
-    const required = mode === 'merge' || mode === 'edits' || mode === 'restore';
     if (baseVersion === undefined) {
-      if (required) {
-        throw new StoreError('INVALID_UPDATE', `baseVersion is required for ${mode}`);
-      }
-      return;
+      throw new StoreError('INVALID_UPDATE', `baseVersion is required for ${mode}`);
     }
     assertVersionId(baseVersion);
     if (baseVersion !== meta.currentVersion) {
@@ -915,6 +968,7 @@ export class ArtifactStore {
     now: Date;
     restoredFrom: string | null;
     existingVersions: string[];
+    rendering?: string;
   }): Promise<{ id: string; manifest: VersionManifest; totalBytes: number }> {
     const versionsDir = path.join(input.artifactDir, 'versions');
     await ensureDir(versionsDir);
@@ -945,6 +999,7 @@ export class ArtifactStore {
         createdAt: input.now.toISOString(),
         restoredFrom: input.restoredFrom,
         files: records,
+        ...(input.rendering ? { rendering: input.rendering } : {}),
       };
       await writeJsonDurable(path.join(tempDir, 'manifest.json'), manifest);
       await renameWithRetry(tempDir, path.join(versionsDir, version));
@@ -967,6 +1022,10 @@ export class ArtifactStore {
       }
       throw error;
     }
+  }
+
+  private async capture(libraries: string[]): Promise<string | undefined> {
+    return this.renderingSource ? captureRendering(this.root, this.renderingSource, libraries) : undefined;
   }
 
   private async updateMeta(

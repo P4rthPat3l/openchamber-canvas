@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { ArtifactStore } from '../store/index';
 import { defaultStoreRoot, defaultViewerPortFile } from '../store/paths';
 import { createServiceServer } from './routes';
+import { installedRendering } from '../viewer/rendering';
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,7 +39,7 @@ async function main(): Promise<void> {
   const viewerTimeoutMs =
     Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : 15_000;
 
-  const store = new ArtifactStore({ root: storeRoot });
+  const store = new ArtifactStore({ root: storeRoot, renderingSource: installedRendering() });
   await store.init();
   const service = await createServiceServer({
     store,

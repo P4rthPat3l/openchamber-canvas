@@ -13,6 +13,7 @@ export type StoreErrorCode =
   | 'PATH_NOT_FOUND'
   | 'ENTRY_NOT_FOUND'
   | 'LOCK_TIMEOUT'
+  | 'RENDERING_UNAVAILABLE'
   | 'STORE_UNAVAILABLE';
 
 export class StoreError extends Error {

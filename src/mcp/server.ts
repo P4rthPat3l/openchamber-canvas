@@ -20,6 +20,7 @@ import type {
 import { ViewerUnavailableError, ensureViewer, mintViewUrl, notifyViewer } from '../viewer/ensure';
 import { startHeartbeat } from './heartbeat';
 import { MCP_VERSION } from './version';
+import { installedRendering } from '../viewer/rendering';
 import {
   decodeBase64,
   entryContent,
@@ -50,7 +51,7 @@ const viewerEntry =
     ? path.resolve(configuredViewerEntry)
     : path.join(moduleDir, '..', 'viewer', 'server.js');
 
-const store = new ArtifactStore({ root: storeRoot });
+const store = new ArtifactStore({ root: storeRoot, renderingSource: installedRendering() });
 await store.init();
 startHeartbeat(storeRoot);
 
@@ -73,11 +74,12 @@ const publishSchema = z.object({
   tags: z.array(z.string().min(1).max(32)).max(16).optional(),
   libraries: z.array(z.string().regex(/^[a-z0-9-]{1,32}$/)).max(16).optional(),
   dedupeKey: z.string().min(1).max(200).optional(),
+  baseVersion: z.string().min(1).optional(),
 });
 
 const updateSchema = z.object({
   id: z.string().min(1),
-  baseVersion: z.string().min(1).optional(),
+  baseVersion: z.string().min(1),
   mode: z.enum(['merge', 'replace']).optional(),
   html: z.string().min(1).max(2 * 1024 * 1024).optional(),
   files: z.array(fileSchema).max(200).optional(),
@@ -109,6 +111,9 @@ const listSchema = z.object({
   tag: z.string().max(32).optional(),
   limit: z.number().int().min(1).max(200).optional(),
   includeArchived: z.boolean().optional(),
+  allProjects: z.boolean().optional(),
+  offset: z.number().int().min(0).optional(),
+  sort: z.enum(['updated', 'title']).optional(),
 });
 
 const readSchema = z.object({
@@ -126,6 +131,7 @@ const resultSchema = z.object({
   id: z.string().min(1),
   since: z.string().min(1).optional(),
   limit: z.number().int().min(1).max(200).optional(),
+  offset: z.number().int().min(0).optional(),
 });
 
 type PublishArgs = z.infer<typeof publishSchema>;
@@ -139,6 +145,7 @@ interface PublishSource {
 }
 
 type UpdateSource =
+  | { mode: 'metadata'; warnings: string[] }
   | { mode: 'replace'; files: ArtifactFileInput[]; entry: string; warnings: string[] }
   | {
       mode: 'merge';
@@ -265,6 +272,10 @@ async function resolveUpdateSource(args: UpdateArgs, meta: ArtifactMeta): Promis
     args.directoryPath !== undefined,
   ].filter(Boolean).length;
   if (sources !== 1) {
+    if (sources === 0 && (args.title !== undefined || args.tags !== undefined) &&
+        args.mode === undefined && args.entry === undefined && args.remove === undefined && args.path === undefined) {
+      return { mode: 'metadata', warnings: [] };
+    }
     throw new StoreError(
       'INVALID_UPDATE',
       'Use exactly one of restoreFrom, edits, html, files, filePath, or directoryPath',
@@ -425,9 +436,11 @@ server.tool(
         sessionId: args.sessionId,
         tags: args.tags,
         libraries: args.libraries,
-        dedupeKey: args.dedupeKey,
+         dedupeKey: args.dedupeKey,
+         baseVersion: args.baseVersion,
       });
       const viewer = await openViewer(created.id);
+      const notifyWarnings = created.deduped && created.contentChanged ? await notifyChange(created.id, created.version) : [];
       return ok({
         id: created.id,
         title: created.meta.title,
@@ -435,7 +448,8 @@ server.tool(
         version: created.version,
         viewUrl: viewer.viewUrl,
         deduped: created.deduped,
-        warnings: [...source.warnings, ...viewer.warnings],
+        contentChanged: created.contentChanged,
+        warnings: [...source.warnings, ...viewer.warnings, ...notifyWarnings],
       });
     } catch (error) {
       return fromError(error);
@@ -445,7 +459,7 @@ server.tool(
 
 server.tool(
   'update',
-  'Update an existing Canvas artifact. Always pass baseVersion from canvas_read or the last publish or update. Use edits for a few exact find-and-replace changes, files with mode merge for a bundle, filePath or directoryPath for a large artifact, and restoreFrom to restore an older version. html or mode replace replaces the entry. A new version is stored; the old version stays. The result includes a fresh viewUrl and the changed files.',
+  'Update a Canvas artifact. baseVersion is required for every update. Use edits for exact replacements, files for a bundle merge, filePath/directoryPath for a snapshot, or restoreFrom for restore. Pass only title/tags for a metadata-only update, which does not create a content version. Read the current source/version before retrying a conflict.',
   updateSchema.shape,
   async (args) => {
     try {
@@ -460,12 +474,14 @@ server.tool(
       }
 
       const baseVersion = args.baseVersion;
-      if (source.mode !== 'replace' && baseVersion === undefined) {
+      if (baseVersion === undefined) {
         return fail('INVALID_UPDATE', `baseVersion is required for ${source.mode}`);
       }
 
       let input: UpdateInput;
-      if (source.mode === 'replace') {
+      if (source.mode === 'metadata') {
+        input = { mode: 'metadata', title: args.title, tags: args.tags, baseVersion };
+      } else if (source.mode === 'replace') {
         input = {
           mode: 'replace',
           files: source.files,
@@ -482,7 +498,7 @@ server.tool(
           entry: source.entry,
           title: args.title,
           tags: args.tags,
-          baseVersion: baseVersion as string,
+           baseVersion,
         };
       } else if (source.mode === 'edits') {
         input = {
@@ -491,7 +507,7 @@ server.tool(
           path: source.path,
           title: args.title,
           tags: args.tags,
-          baseVersion: baseVersion as string,
+           baseVersion,
         };
       } else {
         input = {
@@ -499,14 +515,14 @@ server.tool(
           restoreFrom: source.restoreFrom,
           title: args.title,
           tags: args.tags,
-          baseVersion: baseVersion as string,
+           baseVersion,
         };
       }
 
       const updated = await store.update(args.id, input);
       const viewer = await openViewer(args.id);
       const notifyWarnings =
-        viewer.viewUrl === null ? [] : await notifyChange(args.id, updated.version);
+        viewer.viewUrl === null || source.mode === 'metadata' ? [] : await notifyChange(args.id, updated.version);
       return ok({
         id: updated.id,
         version: updated.version,
@@ -525,14 +541,17 @@ server.tool(
   'List Canvas artifacts for the current project or another directory. Returns summaries only, no HTML. Use it to find an artifact id before canvas_read or canvas_update.',
   listSchema.shape,
   async (args) => {
-    try {
+      try {
+      if (args.allProjects && args.directory !== undefined) return fail('INVALID_PATH', 'Use directory or allProjects, not both');
       const result = await store.list({
-        directory: args.directory === undefined ? undefined : projectDirectory(args.directory),
+        directory: args.allProjects ? undefined : projectDirectory(args.directory),
         query: args.query,
         kind: args.kind,
         tag: args.tag,
         limit: args.limit,
         includeArchived: args.includeArchived,
+        offset: args.offset,
+        sort: args.sort,
       });
       return ok(result);
     } catch (error) {
@@ -549,6 +568,8 @@ server.tool(
     try {
       const result = await store.read(args.id, args.version);
       const meta = summarizeMeta(result.meta);
+      meta.rendering = result.manifest.rendering ?? null;
+      meta.warnings = result.manifest.rendering ? [] : ['Legacy version uses installed, unpinned rendering dependencies.'];
 
       if (args.path !== undefined) {
         const record = result.manifest.files.find((file) => file.path === args.path);
@@ -639,11 +660,12 @@ server.tool(
   resultSchema.shape,
   async (args) => {
     try {
-      const responses = await store.listFeedback(args.id, {
+      const page = await store.feedbackPage(args.id, {
         since: args.since,
         limit: args.limit,
+        offset: args.offset,
       });
-      return ok({ responses });
+      return ok(page);
     } catch (error) {
       return fromError(error);
     }

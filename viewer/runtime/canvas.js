@@ -31,7 +31,8 @@
   var id = segments[2] ?? "";
   var version = segments[3] ?? "";
   var query = new URLSearchParams(window.location.search);
-  var requestedTheme = query.get("theme");
+  var followLatest = window.__canvasView?.followLatest ?? query.get("follow") !== "false";
+  var requestedTheme = window.__canvasView?.theme ?? query.get("theme");
   var theme = requestedTheme === "dark" || requestedTheme === "light" ? requestedTheme : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   document.documentElement.dataset.theme = theme;
   async function requestJson(url, init) {
@@ -88,7 +89,7 @@
       updateHandlers.delete(handler);
     };
   }
-  if (token.length > 0 && id.length > 0 && typeof EventSource !== "undefined") {
+  if (followLatest && token.length > 0 && id.length > 0 && typeof EventSource !== "undefined") {
     const source = new EventSource(`/events/${token}/${id}`);
     source.onmessage = (event) => {
       let payload;
@@ -109,6 +110,7 @@
         const themeParam = new URLSearchParams(window.location.search).get("theme");
         if (themeParam)
           next.searchParams.set("theme", themeParam);
+        next.searchParams.set("follow", "true");
         window.location.href = next.toString();
         return;
       }
@@ -119,6 +121,7 @@
     id,
     version,
     theme,
+    followLatest,
     storage,
     feedback,
     data,

@@ -13,6 +13,10 @@ import {
   ViewerUnavailableError,
   ensureViewer,
   mintViewUrl,
+  notifyViewer,
+  readViewerState,
+  restartViewer,
+  viewerStatus,
 } from '../viewer/ensure';
 import { defaultMcpConfigCandidates, inspectMcpRegistration } from './mcp-registration';
 import { MCP_VERSION } from '../mcp/version';
@@ -124,11 +128,11 @@ function requireToken(
   return true;
 }
 
-function parseInteger(value: string | null, name: string): number | undefined {
+function parseInteger(value: string | null, name: string, minimum = 1): number | undefined {
   if (value === null || value.length === 0) return undefined;
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new HttpError(400, 'INVALID_REQUEST', `${name} must be a positive integer`);
+  if (!Number.isInteger(parsed) || parsed < minimum) {
+    throw new HttpError(400, 'INVALID_REQUEST', `${name} must be an integer of at least ${minimum}`);
   }
   return parsed;
 }
@@ -232,13 +236,16 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
       return;
     }
 
-    if (url.pathname === '/list' && request.method === 'GET') {
+    if ((url.pathname === '/list' || url.pathname === '/trash') && request.method === 'GET') {
       const directory = url.searchParams.get('directory') ?? undefined;
       const query = url.searchParams.get('query') ?? undefined;
       const kindValue = url.searchParams.get('kind');
       const tag = url.searchParams.get('tag') ?? undefined;
       const limit = parseInteger(url.searchParams.get('limit'), 'limit');
       const archived = url.searchParams.get('archived');
+      const offset = parseInteger(url.searchParams.get('offset'), 'offset', 0);
+      const sort = url.searchParams.get('sort') ?? 'updated';
+      if (sort !== 'updated' && sort !== 'title') throw new HttpError(400, 'INVALID_REQUEST', 'sort is invalid');
       if (kindValue !== null && !isKind(kindValue)) {
         throw new HttpError(400, 'INVALID_REQUEST', 'kind is invalid');
       }
@@ -249,6 +256,10 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
         tag,
         limit,
         includeArchived: archived === 'true' || archived === '1',
+        archivedOnly: archived === 'true' || archived === '1',
+        offset,
+        sort,
+        trash: url.pathname === '/trash',
       });
       sendJson(response, 200, result);
       return;
@@ -284,7 +295,7 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
         viewerEntry: options.viewerEntry,
         timeoutMs: options.viewerTimeoutMs,
       });
-      const minted = await mintViewUrl(viewer, { id: body.id, version, theme });
+      const minted = await mintViewUrl(viewer, { id: body.id, version, theme, follow: typeof body.follow === 'boolean' ? body.follow : undefined });
       sendJson(response, 200, minted);
       return;
     }
@@ -296,9 +307,8 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
       if (request.method === 'GET') {
         const since = url.searchParams.get('since') ?? undefined;
         const limit = parseInteger(url.searchParams.get('limit'), 'limit');
-        sendJson(response, 200, {
-          responses: await options.store.listFeedback(id, { since, limit }),
-        });
+        const offset = parseInteger(url.searchParams.get('offset'), 'offset', 0);
+        sendJson(response, 200, await options.store.feedbackPage(id, { since, limit, offset }));
         return;
       }
       if (request.method === 'POST') {
@@ -351,12 +361,23 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
         restoreFrom: body.version,
         baseVersion: body.baseVersion,
       });
-      sendJson(response, 200, { version: updated.version });
+      const viewer = await readViewerState(options.portFile);
+      const warnings: string[] = [];
+      if (viewer) {
+        try { await notifyViewer(viewer, { id, event: 'changed', version: updated.version }); }
+        catch { warnings.push('Version restored, but open views could not refresh. Reopen from the gallery.'); }
+      }
+      sendJson(response, 200, { version: updated.version, warnings });
       return;
     }
 
-    if (url.pathname === '/trash' && request.method === 'GET') {
-      sendJson(response, 200, { artifacts: await options.store.listTrash() });
+    if (url.pathname === '/viewer-status' && request.method === 'GET') {
+      sendJson(response, 200, await viewerStatus(options.portFile));
+      return;
+    }
+    if (url.pathname === '/viewer-restart' && request.method === 'POST') {
+      await restartViewer({ storeRoot: options.storeRoot, portFile: options.portFile, viewerEntry: options.viewerEntry, timeoutMs: options.viewerTimeoutMs });
+      sendJson(response, 200, { ok: true });
       return;
     }
 

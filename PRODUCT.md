@@ -16,7 +16,7 @@ Canvas is the project gallery for artifacts the agent creates. It keeps each art
 
 ## Positioning
 
-Artifacts live in the project's store, not in a chat transcript. They keep full JavaScript, annotations, DevTools, versions, and feedback, while the agent gets stable publish, read, update, and result tools. The viewer is local, sandboxed, and served by a detached loopback daemon.
+Artifacts live in the project's store, not in a chat transcript. They keep sandboxed JavaScript, DevTools, versions, and feedback, while the agent gets publish, read, update, and result tools. Native annotation is not supported on sandboxed artifact pages. The viewer is local and served by a detached loopback daemon.
 
 ## Operating Context
 
@@ -26,6 +26,9 @@ The user works in an OpenChamber project with the agent in the main chat. The ex
 
 - HTML and bundle artifacts in v1. Markdown, image, PDF, and data kinds are deferred.
 - Versions, restore, archive, trash, favorites, tags, search, export, feedback, and session provenance.
+- New versions pin their runtime and libraries; historical views stay fixed unless following is explicitly requested. Legacy versions remain readable but are labelled unpinned.
+- Feedback is readable and selectable in the gallery. Adding it to chat composes a draft and records that action; it does not send a message or claim the agent has read it.
+- Search covers the full scope before pagination. Revision drafts survive navigation for the current panel session.
 - Artifact HTML is untrusted and runs only in the browser panel, never in the extension page.
 - The viewer and service bind loopback. The view response keeps `sandbox allow-scripts`.
 - The MCP is a separate Settings → MCP install. The extension bundles the server file but cannot register it.

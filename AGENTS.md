@@ -4,7 +4,7 @@ Feature documentation lives in `docs/features/`. Read the relevant feature docum
 
 ## Status
 
-This repository is in Phase 5 built, Phase 6 SDK UI migration built. The extension is installed. The artifact store, view policy, viewer server, runtime, pinned libraries, MCP server, extension service, gallery panel, status section, and extension manifest exist. The Phase 0 blocking probes pass. Installed-app acceptance of the SDK UI migration is pending.
+The 0.2.0 security/revision hardening is built. The extension is installed at an older release; installed-app acceptance is pending. The shared store, sandboxed viewer, pinned rendering snapshots, MCP/service contracts, feedback handoff, paginated gallery, status section, and authoring examples exist.
 
 ## Stack
 
@@ -27,11 +27,16 @@ bun run test:browser
 bun run build
 ```
 
-`lint` is a typecheck alias until a linter is added. `build` builds the panel, status, service, MCP, viewer, and runtime, and copies the pinned libraries into `viewer/libraries/`. `test:browser` builds and runs the Playwright suite against the actual panel/status entries; it requires `/usr/bin/google-chrome`.
+`lint` is a typecheck alias until a linter is added. `build` builds the panel, status, service, MCP, viewer, and runtime, copies libraries into `viewer/libraries/`, and hashes them into `viewer/build.json`. `test:browser` builds and tests the panel/status entries, bundled Node viewer/runtime, and examples; it requires `/usr/bin/google-chrome` and Node. Browser stores/screenshots use `/tmp/opencode`.
 
 ## Hard rules
 
 - Artifact HTML is untrusted. It runs only in the browser panel, never in the extension page, never with `eval` in the host page, never through `innerHTML` in the gallery.
+- Every served HTML document needs the sandbox policy, including secondary bundle documents. An entry-only policy lets link navigation escape isolation. Native form submission is blocked; use a button with validation and `canvas.feedback`, never add `allow-forms`.
+- Rendering snapshots live under `.rendering/<sha256>` in the store. Version manifests reference them; restore preserves the source reference. Legacy manifests have no reference and must stay visibly unpinned. Never silently replace missing/tampered pinned dependencies with installed ones.
+- Require `baseVersion` for all content mutations, including replacements and changed-content dedupe. Metadata-only updates do not create versions or notify following views.
+- A daemon's build identity is captured at startup. Do not accept health alone as compatibility or reread an updated package version as the running build. Only the known authenticated shutdown protocol may stop a daemon; never kill a PID read from an untrusted/stale port file.
+- SDK checkboxes are controlled. Feed `checked` back through `handle.update` in `onChange`, just as fields need their value updated. Feedback delivery means successful composer insertion, not sending or reading.
 - The view response keeps `sandbox allow-scripts`. `connect-src` may name only the viewer daemon origin (`http://127.0.0.1:<port>` or `http://localhost:<port>`), never the app origin and never the open network. Changes to `src/viewer/policy.ts` need the security tests.
 - The service and the viewer daemon bind `127.0.0.1` only. No `0.0.0.0`.
 - The viewer daemon is the only process that serves artifact HTML. The MCP server writes the store and ensures the viewer; it does not serve a second copy.

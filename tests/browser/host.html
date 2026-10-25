@@ -48,7 +48,10 @@
         'artifact-notes': makeMeta('artifact-notes', 'Q3 research notes', 'markdown',
           ['research'], false, true, [version('v1', 2200, 1, 420)], []),
       };
-      const feedback = { 'artifact-revenue': 2 };
+      const feedback = { 'artifact-revenue': Array.from({ length: 2 }, (_, index) => ({
+        id: `fb_${index}`, artifactId: 'artifact-revenue', version: 'v1', createdAt: iso(2), kind: 'form',
+        data: { note: index === 0 ? '<img src=x onerror=alert(1)>' : 'Make the chart weekly' }, deliveredAt: null,
+      })) };
       const state = {
         theme: Object.keys(THEMES)[0] || 'openchamber-dark',
         overrides: {},
@@ -58,9 +61,13 @@
         actions: [],
         requests: [],
         failList: false,
+        failCompose: false,
+        failFeedback: false,
+        failMark: false,
         trashed: [],
         metas,
       };
+      const deferred = [];
       if (params.get('empty') === '1') state.metas = {};
 
       const themePayload = () => {
@@ -71,7 +78,8 @@
         id: meta.id, title: meta.title, kind: meta.kind, directory: meta.directory,
         projectName: meta.projectName, updatedAt: meta.updatedAt, versions: meta.versions.length,
         currentVersion: meta.currentVersion, tags: meta.tags, favorite: meta.favorite,
-        archived: meta.archivedAt !== null, feedbackCount: feedback[meta.id] || 0,
+        archived: meta.archivedAt !== null, feedbackCount: (feedback[meta.id] || []).length,
+        pendingFeedbackCount: (feedback[meta.id] || []).filter(record => !record.deliveredAt).length,
       });
       const findMeta = (id) => state.metas[id] || state.trashed.find((item) => item.id === id);
       const sendReady = () => {
@@ -101,13 +109,32 @@
         const body = request.body ? JSON.parse(request.body) : {};
         const path = url.pathname;
         state.requests.push({ method: request.method, path: url.pathname + url.search, body });
-        if (path === '/list') {
+        if (path === '/list' || path === '/trash') {
           if (state.failList) return json(503, { error: { message: 'Probe list failure' } });
           const archived = url.searchParams.get('archived') === 'true';
-          const items = Object.values(state.metas).filter((meta) => archived ? meta.archivedAt !== null : meta.archivedAt === null);
-          return json(200, { artifacts: items.map(summary), errors: 0 });
+          const scoped = (path === '/trash' ? state.trashed : Object.values(state.metas)).filter((meta) => path === '/trash' || (archived ? meta.archivedAt !== null : meta.archivedAt === null));
+          const tags = [...new Set(scoped.flatMap(meta => meta.tags))].sort();
+          const query = (url.searchParams.get('query') || '').toLowerCase();
+          const tag = url.searchParams.get('tag');
+          const items = scoped.filter(meta => (!tag || meta.tags.includes(tag)) && (!query || [meta.title, meta.projectName, ...meta.tags].some(value => value.toLowerCase().includes(query))));
+          items.sort((a, b) => url.searchParams.get('sort') === 'title' ? a.title.localeCompare(b.title) : b.updatedAt.localeCompare(a.updatedAt));
+          const offset = Number(url.searchParams.get('offset') || 0), limit = Number(url.searchParams.get('limit') || 50);
+          return json(200, { artifacts: items.slice(offset, offset + limit).map(summary), errors: 0, total: items.length, tags,
+            pendingFeedbackCount: scoped.reduce((sum, meta) => sum + summary(meta).pendingFeedbackCount, 0) });
         }
-        if (path === '/trash') return json(200, { artifacts: state.trashed.map(summary), errors: 0 });
+        if (path.startsWith('/feedback/')) {
+          if (state.failFeedback) return json(503, { error: { message: 'Feedback unavailable' } });
+          const records = feedback[path.slice('/feedback/'.length)] || [];
+          if (request.method === 'POST') {
+            if (state.failMark) return json(503, { error: { message: 'Status unavailable' } });
+            for (const record of records) if (body.ids.includes(record.id)) record.deliveredAt = new Date().toISOString();
+            return json(200, { delivered: body.ids.length });
+          }
+          const offset = Number(url.searchParams.get('offset') || 0), limit = Number(url.searchParams.get('limit') || 50);
+          return json(200, { responses: records.slice(offset, offset + limit), total: records.length, pending: records.filter(record => !record.deliveredAt).length });
+        }
+        if (path === '/viewer-status') return json(200, { status: 'Compatible', restartable: true });
+        if (path === '/viewer-restart') return json(200, { ok: true });
         if (path === '/health') return json(200, {
           ok: true, pid: 42, uptime: 12, store: '/tmp/canvas-probe-store', version: '0.1.0',
           mcpPath: '/home/parth/Production/openchamber-canvas/mcp/server.js',
@@ -182,10 +209,22 @@
           if (payload.op === 'keys') return reply(data, { storage: true, op: 'keys', keys: Object.keys(state.storage) });
           return fail(data, 'Unsupported storage operation');
         }
-        if (data.type === 'service-request') return reply(data, service(data.payload));
+        if (data.type === 'service-request') {
+          if ((state.delayFavorite && data.payload.path.startsWith('/favorite/')) ||
+              (state.delayDetail && data.payload.path === '/artifact/artifact-onboarding')) {
+            deferred.push(() => reply(data, service(data.payload)));
+            return;
+          }
+          return reply(data, service(data.payload));
+        }
         if (data.type === 'service-status') return reply(data, { status: 'ready' });
         if (data.type === 'toast') { state.actions.push({ type: 'toast', payload: data.payload }); return reply(data); }
-        if (data.type === 'compose') { state.actions.push({ type: 'compose', payload: data.payload }); return reply(data); }
+        if (data.type === 'compose') {
+          if (state.failCompose) return fail(data, 'Composer unavailable');
+          state.actions.push({ type: 'compose', payload: data.payload });
+          if (state.delayCompose) { deferred.push(() => reply(data)); return; }
+          return reply(data);
+        }
         if (data.type === 'clipboard-write') { state.actions.push({ type: 'clipboard', payload: data.payload }); return reply(data); }
         if (data.type === 'attach') { state.actions.push({ type: 'attach', payload: data.payload }); return reply(data); }
         if (data.type === 'open-url') { state.actions.push({ type: 'open-url', payload: data.payload }); return reply(data); }
@@ -207,6 +246,23 @@
         setHeartbeat(value) { state.heartbeat = value; },
         setRegistration(value) { state.registration = value; },
         setListFailure(value) { state.failList = value; },
+        setFailure(kind, value) { state[kind] = value; },
+        release() { for (const complete of deferred.splice(0)) complete(); },
+        scenario(name) {
+          if (name === 'many') {
+            for (let index = 0; index < 210; index++) {
+              const id = `artifact-extra-${index}`;
+              state.metas[id] = makeMeta(id, `Example ${String(index).padStart(3, '0')}`, 'html', ['large'], false, false, [version('v1', index + 1000, 1, 100)]);
+            }
+            state.metas['artifact-extra-209'].title = 'Old searchable artifact';
+          }
+          if (name === 'history') {
+            const meta = state.metas['artifact-revenue'];
+            meta.versions.push(version('v4', 5, 2, 1900), version('v5', 1, 2, 1950));
+            meta.currentVersion = 'v5';
+          }
+          if (name === 'feedback55') feedback['artifact-revenue'] = Array.from({ length: 55 }, (_, index) => ({ id: `fb_${index}`, artifactId: 'artifact-revenue', version: 'v1', createdAt: iso(2), kind: 'form', data: { index }, deliveredAt: null }));
+        },
         reload() { frame.src = `${surface === 'status' ? '/status/index.html' : '/panel/index.html'}?reload=${Date.now()}`; },
         getState() { return JSON.parse(JSON.stringify(state)); },
         getFrame() { return frame; },

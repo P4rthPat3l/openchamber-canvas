@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Property platform flows</title>
+<style>
+:root{color-scheme:light;--bg:#fff;--fg:#20232a;--muted:#59616e;--accent:#365ac8;--line:#dce1e8}[data-theme=dark]{color-scheme:dark;--bg:#191c22;--fg:#edf0f5;--muted:#a9b2c0;--accent:#99b4ff;--line:#404955}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.5 system-ui,sans-serif}main{max-width:64rem;padding:1.5rem;margin:auto}h1{font-size:1.5rem}p{color:var(--muted)}nav{display:flex;gap:.5rem;flex-wrap:wrap}button{font:inherit;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:.4rem;padding:.55rem;cursor:pointer}button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}button:focus-visible,[role=button]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.drawing,.table{overflow-x:auto}svg{display:block;min-width:620px;width:100%;height:240px}table{border-collapse:collapse;width:100%}th,td{padding:.6rem;text-align:left;border-bottom:1px solid var(--line)}#details{min-height:5rem}svg text{fill:var(--fg);font:14px system-ui,sans-serif}svg [role=button]{cursor:pointer}
+</style></head><body><main><h1>Property platform flows</h1><p>Inspect publishing, discovery, or viewings. Arrows label the data exchanged, not the order of user actions.</p><nav aria-label="Flow views"></nav><div class="drawing"></div><section id="details" aria-live="polite"><h2>Choose a node or flow</h2><p>Use the drawing or the buttons in the complete flow table.</p></section><div class="table"><table><caption>All data flows</caption><thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Data</th></tr></thead><tbody></tbody></table></div></main>
+<script>
+const nodes={agent:{name:'Listing agent',kind:'Actor'},capture:{name:'Capture listing',kind:'Process'},listings:{name:'Listings',kind:'Store'},buyer:{name:'Buyer / renter',kind:'Actor'},search:{name:'Search & rank',kind:'Process'},booking:{name:'Book a viewing',kind:'Process'},calendar:{name:'Viewing bookings',kind:'Store'}};
+const flows=[{id:'draft',view:'Publishing',from:'agent',to:'capture',data:'Listing draft and price'},{id:'publish',view:'Publishing',from:'capture',to:'listings',data:'Validated property record'},{id:'query',view:'Discovery',from:'buyer',to:'search',data:'Filters and budget'},{id:'records',view:'Discovery',from:'listings',to:'search',data:'Matching property records'},{id:'results',view:'Discovery',from:'search',to:'buyer',data:'Ranked property cards'},{id:'request',view:'Viewings',from:'buyer',to:'booking',data:'Viewing request'},{id:'reserve',view:'Viewings',from:'booking',to:'calendar',data:'Reserved slot'},{id:'confirm',view:'Viewings',from:'booking',to:'buyer',data:'Confirmation and reminders'}];
+const ns='http://www.w3.org/2000/svg';
+function svgNode(tag,attributes,parent,text){const node=document.createElementNS(ns,tag);for(const [key,value]of Object.entries(attributes))node.setAttribute(key,String(value));if(text)node.textContent=text;parent.append(node);return node}
+function showNode(id){const details=document.querySelector('#details');details.replaceChildren();const heading=document.createElement('h2');heading.textContent=nodes[id].name;details.append(heading);for(const flow of flows.filter(flow=>flow.from===id||flow.to===id)){const line=document.createElement('p');line.textContent=`${nodes[flow.from].name} to ${nodes[flow.to].name}: ${flow.data}`;details.append(line)}}
+function showFlow(flow){const details=document.querySelector('#details');details.replaceChildren();const heading=document.createElement('h2');heading.textContent=flow.data;const line=document.createElement('p');line.textContent=`${nodes[flow.from].name} to ${nodes[flow.to].name}`;details.append(heading,line)}
+function draw(view) {
+  for (const button of document.querySelectorAll('nav button')) button.setAttribute('aria-pressed', String(button.textContent === view));
+  const drawing = document.querySelector('.drawing');
+  drawing.replaceChildren();
+  const svg = svgNode('svg', { viewBox: '0 0 840 240', role: 'group', 'aria-label': `${view} data flow` }, drawing);
+  const selected = flows.filter(flow => flow.view === view);
+  const ids = [...new Set(selected.flatMap(flow => [flow.from, flow.to]))];
+  const defs = svgNode('defs', {}, svg);
+  const marker = svgNode('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto' }, defs);
+  svgNode('path', { d: 'M0 0L10 5L0 10z', fill: 'var(--muted)' }, marker);
+  selected.forEach((flow, index) => {
+    const offset = (index - 1) * 8;
+    const x1 = 150 + ids.indexOf(flow.from) * 280 + offset;
+    const x2 = 150 + ids.indexOf(flow.to) * 280 + offset;
+    const y = 30 + index * 32;
+    svgNode('path', { d: `M${x1} 125V${y}H${x2}V125`, fill: 'none', stroke: 'var(--muted)', 'marker-end': 'url(#arrow)' }, svg);
+    svgNode('text', { x: (x1 + x2) / 2, y: y - 9, 'text-anchor': 'middle', 'data-flow': flow.id }, svg, flow.data);
+  });
+  ids.forEach((id, index) => {
+    const group = svgNode('g', { role: 'button', tabindex: 0, 'aria-label': `Inspect ${nodes[id].name}`, 'data-node': id }, svg);
+    svgNode('rect', { x: 70 + index * 280, y: 125, width: 160, height: 80, rx: nodes[id].kind === 'Process' ? 20 : 2, fill: 'var(--bg)', stroke: 'var(--accent)' }, group);
+    if (nodes[id].kind === 'Store') svgNode('ellipse', { cx: 150 + index * 280, cy: 132, rx: 80, ry: 7, fill: 'var(--bg)', stroke: 'var(--accent)' }, group);
+    svgNode('text', { x: 150 + index * 280, y: 163, 'text-anchor': 'middle' }, group, nodes[id].name);
+    svgNode('text', { x: 150 + index * 280, y: 187, 'text-anchor': 'middle' }, group, nodes[id].kind);
+    group.addEventListener('click', () => showNode(id));
+    group.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showNode(id); }
+    });
+  });
+}
+for(const view of new Set(flows.map(flow=>flow.view))){const button=document.createElement('button');button.type='button';button.textContent=view;button.addEventListener('click',()=>draw(view));document.querySelector('nav').append(button)}
+for(const flow of flows){const row=document.querySelector('tbody').insertRow();row.dataset.flow=flow.id;row.insertCell().textContent=nodes[flow.from].name;row.insertCell().textContent=nodes[flow.to].name;const button=document.createElement('button');button.textContent=flow.data;button.type='button';button.addEventListener('click',()=>showFlow(flow));row.insertCell().append(button)}
+draw('Publishing');
+</script></body></html>

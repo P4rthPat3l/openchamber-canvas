@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Property enquiries</title>
+<style>
+:root{color-scheme:light;--bg:#fff;--fg:#20232a;--muted:#59616e;--accent:#365ac8;--line:#dce1e8}[data-theme=dark]{color-scheme:dark;--bg:#191c22;--fg:#edf0f5;--muted:#a9b2c0;--accent:#99b4ff;--line:#404955}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.5 system-ui,sans-serif}main{max-width:52rem;padding:1.5rem;margin:auto}h1{font-size:1.5rem}p{color:var(--muted)}.plot{height:260px}table{border-collapse:collapse;width:100%;margin-top:1.5rem}th,td{text-align:left;padding:.6rem;border-bottom:1px solid var(--line)}button,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:.4rem;padding:.6rem}textarea{display:block;width:100%;margin:.5rem 0}button{cursor:pointer}button:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+</style></head>
+<body><main><h1>Property enquiries</h1><p>Sample enquiries received this week. The table and chart use the same dataset.</p><div class="plot"><canvas aria-label="Enquiries by day" role="img"></canvas></div><table><caption>Sample weekly enquiries</caption><thead><tr><th scope="col">Day</th><th scope="col">Enquiries</th></tr></thead><tbody></tbody></table><label for="note">What should change?</label><textarea id="note" rows="2"></textarea><button id="send" type="button">Send feedback</button><p id="status" role="status"></p></main>
+<script>
+const values = [{day:'Monday',count:18},{day:'Tuesday',count:26},{day:'Wednesday',count:21},{day:'Thursday',count:34},{day:'Friday',count:29}];
+for(const value of values){const row=document.querySelector('tbody').insertRow();row.insertCell().textContent=value.day;row.insertCell().textContent=String(value.count)}
+if (typeof Chart === 'function') {
+  const css = getComputedStyle(document.documentElement);
+  const foreground = css.getPropertyValue('--fg').trim();
+  new Chart(document.querySelector('canvas'), {
+    type: 'bar',
+    data: {
+      labels: values.map(value => value.day),
+      datasets: [{ label: 'Enquiries', data: values.map(value => value.count), backgroundColor: css.getPropertyValue('--accent').trim() }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks: { color: foreground } }, y: { beginAtZero: true, ticks: { color: foreground } } },
+    },
+  });
+} else {
+  document.querySelector('#status').textContent = 'Publish with libraries: ["chartjs"] to draw the chart. The table remains readable.';
+}
+document.querySelector('#send').disabled=!window.canvas;
+document.querySelector('#send').addEventListener('click', async () => {
+  const note = document.querySelector('#note');
+  const status = document.querySelector('#status');
+  const submitted = note.value;
+  if (!submitted.trim()) { status.textContent = 'Write feedback first.'; return; }
+  const button = document.querySelector('#send');
+  button.disabled = true;
+  try {
+    await window.canvas.feedback({ note: submitted.trim() }, 'chart-feedback');
+    if (note.value === submitted) note.value = '';
+    status.textContent = 'Feedback saved. Add it to chat from the gallery.';
+  } catch {
+    status.textContent = 'Feedback could not be saved. Your draft is still here.';
+  } finally { button.disabled = false; }
+});
+</script></body></html>

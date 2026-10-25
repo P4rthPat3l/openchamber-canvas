@@ -15,6 +15,7 @@ interface CanvasApi {
   id: string;
   version: string;
   theme: 'light' | 'dark';
+  followLatest: boolean;
   storage: CanvasStorage;
   feedback(data: unknown, kind?: string): Promise<{ id: string }>;
   data(sourceId: string): Promise<unknown>;
@@ -25,6 +26,7 @@ interface CanvasApi {
 declare global {
   interface Window {
     canvas?: CanvasApi;
+    __canvasView?: { followLatest: boolean; theme?: 'light' | 'dark' };
   }
 }
 
@@ -34,7 +36,8 @@ const id = segments[2] ?? '';
 const version = segments[3] ?? '';
 
 const query = new URLSearchParams(window.location.search);
-const requestedTheme = query.get('theme');
+const followLatest = window.__canvasView?.followLatest ?? query.get('follow') !== 'false';
+const requestedTheme = window.__canvasView?.theme ?? query.get('theme');
 const theme: 'light' | 'dark' =
   requestedTheme === 'dark' || requestedTheme === 'light'
     ? requestedTheme
@@ -112,7 +115,7 @@ function onUpdate(handler: (update: CanvasUpdate) => void): () => void {
   };
 }
 
-if (token.length > 0 && id.length > 0 && typeof EventSource !== 'undefined') {
+if (followLatest && token.length > 0 && id.length > 0 && typeof EventSource !== 'undefined') {
   const source = new EventSource(`/events/${token}/${id}`);
   source.onmessage = (event) => {
     let payload: CanvasUpdate;
@@ -130,6 +133,7 @@ if (token.length > 0 && id.length > 0 && typeof EventSource !== 'undefined') {
       const next = new URL(payload.url);
       const themeParam = new URLSearchParams(window.location.search).get('theme');
       if (themeParam) next.searchParams.set('theme', themeParam);
+      next.searchParams.set('follow', 'true');
       window.location.href = next.toString();
       return;
     }
@@ -141,6 +145,7 @@ window.canvas = {
   id,
   version,
   theme,
+  followLatest,
   storage,
   feedback,
   data,

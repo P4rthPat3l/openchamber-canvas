@@ -61,6 +61,20 @@ async function createHtml(store: ArtifactStore): Promise<CreateResult> {
 }
 
 describe('feedback and runtime state', () => {
+  test('AC-051 AC-052: equal-timestamp feedback pages are complete and pending totals exclude composed records', async () => {
+    const root = await makeRoot();
+    const { store } = makeStore(root);
+    const created = await createHtml(store);
+    for (let index = 0; index < 55; index++) await store.addFeedback(created.id, { version: created.version, data: { index } });
+    const first = await store.feedbackPage(created.id, { limit: 50 });
+    const second = await store.feedbackPage(created.id, { offset: 50, limit: 50 });
+    expect(first.total).toBe(55);
+    expect(first.pending).toBe(55);
+    expect(new Set([...first.responses, ...second.responses].map(record => record.id)).size).toBe(55);
+    await store.markFeedbackDelivered(created.id, first.responses.slice(0, 2).map(record => record.id));
+    expect((await store.list({ limit: 1 })).pendingFeedbackCount).toBe(53);
+    expect((await store.feedbackPage(created.id)).pending).toBe(53);
+  });
   test('writes, lists, and marks feedback delivered', async () => {
     const root = await makeRoot();
     const { store } = makeStore(root);

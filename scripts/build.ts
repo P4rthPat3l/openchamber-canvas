@@ -90,3 +90,9 @@ for (const library of libraries) {
   console.log(`Copied ${library.name} -> ${LIBRARY_DIR}/${library.file}`);
 }
 await Bun.write(path.join(LIBRARY_DIR, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+
+const identity = createHash('sha256');
+for (const filename of ['viewer/server.js', 'viewer/runtime/canvas.js', 'viewer/libraries/manifest.json']) {
+  identity.update(new Uint8Array(await Bun.file(filename).arrayBuffer()));
+}
+await Bun.write('viewer/build.json', `${JSON.stringify({ protocol: 2, id: identity.digest('hex') })}\n`);
