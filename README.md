@@ -1,34 +1,86 @@
 # OpenChamber Canvas
 
-A project gallery for agent-generated artifacts. Each artifact opens in OpenChamber's browser panel, keeps its versions, refreshes in place, and can send user feedback back to the agent.
+A persistent project gallery for the charts, diagrams, reports, and interface mockups your agent creates. Each artifact is a versioned object instead of a chat card: reopen it, compare versions, ask for changes, and keep the work.
 
-Status: 0.2.0 security and revision hardening built; installed acceptance pending. The gallery, setup view, and Work Status section use the public `@openchamber/sdk/ui` controls. Custom CSS composes layouts without restyling those controls.
+![The Canvas gallery and inspector](docs/images/gallery.png)
 
-- Plan and feature document: [docs/features/FEAT-001-openchamber-canvas.md](docs/features/FEAT-001-openchamber-canvas.md)
-- Product truth: [PRODUCT.md](PRODUCT.md)
-- Gallery design direction: [docs/design/canvas-gallery.md](docs/design/canvas-gallery.md)
-- Platform research: [docs/research/openchamber-extension-platform.md](docs/research/openchamber-extension-platform.md)
-- Product research: [docs/research/artifact-product-landscape.md](docs/research/artifact-product-landscape.md)
-- Project conventions for agents: [AGENTS.md](AGENTS.md)
+Canvas is an OpenChamber extension plus a separate MCP server. The extension provides the gallery and the local viewer. The MCP server lets the agent publish, read, and update artifacts.
 
-## What exists
+## What you get
 
-- Strict TypeScript project with Bun scripts.
-- Artifact store: guarded content updates, metadata-only updates, restore, complete paginated search, archive, favorites, trash, feedback delivery tracking, and runtime state.
-- View policy: sandboxed CSP, loopback CORS, per-artifact HMAC view tokens, safe path resolution.
-- Viewer server: sandboxed entry and secondary documents, fixed or following views, content-addressed rendering snapshots, authenticated shutdown, protocol/build compatibility, and idle exit.
-- Runtime: `window.canvas` with storage, feedback, data, refresh, theme, and live update.
-- Pinned libraries: Chart.js, D3, and Mermaid, copied by the build with a SHA-256 manifest.
-- MCP server: `publish`, `update`, `list`, `read`, `archive`, and `result`, with `filePath` and `directoryPath` sources, an external-reference scan, and a heartbeat.
-- Extension service: `/health`, `/list`, `/artifact`, `/versions`, `/view-url`, `/feedback`, `/export`, `/mcp-status`, `/mcp-registration`, `/archive`, `/favorite`, `/restore`, `/trash`, `/untrash`.
-- Gallery panel: a master-detail artifact shelf built from the OpenChamber SDK UI kit, with project, all, archived, and trash scopes; search; tags; sort; list and grid; a persistent inspector on the full-screen page and on wide panels; version actions; restore; archive; delete; favorite; refine; attach; export; setup; remote warning; and an MCP setup CTA that reads the OpenCode config registration.
-- Work Status section: artifact count, latest title, and a native MCP state badge.
-- Extension manifest: panel, page, status section, service, and Canvas tool card.
-- Unit/integration tests cover storage, guarded mutations, traversal, policy, feedback pagination, rendering snapshots, daemon lifecycle, MCP, service routes, setup registration, and trash.
-- The inspector preserves revision drafts per artifact, exposes feedback for review and addition to chat, and initially shows three recent versions.
-- [Authoring examples](examples/README.md) for a chart, a focused data-flow diagram, and an interactive interface mockup.
+- **Artifacts that outlive the chat.** Everything is stored under `~/.config/openchamber/artifacts` and grouped by project.
+- **Versions, not overwrites.** Open a saved version as a fixed snapshot, or follow the current one as the agent revises it. Restore any retained version.
+- **Feedback with a clear handoff.** Select responses written inside an artifact, add them to the chat composer, review them, then send.
+- **Drafts that stay put.** A revision note follows its artifact while you move around the gallery, change scope, open Setup, or wait for a response.
+- **Local rendering.** Artifacts run in OpenChamber's browser panel under a sandboxed viewer on loopback. The app origin and the open network stay out of reach.
+- **Pinned dependencies.** New versions record their runtime and library bytes. Chart.js, D3, and Mermaid are bundled locally, not loaded from a CDN.
+- **Search that covers the store.** Search, tags, archive state, and sort run before pagination, so an older artifact does not disappear behind the latest page.
 
-Run:
+## See it
+
+The gallery lists artifacts for the current project and opens the selected one in the browser panel. The inspector shown above carries Open, Copy URL, and Export, followed by the revision field, feedback, versions, and technical details.
+
+Here is the 0.2.0 hardening report as an artifact, including the sandbox boundary that changed:
+
+![A Canvas report artifact open in the browser panel](docs/images/artifact-in-app.png)
+
+### Example artifacts
+
+The repository includes source examples you can publish or copy: a chart, a focused data-flow diagram, and an interactive preferences mockup. The diagram derives its focused views, complete flow table, and selection details from one graph definition.
+
+| Chart | Diagram | Interface mockup |
+|:--:|:--:|:--:|
+| <img src="docs/images/example-chart.png" width="260" alt="Bar chart of weekly enquiries with a matching data table"> | <img src="docs/images/example-diagram.png" width="260" alt="Focused property-platform data-flow diagram"> | <img src="docs/images/example-mockup.png" width="260" alt="Listing alert preferences form"> |
+
+The examples live in [`examples/`](examples/README.md) with publishing notes. They have no external requests and work in light and dark themes.
+
+## Install
+
+Requirements: OpenChamber 2.5.1 or newer, Node 24 on the machine that runs OpenChamber, and the OpenCode CLI on the PATH for the one-command MCP setup.
+
+1. Open **Settings → Extensions → Add**.
+2. Paste the Git URL: `https://github.com/P4rthPat3l/openchamber-canvas`.
+3. Approve the `service` permission.
+4. Open **Canvas** on the right rail, then **Canvas → Setup**.
+5. Run the shown command, or paste the JSON into **Settings → MCP**:
+
+   ```bash
+   opencode mcp add canvas --global -- node '/absolute/path/to/openchamber-canvas/mcp/server.js'
+   ```
+
+   Setup fills in the exact installed path. The MCP server starts on the first agent request.
+6. Use **Add sample prompt to chat** to start the MCP server, review the prompt, and send it.
+
+The gallery works without the MCP server: you can browse, open, export, and copy artifacts. The agent cannot publish or revise until the MCP server is registered. The extension cannot register it for you.
+
+## Use it
+
+**Publish.** Ask the agent for a chart, dashboard, diagram, report, or interface mockup. It calls the Canvas tools and opens the result. Use `openchamber_render` for a page that belongs in the chat reply; use Canvas when you need to reopen, version, or iterate on the work.
+
+**Revise.** In the inspector, write what should change. Canvas adds a draft to the chat composer; it does not send it. Review the message and send it. The agent reads the artifact before updating it.
+
+**Give feedback.** Artifacts can call `window.canvas.feedback(...)` from a form or a button. Responses appear in the inspector with their version and state. Select the ones you want, choose **Add feedback to chat**, and review the composed message.
+
+**Compare versions.** Opening an artifact without a version follows updates. Opening a specific version stays fixed. **Show older versions** expands the retained history; **Restore** copies an older version into a new one.
+
+**Organize.** Switch between This project, All projects, Archived, and Trash. Search by title, project, or tag. Use favorites, list or grid, and the Options menu for refresh, setup, and sorting.
+
+## How it works
+
+Four parts share one store:
+
+- An **extension panel** lists artifacts and opens them.
+- An **extension service** reads the store, mints view URLs, and handles export and feedback.
+- A detached **viewer daemon** serves artifact HTML, the runtime API, pinned libraries, and live updates over loopback.
+- An **MCP server** gives the agent `publish`, `update`, `list`, `read`, `archive`, and `result`. OpenCode exposes them as `canvas_publish`, `canvas_update`, and so on.
+
+The extension asks for the `service` permission only. The MCP server is a separate Settings → MCP install.
+
+The viewer outlives an MCP restart, so an open artifact does not depend on the agent session staying alive. The browser panel renders the page; the viewer enforces the sandbox. Native annotation does not reach these sandboxed pages, so feedback and revision notes are the supported review path.
+
+More detail: [feature document](docs/features/FEAT-001-openchamber-canvas.md), [platform research](docs/research/openchamber-extension-platform.md), and [gallery design](docs/design/canvas-gallery.md).
+
+## Development
 
 ```bash
 bun install
@@ -39,62 +91,22 @@ bun run test:browser
 bun run build
 ```
 
-`bun run test:browser` builds the distribution, tests the actual panel/status entries in an opaque mock host, then launches the bundled viewer with Node and tests its real runtime and the authoring examples. Chrome at `/usr/bin/google-chrome` exercises isolation, fixed/following views, feedback, drafts, complete search, setup, six resolved themes, and rail/page layouts. Temporary stores and screenshots stay under `/tmp/opencode`.
+- `bun test` currently passes 88 unit and integration tests.
+- `bun run test:browser` builds the distribution, tests the real panel and status entries in an opaque mock host, launches the bundled Node viewer/runtime/MCP, and checks the examples in light and dark themes. It needs Chrome at `/usr/bin/google-chrome`.
+- `bun run build` writes the committed distribution files, including `viewer/build.json`, which pins the viewer/runtime/library build identity.
+- Browser test stores and screenshots stay under `/tmp/opencode`.
 
-`bun run build` builds `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js`, copies libraries into `viewer/libraries/`, and writes `viewer/build.json` with the viewer/runtime/library build identity. These distribution files are committed for Git URL installation.
+Installed-app acceptance for the desktop shell, host routing, and the chat tool card remains a manual check. The automated browser suite uses a mock host and the bundled viewer, not the installed desktop UI.
 
-`opencode.json` is managed by OpenChamber and is not tracked. The extension bundles `mcp/server.js`, but an extension cannot register an MCP server. The Setup page shows a one-command registration with the exact path:
+## Requirements and limits
 
-```bash
-opencode mcp add canvas --global -- node '/absolute/path/to/openchamber-canvas/mcp/server.js'
-```
+- OpenChamber desktop or web, tested against 2.5.1. Extensions do not load in VS Code or on mobile.
+- Local machine only. A remote client cannot reach the server's loopback viewer; use Copy URL or Export there.
+- Artifact HTML is model output. Treat it as untrusted; the viewer sandboxes it.
+- Exports contain authored source files. The viewer runtime and pinned libraries are not bundled into a standalone export.
+- The store is local and has no cloud sync, public links, or collaboration.
+- No analytics or telemetry.
 
-It needs the OpenCode CLI on the PATH of the machine running OpenChamber. Settings → MCP accepts the same entry as JSON; `docs/mcp.example.json` is a template.
+## License
 
-## Install
-
-1. Run `bun run build`.
-2. Open Settings → Extensions → Add.
-3. Paste `/home/parth/Production/openchamber-canvas`.
-4. Approve the `service` permission.
-5. Open **Canvas** on the right rail.
-6. Open **Canvas → Setup**. Run the shown `opencode mcp add` command on the OpenChamber server, or copy the JSON into Settings → MCP.
-
-The MCP is a separate process. Without it the gallery can browse, open, export, and show feedback, but the agent cannot publish or update artifacts. `canvas_*` tools appear only after the MCP is registered.
-
-## Verification
-
-The automated suites cover the source and built distribution. The installed extension, host routing, setup, and tool card still need the manual acceptance run. Browser fixtures do not replace installed-app verification.
-
-## Updating to 0.2.0
-
-- `baseVersion` is required for every update, including full replacements and changed-content dedupe publishing. Read the current version before retrying a conflict.
-- To change only a title or tags, pass `id`, `baseVersion`, and the metadata. No HTML or new content version is needed.
-- `canvas.list` defaults to its working directory. Pass `allProjects: true` for cross-project listing. Search/filter/sort precede pagination.
-- New versions pin runtime and library bytes. Existing versions remain readable with an explicit legacy/unpinned warning; their original dependencies cannot be reconstructed.
-- An explicit version opens as a fixed snapshot. Opening without a version follows new revisions and restores.
-- Feedback marked Added to chat is in the composer, not necessarily sent or read. Only pending feedback contributes to the gallery badge.
-- Known incompatible daemons restart through authenticated control. Legacy daemons have no shutdown protocol and are not killed automatically. Close their Canvas views and stop the old Canvas viewer process manually, or wait for its 30-minute idle exit. Reopen from the gallery afterward; old view URLs expire on restart.
-
-## Architecture
-
-Four parts share one store at `~/.config/openchamber/artifacts`:
-
-- An extension panel that lists artifacts by project and opens them.
-- An extension service that reads the store, mints view URLs, and handles export and feedback.
-- A detached viewer daemon that serves artifact HTML, the runtime API, and live updates on loopback.
-- An MCP server the agent calls to publish, read, update, list, archive, and collect feedback.
-
-The browser panel renders sandboxed JavaScript artifacts and provides DevTools. Native annotation is not supported on these sandboxed pages. New content versions retain their selected library files and runtime in a shared immutable snapshot. The viewer blocks the open network and the OpenChamber API.
-
-## How OpenChamber sees it
-
-The gallery and the service are one extension, installed in Settings, Extensions. The agent tools are an MCP server, installed in Settings, MCP. OpenChamber renders the MCP calls through `contributes.tools`, but it does not host the tools. An extension cannot register an agent tool, and an MCP server cannot draw a rail panel. The two are separate installs with separate permissions.
-
-The setup page in the gallery shows the exact MCP JSON for the installed folder and checks the service and MCP heartbeat.
-
-## Requirements
-
-- OpenChamber desktop or web, tested against 2.5.1
-- Bun 1.4 or newer for building and tests
-- Node 24 for the bundled MCP server, service, and viewer
+MIT
