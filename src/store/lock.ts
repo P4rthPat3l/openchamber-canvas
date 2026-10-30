@@ -9,6 +9,7 @@ export interface LockOptions {
   retryMs: number;
   timeoutMs: number;
   staleMs: number;
+  signal?: AbortSignal;
 }
 
 interface LockOwner {
@@ -36,6 +37,7 @@ export async function withArtifactLock<T>(
   const startedAt = Date.now();
 
   for (;;) {
+    options.signal?.throwIfAborted();
     try {
       await fs.mkdir(lockDir, { mode: 0o700 });
       const owner: LockOwner = { pid: process.pid, at: new Date().toISOString() };
@@ -47,6 +49,7 @@ export async function withArtifactLock<T>(
       }
       break;
     } catch (error) {
+      options.signal?.throwIfAborted();
       if (fsErrorCode(error) !== 'EEXIST') throw error;
       await removeStaleLock(lockDir, options.staleMs);
       if (Date.now() - startedAt >= options.timeoutMs) {
@@ -57,6 +60,7 @@ export async function withArtifactLock<T>(
   }
 
   try {
+    options.signal?.throwIfAborted();
     return await action();
   } finally {
     await fs.rm(lockDir, { recursive: true, force: true });

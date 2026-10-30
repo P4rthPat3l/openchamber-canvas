@@ -55,8 +55,8 @@
       const state = {
         theme: Object.keys(THEMES)[0] || 'openchamber-dark',
         overrides: {},
-        heartbeat: null,
-        registration: { checked: false, registered: false, name: null, disabled: false, commandMatch: false, source: null },
+        failHealth: false,
+        pluginPath: '/home/parth/Production/openchamber-canvas',
         storage: {},
         actions: [],
         requests: [],
@@ -135,12 +135,11 @@
         }
         if (path === '/viewer-status') return json(200, { status: 'Compatible', restartable: true });
         if (path === '/viewer-restart') return json(200, { ok: true });
+        if (path === '/health' && state.failHealth) return json(503, { error: { message: 'Probe service failure' } });
         if (path === '/health') return json(200, {
           ok: true, pid: 42, uptime: 12, store: '/tmp/canvas-probe-store', version: '0.1.0',
-          mcpPath: '/home/parth/Production/openchamber-canvas/mcp/server.js',
+          pluginPath: state.pluginPath,
         });
-        if (path === '/mcp-status') return json(200, state.heartbeat ? { seenAt: state.heartbeat } : null);
-        if (path === '/mcp-registration') return json(200, state.registration);
         if (path === '/view-url') return json(200, { url: 'http://localhost:4199/view/canvas', expiresAt: now + 60000 });
         if (path.startsWith('/export/')) return json(200, { path: '/tmp/canvas-export.html', format: 'html', bytes: 1810 });
         if (path.startsWith('/favorite/')) {
@@ -211,6 +210,7 @@
         }
         if (data.type === 'service-request') {
           if ((state.delayFavorite && data.payload.path.startsWith('/favorite/')) ||
+              (state.delayHealth && data.payload.path === '/health') ||
               (state.delayDetail && data.payload.path === '/artifact/artifact-onboarding')) {
             deferred.push(() => reply(data, service(data.payload)));
             return;
@@ -243,8 +243,7 @@
             sendReady();
           }
         },
-        setHeartbeat(value) { state.heartbeat = value; },
-        setRegistration(value) { state.registration = value; },
+        setPluginPath(value) { state.pluginPath = value; },
         setListFailure(value) { state.failList = value; },
         setFailure(kind, value) { state[kind] = value; },
         release() { for (const complete of deferred.splice(0)) complete(); },

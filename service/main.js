@@ -1,5 +1,5 @@
 // src/service/main.ts
-import * as path11 from "node:path";
+import * as path10 from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/store/index.ts
@@ -321,6 +321,7 @@ async function withArtifactLock(lockDir, action, options) {
   await ensureDir(path3.dirname(lockDir));
   const startedAt = Date.now();
   for (;; ) {
+    options.signal?.throwIfAborted();
     try {
       await fs3.mkdir(lockDir, { mode: 448 });
       const owner = { pid: process.pid, at: new Date().toISOString() };
@@ -333,6 +334,7 @@ async function withArtifactLock(lockDir, action, options) {
       }
       break;
     } catch (error) {
+      options.signal?.throwIfAborted();
       if (errorCode(error) !== "EEXIST")
         throw error;
       await removeStaleLock(lockDir, options.staleMs);
@@ -343,6 +345,7 @@ async function withArtifactLock(lockDir, action, options) {
     }
   }
   try {
+    options.signal?.throwIfAborted();
     return await action();
   } finally {
     await fs3.rm(lockDir, { recursive: true, force: true });
@@ -359,7 +362,7 @@ function packageRoot() {
   for (let depth = 0;depth < 4; depth++) {
     if (path4.basename(directory) === "src")
       return path4.dirname(directory);
-    if (["mcp", "service", "viewer"].includes(path4.basename(directory)) && path4.basename(path4.dirname(directory)) !== "src")
+    if (["plugin", "service", "viewer"].includes(path4.basename(directory)) && path4.basename(path4.dirname(directory)) !== "src")
       return path4.dirname(directory);
     directory = path4.dirname(directory);
   }
@@ -853,15 +856,16 @@ class ArtifactStore {
     await ensureDir(this.trashRoot);
     await ensureDir(this.locksRoot);
   }
-  async create(input) {
+  async create(input, signal) {
     await this.ensureInit();
+    signal?.throwIfAborted();
     if (input.dedupeKey) {
       const key = sha256(Buffer.from(JSON.stringify([normalizeDirectory(input.directory), input.kind, input.dedupeKey.trim()])));
-      return withArtifactLock(path6.join(this.locksRoot, `dedupe-${key}.lock`), () => this.createLocked(input), this.lockOptions());
+      return withArtifactLock(path6.join(this.locksRoot, `dedupe-${key}.lock`), () => this.createLocked(input, signal), { ...this.lockOptions(), signal });
     }
-    return this.createLocked(input);
+    return this.createLocked(input, signal);
   }
-  async createLocked(input) {
+  async createLocked(input, signal) {
     const now = input.now ?? this.now();
     const title = normalizeTitle(input.title);
     const directory = normalizeDirectory(input.directory);
@@ -884,6 +888,7 @@ class ArtifactStore {
             if (input.baseVersion !== undefined)
               this.assertBaseVersion(current, input.baseVersion, "metadata");
             const meta = { ...current, title, tags: input.tags === undefined ? current.tags : tags, updatedAt: this.now().toISOString() };
+            signal?.throwIfAborted();
             await writeJsonAtomic(path6.join(resolveArtifactDir(this.root, existing.id), "meta.json"), meta);
             return { ...existing, meta, version: meta.currentVersion, contentChanged: false };
           }
@@ -894,13 +899,16 @@ class ArtifactStore {
             title,
             tags: input.tags,
             baseVersion: input.baseVersion
-          });
+          }, signal);
           return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true, contentChanged: true };
-        }, this.lockOptions());
+        }, { ...this.lockOptions(), signal });
       }
     }
+    signal?.throwIfAborted();
     const { id, artifactDir } = await this.allocateArtifact(title, now);
     try {
+      const rendering = await this.capture(normalizeLibraries(input.libraries));
+      signal?.throwIfAborted();
       const version = await this.writeVersion({
         artifactDir,
         kind,
@@ -910,7 +918,7 @@ class ArtifactStore {
         now,
         restoredFrom: null,
         existingVersions: [],
-        rendering: await this.capture(normalizeLibraries(input.libraries))
+        rendering
       });
       const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
       if (version.manifest.rendering)
@@ -945,16 +953,16 @@ class ArtifactStore {
       throw error;
     }
   }
-  async update(id, input) {
+  async update(id, input, signal) {
     await this.ensureInit();
     assertArtifactId(id);
     const lockDir = this.lockPath(id);
     return withArtifactLock(lockDir, async () => {
       const meta = await this.getMeta(id);
-      return this.updateLocked(id, meta, input);
-    }, this.lockOptions());
+      return this.updateLocked(id, meta, input, signal);
+    }, { ...this.lockOptions(), signal });
   }
-  async updateLocked(id, meta, input) {
+  async updateLocked(id, meta, input, signal) {
     const artifactDir = resolveArtifactDir(this.root, id);
     this.assertBaseVersion(meta, input.baseVersion, input.mode);
     if (input.mode === "metadata") {
@@ -966,11 +974,14 @@ class ArtifactStore {
         tags: input.tags === undefined ? meta.tags : normalizeTags(input.tags),
         updatedAt: this.now().toISOString()
       };
+      signal?.throwIfAborted();
       await writeJsonAtomic(path6.join(artifactDir, "meta.json"), next);
       return { id, version: meta.currentVersion, changedFiles: [], meta: next };
     }
     const now = this.now();
     const plan = await this.planUpdate(id, meta, input);
+    const rendering = input.mode === "restore" ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries);
+    signal?.throwIfAborted();
     const version = await this.writeVersion({
       artifactDir,
       kind: plan.kind,
@@ -980,7 +991,7 @@ class ArtifactStore {
       now,
       restoredFrom: plan.restoredFrom,
       existingVersions: meta.versions.map((entry) => entry.id),
-      rendering: input.mode === "restore" ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries)
+      rendering
     });
     const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
     if (version.manifest.rendering)
@@ -1167,11 +1178,11 @@ class ArtifactStore {
     artifacts.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     return artifacts;
   }
-  async archive(id, archived) {
+  async archive(id, archived, signal) {
     return this.updateMeta(id, (meta, now) => ({
       ...meta,
       archivedAt: archived ? now.toISOString() : null
-    }));
+    }), signal);
   }
   async setFavorite(id, favorite) {
     return this.updateMeta(id, (meta) => ({ ...meta, favorite }));
@@ -1651,7 +1662,7 @@ class ArtifactStore {
   async capture(libraries) {
     return this.renderingSource ? captureRendering(this.root, this.renderingSource, libraries) : undefined;
   }
-  async updateMeta(id, mutate) {
+  async updateMeta(id, mutate, signal) {
     await this.ensureInit();
     assertArtifactId(id);
     const artifactDir = resolveArtifactDir(this.root, id);
@@ -1659,9 +1670,10 @@ class ArtifactStore {
     return withArtifactLock(lockDir, async () => {
       const meta = await this.getMeta(id);
       const next = mutate(meta, this.now());
+      signal?.throwIfAborted();
       await writeJsonAtomic(path6.join(artifactDir, "meta.json"), next);
       return next;
-    }, this.lockOptions());
+    }, { ...this.lockOptions(), signal });
   }
   async readFileAt(versionDir, filePath) {
     try {
@@ -1953,9 +1965,9 @@ function applyEdits(source, edits) {
 
 // src/service/routes.ts
 import * as crypto2 from "node:crypto";
-import * as fs8 from "node:fs/promises";
+import * as fs7 from "node:fs/promises";
 import * as http from "node:http";
-import * as path10 from "node:path";
+import * as path9 from "node:path";
 
 // node_modules/fflate/esm/index.mjs
 import { createRequire } from "module";
@@ -2651,13 +2663,13 @@ async function readViewerState(portFile) {
     return null;
   }
 }
-async function viewerHealth(state) {
+async function viewerHealth(state, signal) {
   const controller = new AbortController;
   const timer = setTimeout(() => controller.abort(), 1500);
   try {
     const response = await fetch(`http://127.0.0.1:${state.port}/health`, {
       headers: { authorization: `Bearer ${state.secret}` },
-      signal: controller.signal
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
     });
     if (!response.ok)
       return null;
@@ -2671,10 +2683,6 @@ async function viewerHealth(state) {
     clearTimeout(timer);
   }
 }
-async function checkViewer(state) {
-  const health = await viewerHealth(state);
-  return health?.protocol === VIEWER_PROTOCOL && health.build === viewerBuild();
-}
 async function viewerStatus(portFile) {
   const state = await readViewerState(portFile);
   if (!state)
@@ -2686,15 +2694,19 @@ async function viewerStatus(portFile) {
     return { status: "Legacy viewer. Close Canvas views and stop the old Canvas viewer before reopening.", restartable: false };
   return { status: health.build === viewerBuild() ? "Compatible" : "Update requires restart. Reopen Canvas views afterward.", restartable: true };
 }
-async function stopViewer(state) {
-  const health = await viewerHealth(state);
+async function stopViewer(state, signal) {
+  signal?.throwIfAborted();
+  const health = await viewerHealth(state, signal);
+  signal?.throwIfAborted();
   if (health?.protocol !== VIEWER_PROTOCOL)
     throw new ViewerUnavailableError("Legacy viewer cannot be restarted automatically. Close Canvas views and stop the old Canvas viewer, then reopen from the gallery.");
-  const response = await fetch(`http://127.0.0.1:${state.port}/shutdown`, { method: "POST", headers: { authorization: `Bearer ${state.secret}` }, signal: AbortSignal.timeout(1500) });
+  const timeout = AbortSignal.timeout(1500);
+  const response = await fetch(`http://127.0.0.1:${state.port}/shutdown`, { method: "POST", headers: { authorization: `Bearer ${state.secret}` }, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
   if (!response.ok)
     throw new ViewerUnavailableError("Viewer restart was rejected. Close Canvas views and retry.");
   const deadline = Date.now() + 3000;
-  while (await viewerHealth(state)) {
+  while (await viewerHealth(state, signal)) {
+    signal?.throwIfAborted();
     if (Date.now() >= deadline)
       throw new ViewerUnavailableError("Viewer did not stop. Close Canvas views and retry.");
     await sleep(50);
@@ -2708,26 +2720,31 @@ async function ensureViewer(options) {
   return ensureViewerLocked(options);
 }
 async function ensureViewerLocked(options, restartStartedAt) {
+  options.signal?.throwIfAborted();
   const timeoutMs = options.timeoutMs ?? 15000;
   const lockDir = `${options.portFile}.lock`;
   try {
-    return await withArtifactLock(lockDir, async () => {
+    const ready = await withArtifactLock(lockDir, async () => {
+      options.signal?.throwIfAborted();
       const existing = await readViewerState(options.portFile);
       if (existing !== null) {
-        const health = await viewerHealth(existing);
+        const health = await viewerHealth(existing, options.signal);
+        options.signal?.throwIfAborted();
         const restarting = restartStartedAt !== undefined && existing.startedAt === restartStartedAt;
         if (!restarting && health?.protocol === VIEWER_PROTOCOL && health.build === viewerBuild())
           return existing;
         if (health)
-          await stopViewer(existing);
+          await stopViewer(existing, options.signal);
       }
       await ensureDir(options.storeRoot);
+      options.signal?.throwIfAborted();
       await fs6.rm(options.portFile, { force: true });
       const child = spawn(process.execPath, [options.viewerEntry], {
         detached: true,
         stdio: "ignore",
         env: {
           ...process.env,
+          ...process.versions.bun ? { BUN_BE_BUN: "1" } : {},
           ELECTRON_RUN_AS_NODE: "1",
           CANVAS_STORE: options.storeRoot,
           CANVAS_VIEWER_PORT_FILE: options.portFile,
@@ -2738,21 +2755,25 @@ async function ensureViewerLocked(options, restartStartedAt) {
       const deadline = Date.now() + timeoutMs;
       for (;; ) {
         const state = await readViewerState(options.portFile);
-        if (state !== null && await checkViewer(state))
+        const health = state === null ? null : await viewerHealth(state);
+        if (state !== null && health?.protocol === VIEWER_PROTOCOL && health.build === viewerBuild())
           return state;
         if (Date.now() >= deadline) {
           throw new ViewerUnavailableError("The viewer did not start within the timeout.");
         }
         await sleep(100);
       }
-    }, { retryMs: 50, timeoutMs, staleMs: 30000 });
+    }, { retryMs: 50, timeoutMs, staleMs: 30000, signal: options.signal });
+    options.signal?.throwIfAborted();
+    return ready;
   } catch (error) {
+    options.signal?.throwIfAborted();
     if (error instanceof ViewerUnavailableError)
       throw error;
     throw new ViewerUnavailableError(error instanceof Error ? error.message : "The viewer could not be started.");
   }
 }
-async function mintViewUrl(state, input) {
+async function mintViewUrl(state, input, signal) {
   const response = await fetch(`http://127.0.0.1:${state.port}/mint`, {
     method: "POST",
     headers: {
@@ -2760,7 +2781,7 @@ async function mintViewUrl(state, input) {
       "content-type": "application/json"
     },
     body: JSON.stringify(input),
-    signal: AbortSignal.timeout(3000)
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000)
   });
   if (!response.ok) {
     throw new ViewerUnavailableError(`The viewer rejected the view request (${response.status}).`);
@@ -2774,7 +2795,7 @@ async function mintViewUrl(state, input) {
     expiresAt: typeof body.expiresAt === "number" ? body.expiresAt : 0
   };
 }
-async function notifyViewer(state, input) {
+async function notifyViewer(state, input, signal) {
   const response = await fetch(`http://127.0.0.1:${state.port}/notify`, {
     method: "POST",
     headers: {
@@ -2782,7 +2803,7 @@ async function notifyViewer(state, input) {
       "content-type": "application/json"
     },
     body: JSON.stringify(input),
-    signal: AbortSignal.timeout(3000)
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000)
   });
   if (!response.ok) {
     throw new ViewerUnavailableError(`The viewer rejected the notify request (${response.status}).`);
@@ -2793,165 +2814,16 @@ async function notifyViewer(state, input) {
   return body.notified;
 }
 
-// src/service/mcp-registration.ts
-import * as fs7 from "node:fs/promises";
-import * as os2 from "node:os";
-import * as path8 from "node:path";
-var MAX_CONFIG_BYTES = 512 * 1024;
-var UNCHECKED_REGISTRATION = {
-  checked: false,
-  registered: false,
-  name: null,
-  disabled: false,
-  commandMatch: false,
-  source: null
-};
-function defaultMcpConfigCandidates(env = process.env) {
-  const candidates = [];
-  const custom = env["OPENCODE_CONFIG"]?.trim();
-  if (custom !== undefined && custom.length > 0)
-    candidates.push(path8.resolve(custom));
-  const overrideDir = env["OPENCODE_CONFIG_DIR"]?.trim();
-  const xdgDir = env["XDG_CONFIG_HOME"]?.trim();
-  const dir = overrideDir !== undefined && overrideDir.length > 0 ? overrideDir : xdgDir !== undefined && xdgDir.length > 0 ? path8.join(xdgDir, "opencode") : path8.join(os2.homedir(), ".config", "opencode");
-  candidates.push(path8.join(dir, "opencode.json"), path8.join(dir, "opencode.jsonc"));
-  return candidates;
-}
-function isRecord3(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function stripJsonComments(text) {
-  let out = "";
-  let index = 0;
-  let inString = false;
-  while (index < text.length) {
-    const char = text[index];
-    if (char === undefined)
-      break;
-    if (inString) {
-      if (char === "\\") {
-        out += char + (text[index + 1] ?? "");
-        index += 2;
-        continue;
-      }
-      if (char === '"')
-        inString = false;
-      out += char;
-      index += 1;
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      out += char;
-      index += 1;
-      continue;
-    }
-    if (char === "/" && text[index + 1] === "/") {
-      const end = text.indexOf(`
-`, index);
-      index = end === -1 ? text.length : end;
-      continue;
-    }
-    if (char === "/" && text[index + 1] === "*") {
-      const end = text.indexOf("*/", index + 2);
-      index = end === -1 ? text.length : end + 2;
-      continue;
-    }
-    out += char;
-    index += 1;
-  }
-  return out;
-}
-function parseConfig(raw) {
-  const text = stripJsonComments(raw).replace(/^\uFEFF/, "").replace(/,(\s*[}\]])/g, "$1");
-  const attempts = [
-    () => JSON.parse(text),
-    () => JSON.parse(text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]+/g, " "))
-  ];
-  for (const attempt of attempts) {
-    try {
-      const parsed = attempt();
-      return isRecord3(parsed) ? parsed : null;
-    } catch {}
-  }
-  return null;
-}
-async function readEntries(file) {
-  let raw;
-  try {
-    const stat3 = await fs7.stat(file);
-    if (!stat3.isFile() || stat3.size > MAX_CONFIG_BYTES)
-      return null;
-    raw = await fs7.readFile(file, "utf8");
-  } catch {
-    return null;
-  }
-  const config = parseConfig(raw);
-  if (config === null)
-    throw new Error(`Unparseable OpenCode config at ${file}`);
-  const entries = [];
-  const mcp = isRecord3(config["mcp"]) ? config["mcp"] : null;
-  if (mcp === null)
-    return entries;
-  const servers = isRecord3(mcp["servers"]) ? mcp["servers"] : null;
-  if (servers !== null) {
-    for (const [name, value] of Object.entries(servers)) {
-      if (!isRecord3(value))
-        continue;
-      entries.push({ name, type: value["type"], command: value["command"], disabled: value["disabled"] === true });
-    }
-  }
-  for (const [name, value] of Object.entries(mcp)) {
-    if (name === "servers" || name === "timeout" || !isRecord3(value) || servers?.[name] !== undefined)
-      continue;
-    entries.push({ name, type: value["type"], command: value["command"], disabled: value["disabled"] === true || value["enabled"] === false });
-  }
-  return entries;
-}
-function commandPointsAtEntry(entry, mcpPath) {
-  if (entry.type !== "local" || !Array.isArray(entry.command))
-    return false;
-  const last = entry.command[entry.command.length - 1];
-  if (typeof last !== "string" || last.length === 0)
-    return false;
-  const commandPath = last.startsWith("~/") ? path8.join(os2.homedir(), last.slice(2)) : last;
-  return commandPath === mcpPath;
-}
-async function inspectMcpRegistration(candidates, mcpPath) {
-  let sawConfig = false;
-  for (const file of candidates) {
-    let entries;
-    try {
-      entries = await readEntries(file);
-    } catch (error) {
-      console.error("[canvas service]", error instanceof Error ? error.message : error);
-      return { ...UNCHECKED_REGISTRATION };
-    }
-    if (entries === null)
-      continue;
-    sawConfig = true;
-    const byPath = entries.find((entry) => commandPointsAtEntry(entry, mcpPath));
-    if (byPath !== undefined) {
-      return { checked: true, registered: true, name: byPath.name, disabled: byPath.disabled, commandMatch: true, source: file };
-    }
-    const byName = entries.find((entry) => entry.name === "canvas");
-    if (byName !== undefined) {
-      return { checked: true, registered: false, name: byName.name, disabled: byName.disabled, commandMatch: false, source: file };
-    }
-  }
-  return sawConfig ? { checked: true, registered: false, name: null, disabled: false, commandMatch: false, source: null } : { ...UNCHECKED_REGISTRATION };
-}
-
-// src/mcp/version.ts
+// src/version.ts
 import { existsSync, readFileSync as readFileSync2 } from "node:fs";
-import * as path9 from "node:path";
+import * as path8 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var FALLBACK_VERSION = "0.0.0";
 var MAX_DEPTH = 4;
 function versionFrom(startDir) {
   let dir = startDir;
   for (let depth = 0;depth < MAX_DEPTH; depth += 1) {
-    const candidate = path9.join(dir, "package.json");
+    const candidate = path8.join(dir, "package.json");
     if (existsSync(candidate)) {
       try {
         const parsed = JSON.parse(readFileSync2(candidate, "utf8"));
@@ -2960,17 +2832,17 @@ function versionFrom(startDir) {
         }
       } catch {}
     }
-    const parent = path9.dirname(dir);
+    const parent = path8.dirname(dir);
     if (parent === dir)
       break;
     dir = parent;
   }
   return FALLBACK_VERSION;
 }
-var MCP_VERSION = versionFrom(path9.dirname(fileURLToPath2(import.meta.url)));
+var CANVAS_VERSION = versionFrom(path8.dirname(fileURLToPath2(import.meta.url)));
 
 // src/service/routes.ts
-var SERVICE_VERSION = MCP_VERSION;
+var SERVICE_VERSION = CANVAS_VERSION;
 var MAX_JSON_BODY = 128 * 1024;
 var KINDS2 = ["html", "bundle", "markdown", "image", "pdf", "data"];
 
@@ -2984,7 +2856,7 @@ class HttpError extends Error {
     this.code = code;
   }
 }
-function isRecord4(value) {
+function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function decode(value) {
@@ -3056,8 +2928,8 @@ async function createServiceServer(options) {
   let port = options.port ?? 0;
   let isClosed = false;
   let resolveClosed = null;
-  const closed = new Promise((resolve4) => {
-    resolveClosed = resolve4;
+  const closed = new Promise((resolve3) => {
+    resolveClosed = resolve3;
   });
   const startedAt = Date.now();
   const server = http.createServer((request, response) => {
@@ -3085,19 +2957,19 @@ async function createServiceServer(options) {
     if (isClosed)
       return;
     isClosed = true;
-    await new Promise((resolve4) => {
-      server.close(() => resolve4());
+    await new Promise((resolve3) => {
+      server.close(() => resolve3());
       server.closeAllConnections();
     });
     resolveClosed?.();
   };
-  await new Promise((resolve4, reject) => {
+  await new Promise((resolve3, reject) => {
     server.once("error", reject);
     server.listen(port, host, () => {
       const address = server.address();
       if (address !== null && typeof address === "object")
         port = address.port;
-      resolve4();
+      resolve3();
     });
   });
   async function handleRequest(request, response) {
@@ -3114,9 +2986,9 @@ async function createServiceServer(options) {
         ok: true,
         pid: process.pid,
         uptime: Date.now() - startedAt,
-        store: path10.basename(options.storeRoot),
+        store: path9.basename(options.storeRoot),
         version: SERVICE_VERSION,
-        mcpPath: options.mcpPath
+        pluginPath: options.pluginPath
       });
       return;
     }
@@ -3167,7 +3039,7 @@ async function createServiceServer(options) {
     }
     if (url.pathname === "/view-url" && request.method === "POST") {
       const body = await readJsonBody(request);
-      if (!isRecord4(body) || typeof body.id !== "string") {
+      if (!isRecord3(body) || typeof body.id !== "string") {
         throw new HttpError(400, "INVALID_REQUEST", "id is required");
       }
       const version = typeof body.version === "string" ? body.version : undefined;
@@ -3196,7 +3068,7 @@ async function createServiceServer(options) {
       }
       if (request.method === "POST") {
         const body = await readJsonBody(request);
-        if (!isRecord4(body) || !Array.isArray(body.ids)) {
+        if (!isRecord3(body) || !Array.isArray(body.ids)) {
           throw new HttpError(400, "INVALID_REQUEST", "ids must be an array");
         }
         const ids = body.ids.filter((value) => typeof value === "string");
@@ -3212,7 +3084,7 @@ async function createServiceServer(options) {
       if (id === null)
         throw new HttpError(404, "NOT_FOUND", "Not found");
       const body = await readJsonBody(request);
-      const archived = !isRecord4(body) || body.archived !== false;
+      const archived = !isRecord3(body) || body.archived !== false;
       sendJson(response, 200, await options.store.archive(id, archived));
       return;
     }
@@ -3222,7 +3094,7 @@ async function createServiceServer(options) {
       if (id === null)
         throw new HttpError(404, "NOT_FOUND", "Not found");
       const body = await readJsonBody(request);
-      const favorite = !isRecord4(body) || body.favorite !== false;
+      const favorite = !isRecord3(body) || body.favorite !== false;
       sendJson(response, 200, await options.store.setFavorite(id, favorite));
       return;
     }
@@ -3232,7 +3104,7 @@ async function createServiceServer(options) {
       if (id === null)
         throw new HttpError(404, "NOT_FOUND", "Not found");
       const body = await readJsonBody(request);
-      if (!isRecord4(body) || typeof body.version !== "string" || typeof body.baseVersion !== "string") {
+      if (!isRecord3(body) || typeof body.version !== "string" || typeof body.baseVersion !== "string") {
         throw new HttpError(400, "INVALID_REQUEST", "version and baseVersion are required");
       }
       const updated = await options.store.update(id, {
@@ -3284,23 +3156,9 @@ async function createServiceServer(options) {
       if (id === null)
         throw new HttpError(404, "NOT_FOUND", "Not found");
       const body = await readJsonBody(request);
-      const version = isRecord4(body) && typeof body.version === "string" ? body.version : undefined;
-      const requestedFormat = isRecord4(body) && (body.format === "html" || body.format === "zip") ? body.format : undefined;
+      const version = isRecord3(body) && typeof body.version === "string" ? body.version : undefined;
+      const requestedFormat = isRecord3(body) && (body.format === "html" || body.format === "zip") ? body.format : undefined;
       sendJson(response, 200, await exportArtifact(options.store, options.storeRoot, id, version, requestedFormat));
-      return;
-    }
-    if (url.pathname === "/mcp-registration" && request.method === "GET") {
-      const candidates = options.mcpConfigCandidates ?? defaultMcpConfigCandidates();
-      sendJson(response, 200, await inspectMcpRegistration(candidates, options.mcpPath));
-      return;
-    }
-    if (url.pathname === "/mcp-status" && request.method === "GET") {
-      try {
-        const raw = await readJson(path10.join(options.storeRoot, ".mcp-heartbeat.json"));
-        sendJson(response, 200, isRecord4(raw) ? raw : null);
-      } catch {
-        sendJson(response, 200, null);
-      }
       return;
     }
     const thumbMatch = /^\/thumb\/([^/]+)$/.exec(url.pathname);
@@ -3314,15 +3172,15 @@ async function createServiceServer(options) {
 async function exportArtifact(store, storeRoot, id, version, requestedFormat) {
   const result = await store.readVersion(id, version);
   const format = requestedFormat ?? (result.meta.kind === "html" ? "html" : "zip");
-  const exportsDir = path10.join(storeRoot, "exports");
+  const exportsDir = path9.join(storeRoot, "exports");
   await ensureDir(exportsDir);
   if (format === "html") {
     const entry = result.files.find((file) => file.path === result.manifest.entry);
     if (entry === undefined) {
       throw new StoreError("ENTRY_NOT_FOUND", "The entry file is missing");
     }
-    const target2 = path10.join(exportsDir, `${id}-${result.version}.html`);
-    await fs8.writeFile(target2, entry.content, { mode: 384 });
+    const target2 = path9.join(exportsDir, `${id}-${result.version}.html`);
+    await fs7.writeFile(target2, entry.content, { mode: 384 });
     return { path: target2, format, bytes: entry.content.byteLength };
   }
   const entries = {};
@@ -3330,13 +3188,13 @@ async function exportArtifact(store, storeRoot, id, version, requestedFormat) {
     entries[file.path] = file.content;
   }
   const zipped = zipSync(entries);
-  const target = path10.join(exportsDir, `${id}-${result.version}.zip`);
-  await fs8.writeFile(target, zipped, { mode: 384 });
+  const target = path9.join(exportsDir, `${id}-${result.version}.zip`);
+  await fs7.writeFile(target, zipped, { mode: 384 });
   return { path: target, format, bytes: zipped.byteLength };
 }
 
 // src/service/main.ts
-var moduleDir = path11.dirname(fileURLToPath3(import.meta.url));
+var moduleDir = path10.dirname(fileURLToPath3(import.meta.url));
 async function main() {
   const port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
   const token = process.env.OPENCHAMBER_SERVICE_TOKEN;
@@ -3349,11 +3207,11 @@ async function main() {
     process.exit(1);
   }
   const configuredStore = process.env.CANVAS_STORE?.trim();
-  const storeRoot = configuredStore !== undefined && configuredStore.length > 0 ? path11.resolve(configuredStore) : defaultStoreRoot();
+  const storeRoot = configuredStore !== undefined && configuredStore.length > 0 ? path10.resolve(configuredStore) : defaultStoreRoot();
   const configuredPortFile = process.env.CANVAS_VIEWER_PORT_FILE?.trim();
-  const portFile = configuredPortFile !== undefined && configuredPortFile.length > 0 ? path11.resolve(configuredPortFile) : defaultViewerPortFile(storeRoot);
+  const portFile = configuredPortFile !== undefined && configuredPortFile.length > 0 ? path10.resolve(configuredPortFile) : defaultViewerPortFile(storeRoot);
   const configuredViewerEntry = process.env.CANVAS_VIEWER_ENTRY?.trim();
-  const viewerEntry = configuredViewerEntry !== undefined && configuredViewerEntry.length > 0 ? path11.resolve(configuredViewerEntry) : path11.join(moduleDir, "..", "viewer", "server.js");
+  const viewerEntry = configuredViewerEntry !== undefined && configuredViewerEntry.length > 0 ? path10.resolve(configuredViewerEntry) : path10.join(moduleDir, "..", "viewer", "server.js");
   const parsedTimeout = Number(process.env.CANVAS_VIEWER_TIMEOUT_MS ?? "");
   const viewerTimeoutMs = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : 15000;
   const store = new ArtifactStore({ root: storeRoot, renderingSource: installedRendering() });
@@ -3364,7 +3222,7 @@ async function main() {
     storeRoot,
     portFile,
     viewerEntry,
-    mcpPath: path11.join(moduleDir, "..", "mcp", "server.js"),
+    pluginPath: packageRoot(),
     viewerTimeoutMs,
     host: "127.0.0.1",
     port

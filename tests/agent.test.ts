@@ -1,59 +1,41 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { z } from 'zod';
 
 import { ArtifactStore } from '../src/store/index';
-import { MCP_VERSION } from '../src/mcp/version';
+import { createOperations } from '../src/agent/operations';
+import type { CanvasOperations } from '../src/agent/operations';
+import { schemas } from '../src/agent/schemas';
+import type { OperationName } from '../src/agent/schemas';
+import { installedRendering } from '../src/viewer/rendering';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const temporaryRoots: string[] = [];
-const clients: Client[] = [];
 
 afterEach(async () => {
-  for (const client of clients.splice(0)) {
-    await client.close().catch(() => undefined);
-  }
   for (const root of temporaryRoots.splice(0)) {
     await fs.rm(root, { recursive: true, force: true });
   }
 });
 
-function baseEnv(): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-  );
-}
-
-interface McpFixture {
-  client: Client;
+interface AgentFixture {
+  client: CanvasOperations;
   store: ArtifactStore;
   root: string;
 }
 
-async function makeClient(): Promise<McpFixture> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'canvas-mcp-'));
+async function makeClient(): Promise<AgentFixture> {
+  const root = await fs.mkdtemp('/tmp/opencode/canvas-agent-');
   temporaryRoots.push(root);
-  const store = new ArtifactStore({ root });
+  const store = new ArtifactStore({ root, renderingSource: installedRendering() });
   await store.init();
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [path.join(projectRoot, 'src', 'mcp', 'server.ts')],
-    cwd: projectRoot,
-    env: {
-      ...baseEnv(),
-      CANVAS_STORE: root,
-      CANVAS_VIEWER_PORT_FILE: path.join(root, '.viewer.json'),
-      CANVAS_VIEWER_ENTRY: path.join(root, 'missing-viewer.js'),
-      CANVAS_VIEWER_TIMEOUT_MS: '200',
-    },
+  const client = createOperations({
+    store, storeRoot: root,
+    portFile: path.join(root, '.viewer.json'),
+    viewerEntry: path.join(root, 'missing-viewer.js'),
+    viewerTimeoutMs: 200,
   });
-  const client = new Client({ name: 'canvas-mcp-test', version: '1.0.0' });
-  await client.connect(transport);
-  clients.push(client);
   return { client, store, root };
 }
 
@@ -63,21 +45,119 @@ interface ToolCall {
 }
 
 async function call(
-  client: Client,
-  name: string,
+  client: CanvasOperations,
+  name: OperationName,
   args: Record<string, unknown>,
 ): Promise<ToolCall> {
-  const result = await client.callTool({ name, arguments: args });
-  const content = result.content as Array<{ type: string; text?: string }>;
-  const text = content.find((item) => item.type === 'text')?.text ?? '';
-  const value = JSON.parse(text) as Record<string, unknown>;
+  const result = await client.execute(name, args, { directory: projectRoot, sessionId: 'ses_canvas_agent_test', signal: new AbortController().signal });
+  const value = z.record(z.string(), z.unknown()).parse(result.value);
   return { isError: result.isError === true, value };
 }
 
 const page = `<!doctype html><html><body><h1>Revenue</h1><script>const color = '#2563eb';</script></body></html>`;
 
-describe('canvas MCP', () => {
-  test('AC-055 AC-057 AC-058 AC-061: guarded metadata updates, project default, and pinned production versions', async () => {
+test.each(['update', 'archive', 'dedupe'] as const)('AC-069: cancellation stops a queued %s before the artifact lock is released', async mode => {
+  const { client, store, root } = await makeClient();
+  const published = z.object({ id: z.string(), version: z.string() }).parse((await call(client, 'publish', { title: 'Queued', html: page, dedupeKey: 'queued' })).value);
+  const lock = path.join(root, '.locks', `${published.id}.lock`);
+  await fs.mkdir(lock);
+  const entered = Promise.withResolvers<void>();
+  if (mode === 'update') {
+    const original = store.update.bind(store);
+    store.update = (...args) => { entered.resolve(); return original(...args); };
+  } else if (mode === 'archive') {
+    const original = store.archive.bind(store);
+    store.archive = (...args) => { entered.resolve(); return original(...args); };
+  } else {
+    const original = store.create.bind(store);
+    store.create = (...args) => { entered.resolve(); return original(...args); };
+  }
+  const controller = new AbortController();
+  const name = mode === 'dedupe' ? 'publish' : mode;
+  const input = mode === 'dedupe'
+    ? { title: 'Queued changed', html: '<h1>Changed</h1>', dedupeKey: 'queued', baseVersion: published.version }
+    : { id: published.id, baseVersion: published.version, html: '<h1>Changed</h1>' };
+  const pending = client.execute(name, input, { directory: projectRoot, sessionId: 'ses_cancelled', signal: controller.signal }).then(
+    () => ({ state: 'completed' }),
+    (error: unknown) => ({ state: 'aborted', message: error instanceof Error ? error.message : '' }),
+  );
+  try {
+    await entered.promise;
+    controller.abort(new Error('Cancelled queued mutation'));
+    const outcome = await Promise.race([pending, Bun.sleep(500).then(() => ({ state: 'waiting' }))]);
+    expect(outcome.state).toBe('aborted');
+    expect((await store.getMeta(published.id)).currentVersion).toBe(published.version);
+    expect((await store.getMeta(published.id)).title).toBe('Queued');
+    expect((await store.getMeta(published.id)).archivedAt).toBeNull();
+  } finally {
+    await fs.rm(lock, { recursive: true, force: true });
+    await pending;
+  }
+});
+
+test('AC-069: cancellation after commit retains the artifact and reports viewer interruption as a warning', async () => {
+  const { client, store } = await makeClient();
+  const controller = new AbortController();
+  const original = store.create.bind(store);
+  store.create = async (...args) => {
+    const result = await original(...args);
+    controller.abort(new Error('Cancelled after commit'));
+    return result;
+  };
+  const result = await client.execute('publish', { title: 'Committed', html: page }, { directory: projectRoot, sessionId: 'ses_committed', signal: controller.signal });
+  expect(result.isError).toBe(false);
+  const value = z.object({ id: z.string(), viewUrl: z.null(), warnings: z.array(z.string()) }).parse(result.value);
+  expect(value.warnings).toContain('Cancelled after commit');
+  expect((await store.getMeta(value.id)).title).toBe('Committed');
+});
+
+test('AC-068: bundle merge, replacement, restore, source escapes and read limits survive the adapter change', async () => {
+  const { client, root } = await makeClient();
+  const published = z.object({ id: z.string(), version: z.string() }).parse((await call(client, 'publish', {
+    title: 'Bundle modes', kind: 'bundle', files: [{ path: 'index.html', content: '<h1>Original</h1>' }, { path: 'app.js', content: 'original' }],
+  })).value);
+  const merged = await call(client, 'update', { id: published.id, baseVersion: published.version, files: [{ path: 'app.js', content: 'merged' }] });
+  expect(merged.isError).toBe(false);
+  const mergedRead = z.object({ files: z.array(z.object({ path: z.string(), content: z.string() })) }).parse((await call(client, 'read', { id: published.id, includeFiles: true })).value);
+  expect(mergedRead.files.find(file => file.path === 'index.html')?.content).toBe('<h1>Original</h1>');
+  expect(mergedRead.files.find(file => file.path === 'app.js')?.content).toBe('merged');
+  const replaced = await call(client, 'update', { id: published.id, baseVersion: merged.value.version, mode: 'replace', files: [{ path: 'index.html', content: '<h1>Replacement</h1>' }] });
+  expect(replaced.isError).toBe(false);
+  const restored = await call(client, 'update', { id: published.id, baseVersion: replaced.value.version, restoreFrom: published.version });
+  expect(restored.isError).toBe(false);
+  expect((await call(client, 'read', { id: published.id })).value.html).toBe('<h1>Original</h1>');
+  const directory = path.join(root, 'project');
+  await fs.mkdir(directory);
+  await fs.writeFile(path.join(root, 'outside.html'), '<h1>Outside</h1>');
+  await fs.symlink(path.join(root, 'outside.html'), path.join(directory, 'link.html'));
+  for (const filePath of ['../outside.html', 'link.html']) {
+    const rejected = await call(client, 'publish', { title: 'Escape', directory, filePath });
+    expect(rejected.isError).toBe(true);
+    expect(z.object({ code: z.string() }).parse(rejected.value.error).code).toBe('INVALID_PATH');
+  }
+  const large = await call(client, 'publish', { title: 'Read limits', kind: 'bundle', files: [{ path: 'index.html', content: '<h1>Large bundle</h1>' }, { path: 'data.txt', content: 'x'.repeat(2 * 1024 * 1024 + 1) }] });
+  expect(large.isError).toBe(false);
+  for (const args of [{ id: large.value.id, includeFiles: true }, { id: large.value.id, path: 'data.txt' }]) {
+    const rejected = await call(client, 'read', args);
+    expect(rejected.isError).toBe(true);
+    expect(z.object({ code: z.string() }).parse(rejected.value.error).code).toBe('TOO_LARGE');
+  }
+});
+
+test('AC-068: feedback pagination through native operations returns every record', async () => {
+  const { client, store } = await makeClient();
+  const published = z.object({ id: z.string(), version: z.string() }).parse((await call(client, 'publish', { title: 'Feedback pages', html: page })).value);
+  for (let index = 0; index < 3; index++) await store.addFeedback(published.id, { version: published.version, data: { index } });
+  const shape = z.object({ responses: z.array(z.object({ id: z.string() })), total: z.number() });
+  const first = shape.parse((await call(client, 'result', { id: published.id, limit: 2, offset: 0 })).value);
+  const second = shape.parse((await call(client, 'result', { id: published.id, limit: 2, offset: 2 })).value);
+  expect(first.total).toBe(3);
+  expect(second.total).toBe(3);
+  expect(new Set([...first.responses, ...second.responses].map(record => record.id)).size).toBe(3);
+});
+
+describe('AC-068: Canvas operations', () => {
+  test('AC-055 AC-057 AC-067 AC-061: guarded metadata updates, project default, and pinned production versions', async () => {
     const { client, store } = await makeClient();
     const published = await call(client, 'publish', { title: 'Local', html: page });
     expect(published.isError).toBe(false);
@@ -93,13 +173,11 @@ describe('canvas MCP', () => {
     expect(local.value.total).toBe(1);
     expect((await call(client, 'list', { allProjects: true })).value.total).toBe(2);
     expect((await call(client, 'list', { allProjects: true, directory: projectRoot })).isError).toBe(true);
-    const missing = await client.callTool({ name: 'update', arguments: { id, html: page } });
+    const missing = await call(client, 'update', { id, html: page });
     expect(missing.isError).toBe(true);
   });
   test('lists the six tools', async () => {
-    const { client } = await makeClient();
-    const tools = await client.listTools();
-    expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
+    expect(Object.keys(schemas).sort()).toEqual([
       'archive',
       'list',
       'publish',
@@ -110,7 +188,7 @@ describe('canvas MCP', () => {
   });
 
   test('publishes without a viewer and still stores the artifact', async () => {
-    const { client, store, root } = await makeClient();
+    const { client, store } = await makeClient();
     const published = await call(client, 'publish', {
       title: 'Revenue',
       html: page,
@@ -134,11 +212,7 @@ describe('canvas MCP', () => {
     expect(read.value.html).toBe(page);
     expect(read.value.version).toBe(version);
 
-    const heartbeat = JSON.parse(
-      await fs.readFile(path.join(root, '.mcp-heartbeat.json'), 'utf8'),
-    ) as { pid: number; version: string };
-    expect(heartbeat.version).toBe(MCP_VERSION);
-    expect(heartbeat.pid).toBeGreaterThan(0);
+    expect((await store.getMeta(id)).sessionId).toBe('ses_canvas_agent_test');
 
     const stored = await store.read(id);
     expect(stored.version).toBe(version);

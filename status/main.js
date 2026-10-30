@@ -1789,13 +1789,6 @@ ${GUEST_UI_LOOK_CSS}`;
       node.textContent = next;
     }
   };
-  var setAttr = (node, name, value) => {
-    if (value === undefined || value === null || value === "") {
-      node.removeAttribute(name);
-    } else if (node.getAttribute(name) !== value) {
-      node.setAttribute(name, value);
-    }
-  };
 
   // node_modules/@openchamber/sdk/dist/ui/button.js
   var ring = () => {
@@ -1840,30 +1833,6 @@ ${GUEST_UI_LOOK_CSS}`;
       },
       dispose: () => {
         node.removeEventListener("click", onClick);
-        node.remove();
-      }
-    };
-  };
-  // node_modules/@openchamber/sdk/dist/ui/badge.js
-  var applyTone = (node, tone2) => {
-    setAttr(node, "data-tone", tone2 && tone2 !== "neutral" ? tone2 : null);
-  };
-  var mountBadge = (root, initial) => {
-    ensureStyle(UI_CSS);
-    let props = initial;
-    const node = el("span", "oc-sdk oc-sdk-badge");
-    root.append(node);
-    const paint = () => {
-      setText(node, props.label);
-      applyTone(node, props.tone);
-    };
-    paint();
-    return {
-      update: (next) => {
-        props = { ...props, ...next };
-        paint();
-      },
-      dispose: () => {
         node.remove();
       }
     };
@@ -1968,7 +1937,6 @@ ${GUEST_UI_LOOK_CSS}`;
     latest.className = "canvas-status-latest";
     text.append(count, latest);
     row.append(text);
-    const badge = mountBadge(row, { label: "MCP not seen", tone: "warning" });
     const errorRoot = document.createElement("div");
     errorRoot.hidden = true;
     const error = mountBanner(errorRoot, { title: "Canvas service unavailable", tone: "error", action: { label: "Retry", onClick: () => {
@@ -1980,11 +1948,9 @@ ${GUEST_UI_LOOK_CSS}`;
       row,
       count,
       latest,
-      badge,
       errorRoot,
       dispose: () => {
         spinner.dispose();
-        badge.dispose();
         error.dispose();
         root.replaceChildren();
       }
@@ -1997,18 +1963,12 @@ ${GUEST_UI_LOOK_CSS}`;
       const params = new URLSearchParams({ limit: "200" });
       if (directory !== null)
         params.set("directory", directory);
-      const [data, heartbeat] = await Promise.all([
-        request(`/list?${params}`),
-        request("/mcp-status").catch(() => null)
-      ]);
+      const data = await request(`/list?${params}`);
       if (owner !== generation || !ui)
         return;
-      const seen = heartbeat ? Date.parse(heartbeat.seenAt) : NaN;
-      const live = Number.isFinite(seen) && Date.now() - seen < 180000;
       ui.count.textContent = `${data.artifacts.length} ${data.artifacts.length === 1 ? "artifact" : "artifacts"}`;
       ui.latest.textContent = data.artifacts[0]?.title ?? "No artifacts yet";
       ui.latest.title = ui.latest.textContent;
-      ui.badge.update({ label: live ? "MCP connected" : "MCP not seen", tone: live ? "success" : "warning" });
       ui.row.hidden = false;
       ui.errorRoot.hidden = true;
     } catch {

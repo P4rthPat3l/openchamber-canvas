@@ -25,7 +25,7 @@ const entries: BuildEntry[] = [
   { entry: 'panel/page.ts', outdir: 'panel', naming: 'page.js', target: 'browser', format: 'iife' },
   { entry: 'status/main.ts', outdir: 'status', naming: 'main.js', target: 'browser', format: 'iife' },
   { entry: 'src/service/main.ts', outdir: 'service', naming: 'main.js', target: 'node', format: 'esm' },
-  { entry: 'src/mcp/server.ts', outdir: 'mcp', naming: 'server.js', target: 'node', format: 'esm' },
+  { entry: 'src/plugin/index.ts', outdir: 'plugin', naming: 'index.js', target: 'node', format: 'esm' },
   { entry: 'src/viewer/server.ts', outdir: 'viewer', naming: 'server.js', target: 'node', format: 'esm' },
   {
     entry: 'src/viewer/runtime/canvas.ts',

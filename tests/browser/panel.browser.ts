@@ -7,8 +7,7 @@ declare global {
   interface Window {
     __host: {
       setTheme(name: string, overrides?: Record<string, string>): void;
-      setHeartbeat(value: string): void;
-      setRegistration(value: Record<string, unknown>): void;
+      setPluginPath(value: string): void;
       setListFailure(value: boolean): void;
       setFailure(kind: string, value: boolean): void;
       scenario(name: string): void;
@@ -108,8 +107,7 @@ async function openOptions(frame: Frame): Promise<void> {
   await frame.getByRole('button', { name: 'Options', exact: true }).click();
 }
 
-async function reloadPanel(page: Page, registration: Record<string, unknown>): Promise<Frame> {
-  await page.evaluate(value => window.__host.setRegistration(value), registration);
+async function reloadPanel(page: Page): Promise<Frame> {
   await page.evaluate(() => window.__host.reload());
   for (let attempt = 0; attempt < 100; attempt++) {
     const next = page.frames().find(item => item.url().includes('/panel/index.html?reload='));
@@ -257,30 +255,24 @@ await frame.getByRole('searchbox', { name: 'Search artifacts' }).waitFor();
 
 await openOptions(frame);
 await frame.getByRole('menuitem', { name: 'Setup' }).click();
-await frame.getByRole('heading', { name: 'MCP server' }).waitFor();
+await frame.getByRole('heading', { name: 'OpenCode plugin' }).waitFor();
 await frame.getByText('Running', { exact: true }).waitFor();
-const copyCommand = frame.getByRole('button', { name: 'Copy command' });
-const copyConfig = frame.getByRole('button', { name: 'Copy MCP config' });
-assert.equal(await copyCommand.isEnabled(), true);
+const copyConfig = frame.getByRole('button', { name: 'Copy plugin config' });
 assert.equal(await copyConfig.isEnabled(), true);
-const commandText = await frame.locator('pre', { hasText: 'opencode mcp add canvas' }).evaluate((node) => node.textContent ?? '');
-assert.ok(commandText.includes("-- node '/home/parth/Production/openchamber-canvas/mcp/server.js'"), 'setup command should name the installed server');
-check('AC-049', 'setup shows the one-command registration with the installed path', true);
+const configText = await frame.locator('pre').evaluate(node => node.textContent ?? '');
+assert.deepEqual(JSON.parse(configText).plugins, ['/home/parth/Production/openchamber-canvas']);
+check('AC-071', 'setup shows native plugin JSON for the installed package', true);
 const sample = frame.getByRole('button', { name: 'Add sample prompt to chat' });
-assert.equal(await sample.isDisabled(), true, 'sample should wait for the MCP heartbeat');
-await panelPage.evaluate(() => window.__host.setHeartbeat(new Date().toISOString()));
-await frame.getByRole('button', { name: 'Check again' }).click();
-await frame.getByText('Connected', { exact: true }).waitFor({ timeout: 5000 });
-assert.equal(await sample.isEnabled(), true, 'sample should enable with the heartbeat');
+assert.equal(await sample.isEnabled(), true, 'AC-071: the user can test tools without a guessed connection state');
 await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'setup.png') });
-await copyCommand.click();
-await panelPage.waitForFunction(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').length === 1);
-const copiedCommand = await panelPage.evaluate(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').at(-1));
-assert.ok(JSON.stringify(copiedCommand).includes('opencode mcp add canvas'), 'copy command should copy the CLI command');
 await copyConfig.click();
+await panelPage.waitForFunction(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').length === 1);
+const copiedConfig = await panelPage.evaluate(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').at(-1));
+assert.ok(JSON.stringify(copiedConfig).includes('plugins'), 'copy config should copy the plugin entry');
+await frame.getByRole('button', { name: 'Copy path' }).click();
 await panelPage.waitForFunction(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').length === 2);
 const copied = await panelPage.evaluate(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').at(-1));
-assert.ok(JSON.stringify(copied).includes('/home/parth/Production/openchamber-canvas/mcp/server.js'));
+assert.ok(JSON.stringify(copied).includes('/home/parth/Production/openchamber-canvas'));
 await frame.getByRole('button', { name: 'Back to gallery' }).click();
 await frame.getByRole('searchbox', { name: 'Search artifacts' }).waitFor();
 
@@ -381,52 +373,28 @@ check('AC-048', 'double-clicking a row opens it directly', true);
 await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'panel-wide.png') });
 await closePage(widePanelPage);
 
-// AC-046: the gallery shows an MCP setup CTA only when the service confirms
-// the registration state, and its button opens the existing setup view.
-const mcpPage = await browser.newPage({ viewport: { width: 720, height: 900 } });
-mcpPage.on('pageerror', error => pageErrors.push(error.message));
-frame = await openSurface(mcpPage, 'panel', 620, 900);
+const setupPage = await browser.newPage({ viewport: { width: 720, height: 900 } });
+setupPage.on('pageerror', error => pageErrors.push(error.message));
+frame = await openSurface(setupPage, 'panel', 620, 900);
 await waitCanvasReady(frame);
-assert.equal(await frame.getByText('Install the Canvas MCP tools').first().isVisible(), false,
-  'setup CTA shown while the service cannot confirm registration');
-check('AC-046a', 'no setup CTA while the service cannot confirm registration', true);
-
-frame = await reloadPanel(mcpPage, { checked: true, registered: false, name: null, disabled: false, commandMatch: false, source: null });
-await frame.getByText('Install the Canvas MCP tools').waitFor();
-await frame.getByRole('button', { name: 'Open setup' }).click();
-await frame.getByRole('heading', { name: 'Set up Canvas' }).waitFor();
-await frame.getByText('Canvas MCP is not registered').waitFor();
-await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'setup-not-installed.png') });
-await frame.getByRole('button', { name: 'Back to gallery' }).click();
-check('AC-046b', 'unregistered service shows the install CTA that opens setup', true);
-
-frame = await reloadPanel(mcpPage, { checked: true, registered: true, name: 'canvas', disabled: false, commandMatch: true, source: null });
-assert.equal(await frame.getByText('Install the Canvas MCP tools').first().isVisible(), false, 'CTA shown on a healthy registration');
-check('AC-046c', 'no setup CTA on a healthy registration', true);
-
-frame = await reloadPanel(mcpPage, { checked: true, registered: true, name: 'canvas', disabled: true, commandMatch: true, source: '/home/parth/.config/opencode/opencode.json' });
-await frame.getByText('Canvas MCP is disabled').waitFor();
 await openOptions(frame);
 await frame.getByRole('menuitem', { name: 'Setup' }).click();
-await frame.getByText('Disabled', { exact: true }).waitFor();
-check('AC-047a', 'setup mirror reports a disabled registration', true);
-
-frame = await reloadPanel(mcpPage, { checked: true, registered: false, name: 'canvas', disabled: false, commandMatch: false, source: '/home/parth/.config/opencode/opencode.json' });
-await frame.getByText('Canvas MCP points at an old command').waitFor();
-await openOptions(frame);
-await frame.getByRole('menuitem', { name: 'Setup' }).click();
-await frame.getByText('Old command', { exact: true }).waitFor();
-check('AC-047b', 'setup mirror reports a mismatched command', true);
-
-frame = await reloadPanel(mcpPage, { checked: true, registered: true, name: 'canvas', disabled: false, commandMatch: true, source: null });
-assert.equal(await frame.getByText('Install the Canvas MCP tools').first().isVisible(), false, 'CTA shown on a healthy-but-idle registration');
-await openOptions(frame);
-await frame.getByRole('menuitem', { name: 'Setup' }).click();
-await frame.getByText('Waiting on agent', { exact: true }).waitFor();
-await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'setup-registration.png') });
-await frame.getByRole('button', { name: 'Back to gallery' }).click();
-check('AC-047c', 'setup mirror distinguishes registered-but-idle from unregistered', true);
-await closePage(mcpPage);
+await frame.getByRole('heading', { name: 'OpenCode plugin' }).waitFor();
+await setupPage.evaluate(() => window.__host.setFailure('failHealth', true));
+await frame.getByRole('button', { name: 'Check again' }).click();
+await frame.getByText('Could not check setup', { exact: true }).waitFor();
+assert.equal(await frame.getByRole('button', { name: 'Copy plugin config' }).isDisabled(), true);
+assert.equal(await frame.getByRole('button', { name: 'Add sample prompt to chat' }).isEnabled(), true);
+await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'setup-service-error.png') });
+await setupPage.evaluate(() => window.__host.setFailure('failHealth', false));
+await frame.getByRole('button', { name: 'Check again' }).click();
+await frame.getByText('Running', { exact: true }).waitFor();
+assert.equal(await frame.getByRole('button', { name: 'Copy plugin config' }).isEnabled(), true);
+const setupState = await setupPage.evaluate(() => window.__host.getState());
+assert.equal(setupState.requests.some(request => JSON.stringify(request).includes('/mcp-')), false);
+assert.equal(await frame.getByText('Connected', { exact: true }).count(), 0);
+check('AC-071', 'native setup retries service errors without a config scan or false connection status', true);
+await closePage(setupPage);
 
 const pagePage = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
 pagePage.on('pageerror', error => pageErrors.push(error.message));
@@ -497,19 +465,15 @@ await closePage(emptyPagePage);
 const statusPage = await browser.newPage({ viewport: { width: 420, height: 180 } });
 statusPage.on('pageerror', error => pageErrors.push(error.message));
 frame = await openSurface(statusPage, 'status', 360, 76);
-await frame.locator('.oc-sdk-badge').waitFor({ state: 'visible' });
 await frame.getByText('2 artifacts').waitFor();
 await statusPage.evaluate(() => window.__host.setTheme('openchamber-dark'));
 await frame.waitForFunction(() => document.documentElement.dataset.ocTheme === 'dark');
 await statusPage.waitForTimeout(220);
 assert.match(await frame.locator('.canvas-status-text').innerText(), /2 artifacts/);
 assert.match(await frame.locator('.canvas-status-text').innerText(), /Revenue by region/);
-assert.match(await frame.locator('.oc-sdk-badge').innerText(), /MCP not seen/);
+assert.equal(await frame.locator('.oc-sdk-badge').count(), 0, 'AC-071: status has no guessed tool connection badge');
 await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'status.png') });
 await statusPage.evaluate(() => window.__host.setTheme('openchamber-light'));
-await statusPage.evaluate(() => window.__host.setHeartbeat(new Date().toISOString()));
-await frame.getByText('MCP connected').waitFor({ timeout: 8000 });
-assert.match(await frame.locator('.oc-sdk-badge').innerText(), /MCP connected/);
 await closePage(statusPage);
 
 const revisionPage = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
@@ -517,7 +481,7 @@ revisionPage.on('pageerror', error => pageErrors.push(error.message));
 frame = await openSurface(revisionPage, 'panel', 360, 900);
 await waitCanvasReady(frame);
 await revisionPage.evaluate(() => { window.__host.scenario('many'); window.__host.scenario('history'); window.__host.scenario('feedback55'); });
-frame = await reloadPanel(revisionPage, { checked: true, registered: true, name: 'canvas', disabled: false, commandMatch: true, source: 'probe' });
+frame = await reloadPanel(revisionPage);
 await frame.getByText('Showing 50 of 212 artifacts', { exact: true }).waitFor();
 await frame.getByRole('button', { name: 'Load more', exact: true }).click();
 await frame.getByText('Showing 100 of 212 artifacts', { exact: true }).waitFor();
@@ -538,10 +502,13 @@ await frame.getByRole('button', { name: 'Back', exact: true }).click();
 await frame.getByRole('searchbox', { name: 'Search artifacts' }).fill('');
 await openOptions(frame);
 await frame.getByRole('menuitem', { name: 'Setup', exact: true }).click();
-await frame.getByText('Waiting on agent', { exact: true }).waitFor();
+await frame.getByRole('heading', { name: 'OpenCode plugin' }).waitFor();
 assert.equal(await frame.getByRole('button', { name: 'Add sample prompt to chat' }).isEnabled(), true);
 await frame.getByRole('button', { name: 'Add sample prompt to chat' }).click();
-check('AC-060', 'registered idle MCP can be activated by a sample composed for user review', true);
+const sampleActions = await revisionPage.evaluate(() => window.__host.getState().actions.filter(action => action.type === 'compose'));
+assert.ok(sampleActions.length > 0);
+assert.equal(JSON.stringify(sampleActions).includes('"send":true'), false);
+check('AC-071', 'sample prompt composes for review without requiring a connection claim', true);
 await frame.getByRole('button', { name: 'Back to gallery' }).click();
 await frame.getByRole('option', { name: /Revenue by region/ }).click();
 assert.equal(await frame.getByRole('textbox', { name: 'What should change?' }).inputValue(), 'Keep the revenue draft');
@@ -611,6 +578,49 @@ check('AC-053', 'a delayed action for another artifact cannot strand the selecte
 await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'revision-rail.png') });
 await closePage(revisionPage);
 
+const gates: Array<{ width: number; theme: string; overflow: string; tokens: string; accessibility: string; semantics: string; layout: string }> = [];
+for (const width of [320, 375, 390, 768, 1024, 1280, 1440, 2048]) {
+  const page = await browser.newPage({ viewport: { width: width + 44, height: 1000 } });
+  page.on('pageerror', error => pageErrors.push(error.message));
+  const view = await openSurface(page, width >= 768 ? 'page' : 'panel', width, 940);
+  await waitCanvasReady(view);
+  await openOptions(view);
+  await view.getByRole('menuitem', { name: 'Setup', exact: true }).click();
+  await view.getByRole('button', { name: 'Copy plugin config' }).waitFor();
+  for (const theme of ['openchamber-light', 'openchamber-dark']) {
+    await page.evaluate(name => window.__host.setTheme(name), theme);
+    await page.waitForTimeout(220);
+    const result = await view.evaluate(() => {
+      const setup = document.querySelector('.canvas-setup');
+      const buttons = [...document.querySelectorAll('button')].filter(button => button.getClientRects().length > 0);
+      const headings = [...document.querySelectorAll('.canvas-setup h1,.canvas-setup h2')].map(heading => heading.tagName);
+      return {
+        overflow: document.documentElement.scrollWidth > innerWidth || Boolean(setup && setup.scrollWidth > setup.clientWidth),
+        tokens: Boolean(getComputedStyle(document.documentElement).getPropertyValue('--oc-primary-text').trim()),
+        names: buttons.every(button => Boolean(button.getAttribute('aria-label') || button.textContent?.trim())),
+        targets: buttons.every(button => button.getBoundingClientRect().height >= 24),
+        headings: headings[0] === 'H1' && headings.slice(1).every(heading => heading === 'H2'),
+        layout: setup !== null && setup.getBoundingClientRect().width <= innerWidth,
+      };
+    });
+    assert.equal(result.overflow, false, `AC-071: Setup overflow at ${width}/${theme}`);
+    assert.equal(result.tokens, true, `AC-071: host tokens at ${width}/${theme}`);
+    assert.equal(result.names && result.targets, true, `AC-071: labelled SDK targets at ${width}/${theme}`);
+    assert.equal(result.headings, true, `AC-071: heading hierarchy at ${width}/${theme}`);
+    assert.equal(result.layout, true, `AC-071: Setup containment at ${width}/${theme}`);
+    gates.push({ width, theme, overflow: 'pass', tokens: 'pass', accessibility: 'label/24px checks pass', semantics: 'pass', layout: 'pass' });
+    await view.locator('body').screenshot({ path: path.join(screenshotDir, `native-setup-${width}-${theme}.png`) });
+  }
+  await page.evaluate(() => window.__host.setPluginPath('/installed/' + 'long path with spaces/'.repeat(20)));
+  await view.getByRole('button', { name: 'Check again' }).click();
+  await view.getByRole('button', { name: 'Copy plugin config' }).waitFor({ state: 'visible' });
+  assert.equal(await view.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `AC-071: long installed path stays within its code scroller at ${width}`);
+  await view.getByLabel('OpenCode plugin configuration').focus();
+  assert.equal(await view.getByLabel('OpenCode plugin configuration').evaluate(node => node === document.activeElement), true);
+  await closePage(page);
+}
+check('AC-071', 'native Setup renders at required and awkward widths in both themes', true);
+
 await browser.close();
 server.stop();
 if (errors.length > 0) throw new Error(`Browser console errors:\n${errors.join('\n')}`);
@@ -618,13 +628,14 @@ if (pageErrors.length > 0) throw new Error(`Page errors:\n${pageErrors.join('\n'
 console.log(JSON.stringify({
   screenshots: ['panel.png', 'panel-detail.png', 'panel-wide.png', 'grid.png', 'page.png', 'page-light.png', 'page-empty.png', 'setup.png', 'setup-page.png', 'empty.png', 'dialog.png', 'dialog-dark.png', 'status.png'],
   verified: [...verified].sort(),
+  verification: gates,
   checks: [
     'actual bundled panel and status in an opaque sandbox',
     'native SDK controls only',
     'controlled search, list selection, and retained draft/focus across theme switch',
     'six official theme fixtures plus host-supplied font/radius, no refetch on theme-only ready',
     'host.storage view/sort persistence across reload',
-    'setup MCP path/config/heartbeat states',
+    'native plugin config/path, reviewed test prompt, and service error/retry',
     'empty, grid, error/retry, menu, dialog, and action coverage',
     '320px panel, 720px wide panel, and 1200px page layout',
   ],

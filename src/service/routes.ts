@@ -7,7 +7,7 @@ import { zipSync } from 'fflate';
 
 import { ArtifactStore } from '../store/index';
 import { StoreError, isStoreError } from '../store/errors';
-import { ensureDir, readJson } from '../store/fs';
+import { ensureDir } from '../store/fs';
 import type { ArtifactKind } from '../store/types';
 import {
   ViewerUnavailableError,
@@ -18,10 +18,9 @@ import {
   restartViewer,
   viewerStatus,
 } from '../viewer/ensure';
-import { defaultMcpConfigCandidates, inspectMcpRegistration } from './mcp-registration';
-import { MCP_VERSION } from '../mcp/version';
+import { CANVAS_VERSION } from '../version';
 
-const SERVICE_VERSION = MCP_VERSION;
+const SERVICE_VERSION = CANVAS_VERSION;
 const MAX_JSON_BODY = 128 * 1024;
 const KINDS: readonly ArtifactKind[] = ['html', 'bundle', 'markdown', 'image', 'pdf', 'data'];
 
@@ -31,9 +30,7 @@ export interface ServiceServerOptions {
   storeRoot: string;
   portFile: string;
   viewerEntry: string;
-  mcpPath: string;
-  /** Test hook: URLs of OpenCode configs to inspect instead of the per-env defaults. */
-  mcpConfigCandidates?: readonly string[];
+  pluginPath: string;
   viewerTimeoutMs?: number;
   host?: string;
   port?: number;
@@ -231,7 +228,7 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
         uptime: Date.now() - startedAt,
         store: path.basename(options.storeRoot),
         version: SERVICE_VERSION,
-        mcpPath: options.mcpPath,
+        pluginPath: options.pluginPath,
       });
       return;
     }
@@ -409,22 +406,6 @@ export async function createServiceServer(options: ServiceServerOptions): Promis
           ? body.format
           : undefined;
       sendJson(response, 200, await exportArtifact(options.store, options.storeRoot, id, version, requestedFormat));
-      return;
-    }
-
-    if (url.pathname === '/mcp-registration' && request.method === 'GET') {
-      const candidates = options.mcpConfigCandidates ?? defaultMcpConfigCandidates();
-      sendJson(response, 200, await inspectMcpRegistration(candidates, options.mcpPath));
-      return;
-    }
-
-    if (url.pathname === '/mcp-status' && request.method === 'GET') {
-      try {
-        const raw = await readJson(path.join(options.storeRoot, '.mcp-heartbeat.json'));
-        sendJson(response, 200, isRecord(raw) ? raw : null);
-      } catch {
-        sendJson(response, 200, null);
-      }
       return;
     }
 

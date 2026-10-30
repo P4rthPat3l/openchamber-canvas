@@ -152,16 +152,17 @@ export class ArtifactStore {
     await ensureDir(this.locksRoot);
   }
 
-  async create(input: CreateArtifactInput): Promise<CreateResult> {
+  async create(input: CreateArtifactInput, signal?: AbortSignal): Promise<CreateResult> {
     await this.ensureInit();
+    signal?.throwIfAborted();
     if (input.dedupeKey) {
       const key = sha256(Buffer.from(JSON.stringify([normalizeDirectory(input.directory), input.kind, input.dedupeKey.trim()])));
-      return withArtifactLock(path.join(this.locksRoot, `dedupe-${key}.lock`), () => this.createLocked(input), this.lockOptions());
+      return withArtifactLock(path.join(this.locksRoot, `dedupe-${key}.lock`), () => this.createLocked(input, signal), { ...this.lockOptions(), signal });
     }
-    return this.createLocked(input);
+    return this.createLocked(input, signal);
   }
 
-  private async createLocked(input: CreateArtifactInput): Promise<CreateResult> {
+  private async createLocked(input: CreateArtifactInput, signal?: AbortSignal): Promise<CreateResult> {
     const now = input.now ?? this.now();
     const title = normalizeTitle(input.title);
     const directory = normalizeDirectory(input.directory);
@@ -185,20 +186,24 @@ export class ArtifactStore {
           if (manifest.entry === entry && await this.hasSameFiles(existing.id, current.currentVersion, files)) {
             if (input.baseVersion !== undefined) this.assertBaseVersion(current, input.baseVersion, 'metadata');
             const meta = { ...current, title, tags: input.tags === undefined ? current.tags : tags, updatedAt: this.now().toISOString() };
+            signal?.throwIfAborted();
             await writeJsonAtomic(path.join(resolveArtifactDir(this.root, existing.id), 'meta.json'), meta);
             return { ...existing, meta, version: meta.currentVersion, contentChanged: false };
           }
           const updated = await this.updateLocked(existing.id, current, {
             mode: 'replace', files: files.map(file => ({ path: file.path, content: file.bytes })),
             entry, title, tags: input.tags, baseVersion: input.baseVersion,
-          });
+          }, signal);
           return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true, contentChanged: true };
-        }, this.lockOptions());
+        }, { ...this.lockOptions(), signal });
       }
     }
 
+    signal?.throwIfAborted();
     const { id, artifactDir } = await this.allocateArtifact(title, now);
     try {
+      const rendering = await this.capture(normalizeLibraries(input.libraries));
+      signal?.throwIfAborted();
       const version = await this.writeVersion({
         artifactDir,
         kind,
@@ -208,7 +213,7 @@ export class ArtifactStore {
         now,
         restoredFrom: null,
         existingVersions: [],
-        rendering: await this.capture(normalizeLibraries(input.libraries)),
+        rendering,
       });
       const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
       if (version.manifest.rendering) summary.rendering = version.manifest.rendering;
@@ -243,7 +248,7 @@ export class ArtifactStore {
     }
   }
 
-  async update(id: string, input: UpdateInput): Promise<UpdateResult> {
+  async update(id: string, input: UpdateInput, signal?: AbortSignal): Promise<UpdateResult> {
     await this.ensureInit();
     assertArtifactId(id);
     const lockDir = this.lockPath(id);
@@ -252,13 +257,13 @@ export class ArtifactStore {
       lockDir,
       async () => {
         const meta = await this.getMeta(id);
-        return this.updateLocked(id, meta, input);
+        return this.updateLocked(id, meta, input, signal);
       },
-      this.lockOptions(),
+      { ...this.lockOptions(), signal },
     );
   }
 
-  private async updateLocked(id: string, meta: ArtifactMeta, input: UpdateInput): Promise<UpdateResult> {
+  private async updateLocked(id: string, meta: ArtifactMeta, input: UpdateInput, signal?: AbortSignal): Promise<UpdateResult> {
     const artifactDir = resolveArtifactDir(this.root, id);
     this.assertBaseVersion(meta, input.baseVersion, input.mode);
     if (input.mode === 'metadata') {
@@ -269,11 +274,14 @@ export class ArtifactStore {
         tags: input.tags === undefined ? meta.tags : normalizeTags(input.tags),
         updatedAt: this.now().toISOString(),
       };
+      signal?.throwIfAborted();
       await writeJsonAtomic(path.join(artifactDir, 'meta.json'), next);
       return { id, version: meta.currentVersion, changedFiles: [], meta: next };
     }
     const now = this.now();
     const plan = await this.planUpdate(id, meta, input);
+    const rendering = input.mode === 'restore' ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries);
+    signal?.throwIfAborted();
     const version = await this.writeVersion({
       artifactDir,
       kind: plan.kind,
@@ -283,7 +291,7 @@ export class ArtifactStore {
       now,
       restoredFrom: plan.restoredFrom,
       existingVersions: meta.versions.map(entry => entry.id),
-      rendering: input.mode === 'restore' ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries),
+      rendering,
     });
     const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
     if (version.manifest.rendering) summary.rendering = version.manifest.rendering;
@@ -469,11 +477,11 @@ export class ArtifactStore {
     return artifacts;
   }
 
-  async archive(id: string, archived: boolean): Promise<ArtifactMeta> {
+  async archive(id: string, archived: boolean, signal?: AbortSignal): Promise<ArtifactMeta> {
     return this.updateMeta(id, (meta, now) => ({
       ...meta,
       archivedAt: archived ? now.toISOString() : null,
-    }));
+    }), signal);
   }
 
   async setFavorite(id: string, favorite: boolean): Promise<ArtifactMeta> {
@@ -1031,6 +1039,7 @@ export class ArtifactStore {
   private async updateMeta(
     id: string,
     mutate: (meta: ArtifactMeta, now: Date) => ArtifactMeta,
+    signal?: AbortSignal,
   ): Promise<ArtifactMeta> {
     await this.ensureInit();
     assertArtifactId(id);
@@ -1042,10 +1051,11 @@ export class ArtifactStore {
       async () => {
         const meta = await this.getMeta(id);
         const next = mutate(meta, this.now());
+        signal?.throwIfAborted();
         await writeJsonAtomic(path.join(artifactDir, 'meta.json'), next);
         return next;
       },
-      this.lockOptions(),
+      { ...this.lockOptions(), signal },
     );
   }
 

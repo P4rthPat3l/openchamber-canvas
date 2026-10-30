@@ -32,6 +32,7 @@ export interface EnsureViewerOptions {
   viewerEntry: string;
   idleMs?: number;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export class ViewerUnavailableError extends Error {
@@ -68,13 +69,13 @@ export async function readViewerState(portFile: string): Promise<ViewerState | n
   }
 }
 
-async function viewerHealth(state: ViewerState): Promise<ViewerHealth | null> {
+async function viewerHealth(state: ViewerState, signal?: AbortSignal): Promise<ViewerHealth | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1500);
   try {
     const response = await fetch(`http://127.0.0.1:${state.port}/health`, {
       headers: { authorization: `Bearer ${state.secret}` },
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
     });
     if (!response.ok) return null;
     const value: unknown = await response.json();
@@ -101,13 +102,17 @@ export async function viewerStatus(portFile: string): Promise<{ status: string; 
   return { status: health.build === viewerBuild() ? 'Compatible' : 'Update requires restart. Reopen Canvas views afterward.', restartable: true };
 }
 
-async function stopViewer(state: ViewerState): Promise<void> {
-  const health = await viewerHealth(state);
+async function stopViewer(state: ViewerState, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  const health = await viewerHealth(state, signal);
+  signal?.throwIfAborted();
   if (health?.protocol !== VIEWER_PROTOCOL) throw new ViewerUnavailableError('Legacy viewer cannot be restarted automatically. Close Canvas views and stop the old Canvas viewer, then reopen from the gallery.');
-  const response = await fetch(`http://127.0.0.1:${state.port}/shutdown`, { method: 'POST', headers: { authorization: `Bearer ${state.secret}` }, signal: AbortSignal.timeout(1500) });
+  const timeout = AbortSignal.timeout(1500);
+  const response = await fetch(`http://127.0.0.1:${state.port}/shutdown`, { method: 'POST', headers: { authorization: `Bearer ${state.secret}` }, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
   if (!response.ok) throw new ViewerUnavailableError('Viewer restart was rejected. Close Canvas views and retry.');
   const deadline = Date.now() + 3000;
-  while (await viewerHealth(state)) {
+  while (await viewerHealth(state, signal)) {
+    signal?.throwIfAborted();
     if (Date.now() >= deadline) throw new ViewerUnavailableError('Viewer did not stop. Close Canvas views and retry.');
     await sleep(50);
   }
@@ -123,28 +128,33 @@ export async function ensureViewer(options: EnsureViewerOptions): Promise<Viewer
 }
 
 async function ensureViewerLocked(options: EnsureViewerOptions, restartStartedAt?: string): Promise<ViewerState> {
+  options.signal?.throwIfAborted();
   const timeoutMs = options.timeoutMs ?? 15_000;
   const lockDir = `${options.portFile}.lock`;
 
   try {
-    return await withArtifactLock(
+    const ready = await withArtifactLock(
       lockDir,
       async () => {
+        options.signal?.throwIfAborted();
         const existing = await readViewerState(options.portFile);
         if (existing !== null) {
-          const health = await viewerHealth(existing);
+          const health = await viewerHealth(existing, options.signal);
+          options.signal?.throwIfAborted();
           const restarting = restartStartedAt !== undefined && existing.startedAt === restartStartedAt;
           if (!restarting && health?.protocol === VIEWER_PROTOCOL && health.build === viewerBuild()) return existing;
-          if (health) await stopViewer(existing);
+          if (health) await stopViewer(existing, options.signal);
         }
 
         await ensureDir(options.storeRoot);
+        options.signal?.throwIfAborted();
         await fs.rm(options.portFile, { force: true });
         const child = spawn(process.execPath, [options.viewerEntry], {
           detached: true,
           stdio: 'ignore',
           env: {
             ...process.env,
+            ...(process.versions.bun ? { BUN_BE_BUN: '1' } : {}),
             ELECTRON_RUN_AS_NODE: '1',
             CANVAS_STORE: options.storeRoot,
             CANVAS_VIEWER_PORT_FILE: options.portFile,
@@ -154,18 +164,24 @@ async function ensureViewerLocked(options: EnsureViewerOptions, restartStartedAt
         child.unref();
 
         const deadline = Date.now() + timeoutMs;
+        // A detached child owns this startup once spawned. Keep the lock until
+        // it is ready, even if its original caller no longer needs the view.
         for (;;) {
           const state = await readViewerState(options.portFile);
-          if (state !== null && (await checkViewer(state))) return state;
+          const health = state === null ? null : await viewerHealth(state);
+          if (state !== null && health?.protocol === VIEWER_PROTOCOL && health.build === viewerBuild()) return state;
           if (Date.now() >= deadline) {
             throw new ViewerUnavailableError('The viewer did not start within the timeout.');
           }
           await sleep(100);
         }
       },
-      { retryMs: 50, timeoutMs, staleMs: 30_000 },
+      { retryMs: 50, timeoutMs, staleMs: 30_000, signal: options.signal },
     );
+    options.signal?.throwIfAborted();
+    return ready;
   } catch (error) {
+    options.signal?.throwIfAborted();
     if (error instanceof ViewerUnavailableError) throw error;
     throw new ViewerUnavailableError(
       error instanceof Error ? error.message : 'The viewer could not be started.',
@@ -176,6 +192,7 @@ async function ensureViewerLocked(options: EnsureViewerOptions, restartStartedAt
 export async function mintViewUrl(
   state: ViewerState,
   input: { id: string; version?: string; theme?: 'light' | 'dark'; follow?: boolean },
+  signal?: AbortSignal,
 ): Promise<{ url: string; expiresAt: number }> {
   const response = await fetch(`http://127.0.0.1:${state.port}/mint`, {
     method: 'POST',
@@ -184,7 +201,7 @@ export async function mintViewUrl(
       'content-type': 'application/json',
     },
     body: JSON.stringify(input),
-    signal: AbortSignal.timeout(3000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
   });
   if (!response.ok) {
     throw new ViewerUnavailableError(`The viewer rejected the view request (${response.status}).`);
@@ -202,6 +219,7 @@ export async function mintViewUrl(
 export async function notifyViewer(
   state: ViewerState,
   input: { id: string; event: 'changed' | 'deleted'; version?: string },
+  signal?: AbortSignal,
 ): Promise<number> {
   const response = await fetch(`http://127.0.0.1:${state.port}/notify`, {
     method: 'POST',
@@ -210,7 +228,7 @@ export async function notifyViewer(
       'content-type': 'application/json',
     },
     body: JSON.stringify(input),
-    signal: AbortSignal.timeout(3000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
   });
   if (!response.ok) {
     throw new ViewerUnavailableError(`The viewer rejected the notify request (${response.status}).`);

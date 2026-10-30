@@ -16,7 +16,7 @@ export function packageRoot(): string {
   let directory = path.dirname(fileURLToPath(import.meta.url));
   for (let depth = 0; depth < 4; depth++) {
     if (path.basename(directory) === 'src') return path.dirname(directory);
-    if (['mcp', 'service', 'viewer'].includes(path.basename(directory)) && path.basename(path.dirname(directory)) !== 'src') return path.dirname(directory);
+    if (['plugin', 'service', 'viewer'].includes(path.basename(directory)) && path.basename(path.dirname(directory)) !== 'src') return path.dirname(directory);
     directory = path.dirname(directory);
   }
   throw new StoreError('RENDERING_UNAVAILABLE', 'Cannot locate the Canvas package');

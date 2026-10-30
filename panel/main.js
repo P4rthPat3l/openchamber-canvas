@@ -2689,8 +2689,6 @@ ${GUEST_UI_LOOK_CSS}`;
   var knownIds = null;
   var newId = null;
   var detailSignature = "";
-  var mcpRegistration = null;
-  var mcpRequest = 0;
   var app = null;
   var inspector = null;
   var setupView = null;
@@ -2788,23 +2786,6 @@ ${GUEST_UI_LOOK_CSS}`;
     } }, icon2);
     handles.push(button2);
     return button2;
-  }
-  function shellArg(value) {
-    return `'${value.replaceAll("'", "'\\''")}'`;
-  }
-  function renderShellCommand(target, command, path) {
-    target.replaceChildren();
-    const quoted = shellArg(path);
-    const inner = quoted.slice(1, -1);
-    target.append(document.createTextNode(command.slice(0, command.length - quoted.length) + (quoted[0] ?? "")));
-    let start = 0;
-    for (let index = 0;index < inner.length; index++) {
-      if (inner[index] !== "/")
-        continue;
-      target.append(document.createTextNode(inner.slice(start, index + 1)), document.createElement("wbr"));
-      start = index + 1;
-    }
-    target.append(document.createTextNode(inner.slice(start) + (quoted.at(-1) ?? "")));
   }
   async function copy(text, label) {
     await host.writeClipboard(text);
@@ -2937,34 +2918,6 @@ ${GUEST_UI_LOOK_CSS}`;
         paint();
       }
     }
-    syncMcpRegistration();
-  }
-  async function syncMcpRegistration() {
-    const owner = ++mcpRequest;
-    let next = null;
-    try {
-      next = await request("/mcp-registration");
-    } catch {
-      next = null;
-    }
-    if (owner !== mcpRequest)
-      return;
-    mcpRegistration = next;
-    paint();
-  }
-  function mcpCtaState() {
-    const registration = mcpRegistration;
-    if (registration === null || !registration.checked)
-      return null;
-    if (registration.registered && !registration.disabled)
-      return null;
-    if (registration.registered && registration.disabled) {
-      return { title: "Canvas MCP is disabled", body: "Enable Canvas in Settings → MCP to let the agent publish and refine artifacts." };
-    }
-    if (registration.name !== null) {
-      return { title: "Canvas MCP points at an old command", body: "The registered command no longer matches this install. Open setup and re-add Canvas in Settings → MCP." };
-    }
-    return { title: "Install the Canvas MCP tools", body: "The agent cannot publish or refine artifacts until Canvas is added in Settings → MCP." };
   }
   async function loadDetail(id, focus) {
     if (selectedId !== id)
@@ -3666,7 +3619,7 @@ Read it with canvas_read first, then update it with canvas_update and the curren
     const recheck = action(toolbar, handles, "Check again", load, "outline", "sm", "refresh");
     const intro = element("header", node, "canvas-setup-intro");
     element("h1", intro, "canvas-title", "Set up Canvas");
-    element("p", intro, "canvas-muted", "The gallery works without the MCP server. Connect it to let the agent publish and update artifacts.");
+    element("p", intro, "canvas-muted", "The gallery works on its own. Add the OpenCode plugin to let the agent publish and update artifacts.");
     const errorRoot = element("div", node);
     errorRoot.hidden = true;
     const error = mountBanner(errorRoot, { tone: "error", title: "Could not check setup" });
@@ -3676,31 +3629,23 @@ Read it with canvas_read first, then update it with canvas_update and the curren
     element("h2", extensionRow, "", "Extension service");
     const extensionBadge = mountBadge(extensionRow, { label: "Checking" });
     const store = element("p", extension, "canvas-muted");
-    const mcp = element("section", node, "canvas-setup-section");
-    const mcpRow = element("header", mcp, "canvas-section-heading");
-    mcpRow.append(svgIcon("terminal", "canvas-section-icon"));
-    element("h2", mcpRow, "", "MCP server");
-    const mcpBadge = mountBadge(mcpRow, { label: "Checking" });
-    const mcpNotice = mountBanner(mcp, { tone: "info", title: "Checking the MCP heartbeat" });
-    element("p", mcp, "canvas-muted", "The extension cannot register an MCP server. Run this once on the OpenChamber server, or paste the JSON in Settings → MCP.");
-    const command = element("pre", mcp, "canvas-code canvas-command");
-    const config = element("pre", mcp, "canvas-code");
-    config.hidden = true;
-    let mcpPath = "";
-    let mcpConfig = "";
-    let mcpCommand = "";
-    const configActions = element("div", mcp, "canvas-actions");
-    const copyCommand = action(configActions, handles, "Copy command", () => copy(mcpCommand, "MCP command"), "default", "sm", "copy");
-    const copyConfig = action(configActions, handles, "Copy MCP config", () => copy(mcpConfig, "MCP config"), "outline", "sm", "copy");
-    const copyPath = action(configActions, handles, "Copy path", () => copy(mcpPath, "MCP path"), "ghost", "sm", "copy");
-    const showConfig = mountButtonWithIcon(configActions, { label: "Show JSON", variant: "ghost", size: "sm", onClick: () => {
-      config.hidden = !config.hidden;
-      showConfig.update({ label: config.hidden ? "Show JSON" : "Hide JSON" });
-    } }, "code");
+    const plugin = element("section", node, "canvas-setup-section");
+    sectionHeading(plugin, "terminal", "OpenCode plugin");
+    element("p", plugin, "canvas-muted", "Requires OpenCode 2.2.0 or newer. Merge this entry into the plugins array in your user or project opencode.json. Keep your other entries. The path points to this installed Canvas package.");
+    const config = element("pre", plugin, "canvas-code");
+    config.tabIndex = 0;
+    config.setAttribute("aria-label", "OpenCode plugin configuration");
+    config.setAttribute("aria-live", "polite");
+    let pluginPath = "";
+    let pluginConfig = "";
+    const configActions = element("div", plugin, "canvas-actions");
+    const copyConfig = action(configActions, handles, "Copy plugin config", () => copy(pluginConfig, "Plugin config"), "default", "sm", "copy");
+    const copyPath = action(configActions, handles, "Copy path", () => copy(pluginPath, "Plugin path"), "ghost", "sm", "copy");
+    const pluginNotice = mountBanner(plugin, { tone: "info", title: "Confirm the tools in chat", body: "The gallery cannot confirm which plugins your session has loaded. OpenCode watches configuration changes; use /reload if needed, then send the sample prompt below." });
     const agent = element("section", node, "canvas-setup-section");
     sectionHeading(agent, "message", "Try Canvas");
-    element("p", agent, "canvas-muted", "Add the sample prompt to chat, then send it to start the registered MCP server.");
-    const sample = action(agent, handles, "Add sample prompt to chat", () => askAgent(SAMPLE_PROMPT), "outline", "sm", "message");
+    element("p", agent, "canvas-muted", "Add the sample prompt to chat, review it, then send it to check that Canvas tools are available.");
+    action(agent, handles, "Add sample prompt to chat", () => askAgent(SAMPLE_PROMPT), "outline", "sm", "message");
     const viewer = element("section", node, "canvas-setup-section");
     sectionHeading(viewer, "server", "Artifact viewer");
     const viewerText = element("p", viewer, "canvas-muted", "Checking compatibility");
@@ -3710,85 +3655,38 @@ Read it with canvas_read first, then update it with canvas_update and the curren
       await load();
     }, "outline", "sm", "refresh");
     restart.update({ disabled: true });
-    handles.push(error, extensionBadge, mcpBadge, mcpNotice, showConfig);
-    copyCommand.update({ disabled: true });
+    handles.push(error, extensionBadge, pluginNotice);
     copyConfig.update({ disabled: true });
     copyPath.update({ disabled: true });
-    sample.update({ disabled: true });
     async function load() {
       const owner = ++setupRequest;
       recheck.update({ loading: true });
       errorRoot.hidden = true;
+      copyConfig.update({ disabled: true });
+      copyPath.update({ disabled: true });
+      restart.update({ disabled: true });
+      viewerText.textContent = "Checking compatibility";
+      config.textContent = "Checking the installed package path…";
+      const waiting = window.setTimeout(() => {
+        if (owner === setupRequest)
+          config.textContent = "Still checking the Canvas service. The request will time out if the service does not respond.";
+      }, 15000);
       try {
-        const [status, health, heartbeat] = await Promise.all([
+        const [status, health] = await Promise.all([
           host.serviceStatus(),
-          request("/health"),
-          request("/mcp-status")
+          request("/health")
         ]);
-        let registration = null;
-        try {
-          registration = await request("/mcp-registration");
-        } catch {
-          registration = null;
-        }
         if (owner !== setupRequest)
           return;
+        if (!health.pluginPath)
+          throw new Error("Reload the Canvas extension to obtain its native plugin path");
         extensionBadge.update({ label: status.status === "ready" ? "Running" : status.status, tone: status.status === "ready" ? "success" : "warning" });
         store.textContent = `Store: ${health.store}`;
-        const seen = heartbeat ? Date.parse(heartbeat.seenAt) : NaN;
-        const live = Number.isFinite(seen) && Date.now() - seen < 180000;
-        const reg = registration !== null && registration.checked ? registration : null;
-        if (reg !== null && reg.name === null && !reg.registered) {
-          mcpBadge.update({ label: "Not installed", tone: "warning" });
-          mcpNotice.update({
-            tone: "warning",
-            title: "Canvas MCP is not registered",
-            body: "Add Canvas in Settings → MCP with the path below. The server starts on the first agent request."
-          });
-        } else if (reg !== null && reg.disabled) {
-          mcpBadge.update({ label: "Disabled", tone: "warning" });
-          mcpNotice.update({
-            tone: "warning",
-            title: "Canvas MCP is disabled",
-            body: `Enable Canvas in Settings → MCP${reg.source ? ` (currently registered in ${reg.source})` : ""}.`
-          });
-        } else if (reg !== null && !reg.registered) {
-          mcpBadge.update({ label: "Old command", tone: "warning" });
-          mcpNotice.update({
-            tone: "warning",
-            title: "Canvas MCP points at an old command",
-            body: `The registered command no longer matches this install. Re-add Canvas in Settings → MCP with the path below.${reg.source ? ` Currently registered in ${reg.source}.` : ""}`
-          });
-        } else if (reg !== null && reg.registered && !live) {
-          mcpBadge.update({ label: "Waiting on agent", tone: "warning" });
-          mcpNotice.update({
-            tone: "warning",
-            title: "Registered — waiting for the first agent request",
-            body: `Canvas runs only while an agent request needs it. Open a chat and ask for an artifact.${reg.source ? ` Registered in ${reg.source}.` : ""}`
-          });
-        } else if (live && heartbeat) {
-          mcpBadge.update({ label: "Connected", tone: "success" });
-          mcpNotice.update({ tone: "success", title: "Heartbeat received", body: `Last seen ${date(heartbeat.seenAt)}.` });
-        } else {
-          mcpBadge.update({ label: "Not seen recently", tone: "warning" });
-          mcpNotice.update({
-            tone: "warning",
-            title: "No recent heartbeat",
-            body: "Check the local server in Settings → MCP. An idle server may need an agent request to start."
-          });
-        }
-        mcpPath = health.mcpPath ?? "";
-        mcpCommand = mcpPath ? `opencode mcp add canvas --global -- node ${shellArg(mcpPath)}` : "";
-        if (mcpCommand)
-          renderShellCommand(command, mcpCommand, mcpPath);
-        else
-          command.textContent = "Restart the extension service to obtain its exact MCP path.";
-        mcpConfig = JSON.stringify({ mcp: { servers: { canvas: { type: "local", command: ["node", mcpPath] } } } }, null, 2);
-        config.textContent = mcpConfig;
-        copyCommand.update({ disabled: !mcpPath });
-        copyConfig.update({ disabled: !mcpPath });
-        copyPath.update({ disabled: !mcpPath });
-        sample.update({ disabled: reg ? !reg.registered || reg.disabled : !live });
+        pluginPath = health.pluginPath;
+        pluginConfig = JSON.stringify({ $schema: "https://opencode.ai/config.json", plugins: [pluginPath] }, null, 2);
+        config.textContent = pluginConfig;
+        copyConfig.update({ disabled: false });
+        copyPath.update({ disabled: false });
         try {
           const state = await request("/viewer-status");
           if (owner !== setupRequest)
@@ -3805,10 +3703,12 @@ Read it with canvas_read first, then update it with canvas_update and the curren
         if (owner !== setupRequest)
           return;
         errorRoot.hidden = false;
-        error.update({ body: message(caught) });
+        error.update({ body: `${message(caught)}. Use Check again to retry.` });
         extensionBadge.update({ label: "Unavailable", tone: "error" });
-        mcpBadge.update({ label: "Unknown", tone: "neutral" });
+        config.textContent = "The installed package path could not be checked. Use Check again to retry.";
+        viewerText.textContent = "Viewer compatibility could not be checked.";
       } finally {
+        window.clearTimeout(waiting);
         if (owner === setupRequest)
           recheck.update({ loading: false });
       }
@@ -3845,15 +3745,12 @@ Read it with canvas_read first, then update it with canvas_update and the curren
     const remoteRoot = element("div", notices);
     remoteRoot.hidden = !remote;
     const remoteNotice = mountBanner(remoteRoot, { tone: "warning", title: "Remote instance", body: "Use Copy URL or Export. This browser cannot open the server’s loopback address." });
-    const mcpCtaRoot = element("div", notices);
-    mcpCtaRoot.hidden = true;
-    const mcpCta = mountBanner(mcpCtaRoot, { tone: "warning", title: "Install the Canvas MCP tools", body: mcpCtaState()?.body ?? "", action: { label: "Open setup", onClick: () => setSetup(true) } });
     const workspace = element("div", root, "canvas-workspace");
     const library = mountLibrary(workspace);
     const inspectorSlot = element("div", workspace, "canvas-inspector-slot");
     const placeholderRoot = element("div", inspectorSlot, "canvas-placeholder");
     const placeholder = mountEmpty(placeholderRoot, { title: "Select an artifact", body: "Inspect its versions or ask the agent for a change." });
-    handles.push(error, remoteNotice, mcpCta, placeholder);
+    handles.push(error, remoteNotice, placeholder);
     return {
       root,
       notices,
@@ -3863,8 +3760,6 @@ Read it with canvas_read first, then update it with canvas_update and the curren
       placeholderRoot,
       errorRoot,
       error,
-      mcpCtaRoot,
-      mcpCta,
       dispose: () => {
         library.dispose();
         dispose(handles);
@@ -3877,10 +3772,6 @@ Read it with canvas_read first, then update it with canvas_update and the curren
       return;
     app.errorRoot.hidden = listError === null;
     app.error.update({ body: listError ?? undefined });
-    const cta = mcpCtaState();
-    app.mcpCtaRoot.hidden = cta === null;
-    if (cta !== null)
-      app.mcpCta.update(cta);
     app.workspace.dataset.selected = String(selectedId !== null);
     app.workspace.dataset.empty = String(artifacts.length === 0 && selectedId === null);
     app.library.update();

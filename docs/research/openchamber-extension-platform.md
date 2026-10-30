@@ -2,6 +2,8 @@
 
 Status: research. Verified against OpenChamber 2.5.1 on 2026-10-23.
 
+Canvas 0.3.0 replaces the MCP-specific implementation described in this historical platform investigation. Read [the native-plugin update](#16-native-opencode-tools-update) for the current registration mechanism. The earlier MCP/config/heartbeat sections document the old implementation, not a current requirement.
+
 This document records how an OpenChamber extension is packaged, installed, loaded, and connected to a local process and to agent tools. It is the platform reference for FEAT-001.
 
 ## 1. Sources
@@ -41,7 +43,7 @@ The important separation for Canvas:
 - The agent tools are an MCP server.
 - The chat card is a presentation rule in the extension manifest.
 
-An extension cannot register an agent tool. An MCP server cannot draw a rail panel. The two must be installed separately.
+An extension manifest cannot register an executable agent tool. OpenCode plugins can register tools directly, while MCP is another supported mechanism. Neither mechanism draws a rail panel; that remains the OpenChamber extension's responsibility.
 
 ## 3. Package and install
 
@@ -279,7 +281,7 @@ This is why Canvas needs a separate viewer process that outlives the MCP server.
 
 | Cannot | Consequence for Canvas |
 |---|---|
-| Register an agent tool or MCP server | The MCP is a separate install |
+| Register an executable agent tool from the extension manifest | The agent integration is registered separately in OpenCode |
 | Run code in the OpenChamber app origin | Artifact HTML never runs in the gallery |
 | Fetch arbitrary URLs from the panel | All data goes through `serviceRequest` or declared `origins` |
 | Stream from a service to the panel | The gallery polls; the viewer page can use SSE to the viewer daemon |
@@ -418,3 +420,44 @@ Probe result: a disposable browser probe using the installed SDK in an `allow-sc
 Commit `a4911b2` implements the migration. The panel, setup view, and Work Status section mount `mountButton`, `mountSearchField`, `mountSelect`, `mountMenu`, `mountList`, `mountTextField`, `mountBadge`, `mountBanner`, `mountEmpty`, and `mountSpinner`. Decorative inline SVG icons sit inside labelled controls and custom section headings. Custom CSS is limited to composition the kit lacks. View/sort preferences use `host.storage`; `panel/` and `status/` are in `tsconfig.json`; the three errors are fixed.
 
 `tests/browser/panel.browser.ts` serves the built panel and status entries in an opaque iframe with a mock host. It verifies AC-037 through AC-042, six official resolved palette snapshots, a host font/radius override, theme-only snapshots without refetch or remount, retained draft/focus, disposal, menus, dialog, setup, empty, error/retry, grid, 320px rail, 720px wide panel, and 1200px page/setup/empty layouts. `bun run test:browser` is the entry point. Installed-app visual acceptance remains pending.
+
+## 16. Native OpenCode tools update
+
+Verified on 2026-10-30 against OpenCode 2.2.0, its published plugin types, the installed OpenChamber agent plugin, and the native Canvas regression tests. This section supersedes the Canvas-specific MCP installation and heartbeat design earlier in this note.
+
+### How the built-in tools work
+
+The installed `~/.config/openchamber/agent-tool/openchamber-agent-tool/index.js` exports an OpenCode plugin. Its setup registers tools with `ctx.tool.transform`, supplying descriptions, JSON input schemas, options, and executors. The executor sends authenticated HTTP requests to OpenChamber with the session ID and call ID. Tool registration is executable infrastructure, separate from any additional prompt instructions. OpenCode can expose a registered tool directly or through Code Mode.
+
+This is different from an extension's `contributes.tools`. That manifest field changes tool-call presentation only. An extension manifest does not register arbitrary executable tools, nor does installing an OpenChamber extension automatically authorize an OpenCode plugin.
+
+### Canvas 0.3.0 registration
+
+The Canvas package exports its built `plugin/index.js`. The user merges the installed package directory into OpenCode V2 configuration:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["/absolute/path/to/installed/canvas"]
+}
+```
+
+Configured local plugin entries must be directories. The package's exports select its built entry. There is no required runtime SDK import or node_modules in the installed bundle. The development dependency `@opencode/plugin@2.2.0` checks its types. OpenCode reloads watched configuration; `/reload` is available when necessary.
+
+The plugin registers namespace `canvas` and the six operations. Effective names remain `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, and `canvas_result`; Code Mode exposes the namespace as `tools.canvas`. Each operation declares an OpenCode permission action. Native errors retain serialized Canvas codes/details in their message; successful text results contain JSON.
+
+Each call resolves `ctx.session.get({ sessionID })` and uses `session.location.directory`, rather than process.cwd() or the plugin's setup location. Session `subpath` records a path relative to the project for indexing; it must not be appended again. Session provenance comes from the invocation. Explicit alternate directories remain available for deliberate cross-project operations.
+
+### Runtime and cancellation findings
+
+OpenCode's compiled executable is not interchangeable with `node` when launched as `process.execPath`. The detached viewer launch sets `BUN_BE_BUN=1` under Bun and retains `ELECTRON_RUN_AS_NODE=1` for Electron. An actual-OpenCode cold-start regression fetches a working view URL; testing under Node or against an already-running viewer would miss this boundary.
+
+Invocation signals reach session/viewer requests and store lock acquisition. Cancelled update, archive, and dedupe waiters cannot acquire their lock later and mutate. Once the atomic write begins, it completes; cancellation does not remove a committed artifact. Once a detached viewer is spawned, startup remains serialized until readiness or timeout despite caller cancellation. The cancelled call may wait for that bounded startup; it cannot permit a second daemon to start in the gap. The viewer remains independent of plugin reload and unload.
+
+### Setup and verification limits
+
+Canvas no longer scans OpenCode configuration or writes an MCP heartbeat. Setup provides exact plugin JSON/path and a sample prompt that is composed for review, never sent. It does not claim to know which plugins a session loaded. Work Status lists artifacts without an inferred tool connection badge.
+
+The isolated real-host test proves package loading, effective names, session lookup, executor behavior, and cold-start viewing without a model request. Its observer invokes the registered executor directly. It does not prove model/Code Mode selection, permission rejection, OpenChamber tool-card matching, or installed desktop routing. Those remain explicit user acceptance checks in FEAT-001 AC-073.
+
+Sources: [OpenCode plugin overview](https://opencode.ai/v2/docs/build/plugins), [server tools](https://opencode.ai/v2/docs/build/plugins/server#tools), [plugin configuration](https://opencode.ai/v2/docs/plugins), [`src/plugin/index.ts`](../../src/plugin/index.ts), [`tests/plugin.test.ts`](../../tests/plugin.test.ts).

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { ArtifactStore } from '../store/index';
 import { defaultStoreRoot, defaultViewerPortFile } from '../store/paths';
 import { createServiceServer } from './routes';
-import { installedRendering } from '../viewer/rendering';
+import { installedRendering, packageRoot } from '../viewer/rendering';
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     storeRoot,
     portFile,
     viewerEntry,
-    mcpPath: path.join(moduleDir, '..', 'mcp', 'server.js'),
+    pluginPath: packageRoot(),
     viewerTimeoutMs,
     host: '127.0.0.1',
     port,

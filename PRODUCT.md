@@ -20,7 +20,7 @@ Artifacts live in the project's store, not in a chat transcript. They keep sandb
 
 ## Operating Context
 
-The user works in an OpenChamber project with the agent in the main chat. The extension panel sits on the right rail and can open full-screen. The gallery calls the extension service for reads, view URLs, export, and feedback. The agent uses the separate MCP server for publish, read, update, archive, and result. Both share `~/.config/openchamber/artifacts`. The extension asks for the `service` permission only.
+The user works in an OpenChamber project with the agent in the main chat. The extension panel sits on the right rail and can open full-screen. The gallery calls the extension service for reads, view URLs, export, and feedback. A native OpenCode plugin registers the six Canvas operations in the OpenCode server. Both share `~/.config/openchamber/artifacts`. The extension asks for the `service` permission only.
 
 ## Capabilities and Constraints
 
@@ -31,14 +31,14 @@ The user works in an OpenChamber project with the agent in the main chat. The ex
 - Search covers the full scope before pagination. Revision drafts survive navigation for the current panel session.
 - Artifact HTML is untrusted and runs only in the browser panel, never in the extension page.
 - The viewer and service bind loopback. The view response keeps `sandbox allow-scripts`.
-- The MCP is a separate Settings → MCP install. The extension bundles the server file but cannot register it.
+- The user registers the installed Canvas package directory in OpenCode's `plugins` configuration. Setup provides the exact path and JSON, plus a reviewed sample prompt. There is no MCP server or guessed connection badge.
 - The UI must use the public OpenChamber SDK UI components and theme tokens and feel native to the app; the panel is not a separate brand surface. Custom CSS is limited to composition the installed kit lacks.
 
 ## Evidence on Hand
 
 - `docs/features/FEAT-001-openchamber-canvas.md` for the plan, contracts, and acceptance criteria.
 - A real smoke-test artifact with Chart.js in the store.
-- The built viewer, service, MCP, panel, and status section.
+- The built viewer, service, native OpenCode plugin, panel, and status section.
 - No user research, testimonials, or usage benchmarks. Do not invent them.
 
 ## Product Principles

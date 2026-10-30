@@ -1,16 +1,13 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { builtViewer } from './viewer-fixture';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import * as path from 'node:path';
+import { z } from 'zod';
 
 const fixture = await builtViewer();
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
 const sentinel = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response('probe', { headers: { 'access-control-allow-origin': '*' } }) });
 const verified = new Set<string>();
-const client = new Client({ name: 'canvas-browser-regression', version: '1.0.0' });
-let connected = false;
 try {
   const html = '<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><h1>One</h1><a id="next" href="second.htm">Next</a><script src="app.js"></script></body></html>';
   const artifact = await fixture.store.create({ title: 'Browser regression', kind: 'bundle', entry: 'index.html', directory: process.cwd(), files: [
@@ -78,28 +75,31 @@ try {
   verified.add('AC-062');
   verified.add('AC-064');
   const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  await client.connect(new StdioClientTransport({ command: 'node', args: [path.resolve('mcp/server.js')], cwd: process.cwd(), env: { ...env, CANVAS_STORE: fixture.root, CANVAS_VIEWER_PORT_FILE: path.join(fixture.root, '.viewer.json') } }));
-  connected = true;
+  async function call(name: string, args: Record<string, unknown>): Promise<unknown> {
+    const child = Bun.spawn(['node', path.resolve('tests/fixtures/plugin-host.mjs'), path.resolve('plugin/index.js')], {
+      cwd: process.cwd(), env: { ...env, CANVAS_STORE: fixture.root, CANVAS_VIEWER_PORT_FILE: path.join(fixture.root, '.viewer.json') },
+      stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
+    });
+    child.stdin.write(JSON.stringify({ scenario: 'call', name, args, directory: process.cwd() }));
+    child.stdin.end();
+    const [output, error, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+    assert.equal(code, 0, `AC-066 AC-070: built native plugin succeeds: ${error}`);
+    return JSON.parse(output);
+  }
   async function publish(arguments_: Record<string, unknown>): Promise<{ id: string; version: string; viewUrl: string }> {
-    const result = await client.callTool({ name: 'publish', arguments: arguments_ });
-    const entry = Array.isArray(result.content) ? result.content.find(entry => typeof entry === 'object' && entry !== null && 'text' in entry) : undefined;
-    if (!entry || typeof entry.text !== 'string') throw new Error('Missing publish response');
-    const value: unknown = JSON.parse(entry.text);
-    if (typeof value !== 'object' || value === null || !('id' in value) || !('version' in value) || !('viewUrl' in value) || typeof value.id !== 'string' || typeof value.version !== 'string' || typeof value.viewUrl !== 'string') throw new Error(`Publish failed: ${entry.text}`);
-    return { id: value.id, version: value.version, viewUrl: value.viewUrl };
+    return z.object({ id: z.string(), version: z.string(), viewUrl: z.string() }).parse(await call('publish', arguments_));
   }
   const first = await publish({ title: 'Dedupe following', dedupeKey: 'browser-follow', html: '<head></head><h1>First</h1>' });
   await page.goto(first.viewUrl);
   const next = await publish({ title: 'Dedupe following', dedupeKey: 'browser-follow', baseVersion: first.version, html: '<head></head><h1>Second</h1>' });
   await page.waitForURL(url => url.pathname.includes(next.version));
   assert.equal(await page.locator('h1').textContent(), 'Second', 'AC-056: changed dedupe publish notifies following views');
-  const metadata = await client.callTool({ name: 'update', arguments: { id: next.id, baseVersion: next.version, tags: ['metadata-only'] } });
-  assert.notEqual(metadata.isError, true, 'AC-057: metadata-only MCP update succeeds');
+  const metadata = z.object({ version: z.string() }).parse(await call('update', { id: next.id, baseVersion: next.version, tags: ['metadata-only'] }));
+  assert.equal(metadata.version, next.version, 'AC-057 AC-068: metadata-only native update retains version');
   assert.equal((await fixture.store.read(next.id)).meta.versions.length, 2, 'AC-057: metadata does not append content');
   verified.add('AC-057');
   console.log(`Viewer browser checks passed: ${[...verified].join(', ')}`);
 } finally {
-  if (connected) await client.close();
   await browser.close();
   sentinel.stop(true);
   await fixture.close();

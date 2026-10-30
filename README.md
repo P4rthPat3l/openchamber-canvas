@@ -4,7 +4,7 @@ A persistent project gallery for the charts, diagrams, reports, and interface mo
 
 ![The Canvas gallery and inspector](docs/images/gallery.png)
 
-Canvas is an OpenChamber extension plus a separate MCP server. The extension provides the gallery and the local viewer. The MCP server lets the agent publish, read, and update artifacts.
+Canvas is an OpenChamber extension with a native OpenCode plugin. The extension provides the gallery and the local viewer. The plugin lets the agent publish, read, and update artifacts. No separate MCP server is needed.
 
 ## What you get
 
@@ -36,22 +36,25 @@ The examples live in [`examples/`](examples/README.md) with publishing notes. Th
 
 ## Install
 
-Requirements: OpenChamber 2.5.1 or newer, Node 24 on the machine that runs OpenChamber, and the OpenCode CLI on the PATH for the one-command MCP setup.
+Requirements: OpenChamber 2.5.1 or newer, OpenCode 2.2.0 or newer, and Node 24 on the machine that runs OpenChamber.
 
 1. Open **Settings → Extensions → Add**.
 2. Paste the Git URL: `https://github.com/P4rthPat3l/openchamber-canvas`.
 3. Approve the `service` permission.
 4. Open **Canvas** on the right rail, then **Canvas → Setup**.
-5. Run the shown command, or paste the JSON into **Settings → MCP**:
+5. Copy the plugin configuration from Setup. Merge its entry into the `plugins` array in your user `~/.config/opencode/opencode.json` or project `opencode.json`. Keep your existing settings and plugin entries:
 
-   ```bash
-   opencode mcp add canvas --global -- node '/absolute/path/to/openchamber-canvas/mcp/server.js'
+   ```json
+   {
+     "$schema": "https://opencode.ai/config.json",
+     "plugins": ["/absolute/path/to/installed/canvas"]
+   }
    ```
 
-   Setup fills in the exact installed path. The MCP server starts on the first agent request.
-6. Use **Add sample prompt to chat** to start the MCP server, review the prompt, and send it.
+   Setup fills in this installation's exact package directory, not a JavaScript filename. OpenCode loads the built plugin from that package. Configuration changes reload automatically; use `/reload` if needed.
+6. Use **Add sample prompt to chat**, review the prompt, and send it to test the tools.
 
-The gallery works without the MCP server: you can browse, open, export, and copy artifacts. The agent cannot publish or revise until the MCP server is registered. The extension cannot register it for you.
+The gallery works without the OpenCode plugin: you can browse, open, export, and copy artifacts. The agent cannot publish or revise until the plugin is loaded. The extension does not change your OpenCode configuration, and the gallery does not guess whether a session has loaded its tools.
 
 ## Use it
 
@@ -72,11 +75,11 @@ Four parts share one store:
 - An **extension panel** lists artifacts and opens them.
 - An **extension service** reads the store, mints view URLs, and handles export and feedback.
 - A detached **viewer daemon** serves artifact HTML, the runtime API, pinned libraries, and live updates over loopback.
-- An **MCP server** gives the agent `publish`, `update`, `list`, `read`, `archive`, and `result`. OpenCode exposes them as `canvas_publish`, `canvas_update`, and so on.
+- A **native OpenCode plugin** registers `publish`, `update`, `list`, `read`, `archive`, and `result` under the `canvas` namespace. Effective tool names are `canvas_publish`, `canvas_update`, and so on. OpenCode can expose them through Code Mode as `tools.canvas.publish` and related calls.
 
-The extension asks for the `service` permission only. The MCP server is a separate Settings → MCP install.
+The extension asks for the `service` permission only. The user separately authorizes the OpenCode plugin through their plugin configuration. Tools use OpenCode's permission system and take project/session context from the invoking session.
 
-The viewer outlives an MCP restart, so an open artifact does not depend on the agent session staying alive. The browser panel renders the page; the viewer enforces the sandbox. Native annotation does not reach these sandboxed pages, so feedback and revision notes are the supported review path.
+The viewer outlives a plugin reload, so an open artifact does not depend on the agent session staying alive. The browser panel renders the page; the viewer enforces the sandbox. Native annotation does not reach these sandboxed pages, so feedback and revision notes are the supported review path.
 
 More detail: [feature document](docs/features/FEAT-001-openchamber-canvas.md), [platform research](docs/research/openchamber-extension-platform.md), and [gallery design](docs/design/canvas-gallery.md).
 
@@ -91,8 +94,8 @@ bun run test:browser
 bun run build
 ```
 
-- `bun test` currently passes 88 unit and integration tests.
-- `bun run test:browser` builds the distribution, tests the real panel and status entries in an opaque mock host, launches the bundled Node viewer/runtime/MCP, and checks the examples in light and dark themes. It needs Chrome at `/usr/bin/google-chrome`.
+- `bun test` covers operations, native registration, relocated packages without node_modules, store/viewer security, and service contracts. When `opencode` is on PATH, it also loads the package in an isolated real OpenCode server without a model request. That check is explicitly skipped when the CLI is absent.
+- `bun run test:browser` builds the distribution, tests the real panel and status entries in an opaque mock host, launches the bundled native plugin and Node viewer/runtime, and checks the examples in light and dark themes. It needs Chrome at `/usr/bin/google-chrome`.
 - `bun run build` writes the committed distribution files, including `viewer/build.json`, which pins the viewer/runtime/library build identity.
 - Browser test stores and screenshots stay under `/tmp/opencode`.
 

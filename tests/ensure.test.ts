@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { createViewerServer } from '../src/viewer/server';
 import { ArtifactStore } from '../src/store/index';
-import { ensureViewer, readViewerState, viewerStatus, restartViewer, mintViewUrl, notifyViewer } from '../src/viewer/ensure';
+import { ensureViewer, readViewerState, viewerStatus, restartViewer, mintViewUrl, notifyViewer, viewerBuild } from '../src/viewer/ensure';
 
 test('AC-063: compatible reuse, authenticated build replacement, and serialized startup', async () => {
   const root = await fs.mkdtemp('/tmp/opencode/canvas-ensure-');
@@ -28,6 +28,57 @@ test('AC-063: compatible reuse, authenticated build replacement, and serialized 
     await viewer.close();
     const current = await readViewerState(portFile);
     if (current && current.pid !== process.pid) await fetch(`http://127.0.0.1:${current.port}/shutdown`, { method: 'POST', headers: { authorization: `Bearer ${current.secret}` } });
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('AC-069 AC-070: cancelled cold startup stays serialized until its detached viewer is ready', async () => {
+  const root = await fs.mkdtemp('/tmp/opencode/canvas-startup-cancel-');
+  const entry = path.join(root, 'delayed-viewer.mjs');
+  const marker = path.join(root, 'spawns');
+  const release = path.join(root, 'release');
+  const states = path.join(root, 'states');
+  await fs.mkdir(states);
+  await fs.writeFile(entry, `
+    import * as fs from 'node:fs/promises';
+    import * as http from 'node:http';
+    await fs.appendFile(${JSON.stringify(marker)}, process.pid + '\\n');
+    for (;;) { try { await fs.access(${JSON.stringify(release)}); break; } catch { await new Promise(resolve => setTimeout(resolve, 10)); } }
+    const secret = 'startup-fixture-secret-with-32-characters';
+    const server = http.createServer((request, response) => {
+      if (request.headers.authorization !== 'Bearer ' + secret) { response.writeHead(401).end(); return; }
+      response.setHeader('content-type', 'application/json');
+      if (request.url === '/shutdown') { response.end('{}'); server.close(() => process.exit(0)); return; }
+      response.end(JSON.stringify({pid: process.pid, protocol: 2, build: ${JSON.stringify(viewerBuild())}}));
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const state = {schema: 1, pid: process.pid, port: server.address().port, secret, startedAt: new Date().toISOString()};
+    await fs.writeFile(${JSON.stringify(states)} + '/' + process.pid + '.json', JSON.stringify(state));
+    await fs.writeFile(process.env.CANVAS_VIEWER_PORT_FILE, JSON.stringify(state));
+  `);
+  const controller = new AbortController();
+  const options = { storeRoot: root, portFile: path.join(root, '.viewer.json'), viewerEntry: entry, timeoutMs: 3000 };
+  const first = ensureViewer({ ...options, signal: controller.signal }).then(() => 'completed', () => 'cancelled');
+  let second: Promise<Awaited<ReturnType<typeof ensureViewer>>> | undefined;
+  try {
+    for (let attempt = 0; attempt < 100 && !await Bun.file(marker).exists(); attempt++) await Bun.sleep(10);
+    expect(await Bun.file(marker).exists()).toBe(true);
+    controller.abort(new Error('Cancelled startup caller'));
+    second = ensureViewer(options);
+    await Bun.sleep(200);
+    await fs.writeFile(release, 'ready');
+    const ready = await second;
+    expect(await first).toBe('cancelled');
+    expect((await fs.readFile(marker, 'utf8')).trim().split('\n')).toHaveLength(1);
+    expect((await readViewerState(options.portFile))?.pid).toBe(ready.pid);
+    expect((await ensureViewer(options)).pid).toBe(ready.pid);
+  } finally {
+    await fs.writeFile(release, 'ready');
+    await Promise.allSettled([first, ...(second ? [second] : [])]);
+    for (const file of await fs.readdir(states)) {
+      const state = await readViewerState(path.join(states, file));
+      if (state) await fetch(`http://127.0.0.1:${state.port}/shutdown`, { method: 'POST', headers: { authorization: `Bearer ${state.secret}` } });
+    }
     await fs.rm(root, { recursive: true, force: true });
   }
 });

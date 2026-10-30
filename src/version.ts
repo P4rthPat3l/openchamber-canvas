@@ -6,8 +6,7 @@ const FALLBACK_VERSION = '0.0.0';
 const MAX_DEPTH = 4;
 
 /**
- * Source runs version.ts from `src/mcp` (two levels below the package root),
- * while bundles run from `mcp/`, `service/`, and `viewer/` (one level below).
+ * Source runs from `src/`; bundles run from `plugin/`, `service/`, and `viewer/`.
  * Walk up so both layouts read the same package.json.
  */
 export function versionFrom(startDir: string): string {
@@ -31,4 +30,4 @@ export function versionFrom(startDir: string): string {
   return FALLBACK_VERSION;
 }
 
-export const MCP_VERSION: string = versionFrom(path.dirname(fileURLToPath(import.meta.url)));
+export const CANVAS_VERSION: string = versionFrom(path.dirname(fileURLToPath(import.meta.url)));

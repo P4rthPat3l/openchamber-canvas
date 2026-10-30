@@ -324,6 +324,7 @@ async function withArtifactLock(lockDir, action, options) {
   await ensureDir(path3.dirname(lockDir));
   const startedAt = Date.now();
   for (;; ) {
+    options.signal?.throwIfAborted();
     try {
       await fs3.mkdir(lockDir, { mode: 448 });
       const owner = { pid: process.pid, at: new Date().toISOString() };
@@ -336,6 +337,7 @@ async function withArtifactLock(lockDir, action, options) {
       }
       break;
     } catch (error) {
+      options.signal?.throwIfAborted();
       if (errorCode(error) !== "EEXIST")
         throw error;
       await removeStaleLock(lockDir, options.staleMs);
@@ -346,6 +348,7 @@ async function withArtifactLock(lockDir, action, options) {
     }
   }
   try {
+    options.signal?.throwIfAborted();
     return await action();
   } finally {
     await fs3.rm(lockDir, { recursive: true, force: true });
@@ -362,7 +365,7 @@ function packageRoot() {
   for (let depth = 0;depth < 4; depth++) {
     if (path4.basename(directory) === "src")
       return path4.dirname(directory);
-    if (["mcp", "service", "viewer"].includes(path4.basename(directory)) && path4.basename(path4.dirname(directory)) !== "src")
+    if (["plugin", "service", "viewer"].includes(path4.basename(directory)) && path4.basename(path4.dirname(directory)) !== "src")
       return path4.dirname(directory);
     directory = path4.dirname(directory);
   }
@@ -852,15 +855,16 @@ class ArtifactStore {
     await ensureDir(this.trashRoot);
     await ensureDir(this.locksRoot);
   }
-  async create(input) {
+  async create(input, signal) {
     await this.ensureInit();
+    signal?.throwIfAborted();
     if (input.dedupeKey) {
       const key = sha256(Buffer.from(JSON.stringify([normalizeDirectory(input.directory), input.kind, input.dedupeKey.trim()])));
-      return withArtifactLock(path6.join(this.locksRoot, `dedupe-${key}.lock`), () => this.createLocked(input), this.lockOptions());
+      return withArtifactLock(path6.join(this.locksRoot, `dedupe-${key}.lock`), () => this.createLocked(input, signal), { ...this.lockOptions(), signal });
     }
-    return this.createLocked(input);
+    return this.createLocked(input, signal);
   }
-  async createLocked(input) {
+  async createLocked(input, signal) {
     const now = input.now ?? this.now();
     const title = normalizeTitle(input.title);
     const directory = normalizeDirectory(input.directory);
@@ -883,6 +887,7 @@ class ArtifactStore {
             if (input.baseVersion !== undefined)
               this.assertBaseVersion(current, input.baseVersion, "metadata");
             const meta = { ...current, title, tags: input.tags === undefined ? current.tags : tags, updatedAt: this.now().toISOString() };
+            signal?.throwIfAborted();
             await writeJsonAtomic(path6.join(resolveArtifactDir(this.root, existing.id), "meta.json"), meta);
             return { ...existing, meta, version: meta.currentVersion, contentChanged: false };
           }
@@ -893,13 +898,16 @@ class ArtifactStore {
             title,
             tags: input.tags,
             baseVersion: input.baseVersion
-          });
+          }, signal);
           return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true, contentChanged: true };
-        }, this.lockOptions());
+        }, { ...this.lockOptions(), signal });
       }
     }
+    signal?.throwIfAborted();
     const { id, artifactDir } = await this.allocateArtifact(title, now);
     try {
+      const rendering = await this.capture(normalizeLibraries(input.libraries));
+      signal?.throwIfAborted();
       const version = await this.writeVersion({
         artifactDir,
         kind,
@@ -909,7 +917,7 @@ class ArtifactStore {
         now,
         restoredFrom: null,
         existingVersions: [],
-        rendering: await this.capture(normalizeLibraries(input.libraries))
+        rendering
       });
       const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
       if (version.manifest.rendering)
@@ -944,16 +952,16 @@ class ArtifactStore {
       throw error;
     }
   }
-  async update(id, input) {
+  async update(id, input, signal) {
     await this.ensureInit();
     assertArtifactId(id);
     const lockDir = this.lockPath(id);
     return withArtifactLock(lockDir, async () => {
       const meta = await this.getMeta(id);
-      return this.updateLocked(id, meta, input);
-    }, this.lockOptions());
+      return this.updateLocked(id, meta, input, signal);
+    }, { ...this.lockOptions(), signal });
   }
-  async updateLocked(id, meta, input) {
+  async updateLocked(id, meta, input, signal) {
     const artifactDir = resolveArtifactDir(this.root, id);
     this.assertBaseVersion(meta, input.baseVersion, input.mode);
     if (input.mode === "metadata") {
@@ -965,11 +973,14 @@ class ArtifactStore {
         tags: input.tags === undefined ? meta.tags : normalizeTags(input.tags),
         updatedAt: this.now().toISOString()
       };
+      signal?.throwIfAborted();
       await writeJsonAtomic(path6.join(artifactDir, "meta.json"), next);
       return { id, version: meta.currentVersion, changedFiles: [], meta: next };
     }
     const now = this.now();
     const plan = await this.planUpdate(id, meta, input);
+    const rendering = input.mode === "restore" ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries);
+    signal?.throwIfAborted();
     const version = await this.writeVersion({
       artifactDir,
       kind: plan.kind,
@@ -979,7 +990,7 @@ class ArtifactStore {
       now,
       restoredFrom: plan.restoredFrom,
       existingVersions: meta.versions.map((entry) => entry.id),
-      rendering: input.mode === "restore" ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries)
+      rendering
     });
     const summary = summarizeVersion(version.id, version.manifest, version.totalBytes);
     if (version.manifest.rendering)
@@ -1166,11 +1177,11 @@ class ArtifactStore {
     artifacts.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     return artifacts;
   }
-  async archive(id, archived) {
+  async archive(id, archived, signal) {
     return this.updateMeta(id, (meta, now) => ({
       ...meta,
       archivedAt: archived ? now.toISOString() : null
-    }));
+    }), signal);
   }
   async setFavorite(id, favorite) {
     return this.updateMeta(id, (meta) => ({ ...meta, favorite }));
@@ -1650,7 +1661,7 @@ class ArtifactStore {
   async capture(libraries) {
     return this.renderingSource ? captureRendering(this.root, this.renderingSource, libraries) : undefined;
   }
-  async updateMeta(id, mutate) {
+  async updateMeta(id, mutate, signal) {
     await this.ensureInit();
     assertArtifactId(id);
     const artifactDir = resolveArtifactDir(this.root, id);
@@ -1658,9 +1669,10 @@ class ArtifactStore {
     return withArtifactLock(lockDir, async () => {
       const meta = await this.getMeta(id);
       const next = mutate(meta, this.now());
+      signal?.throwIfAborted();
       await writeJsonAtomic(path6.join(artifactDir, "meta.json"), next);
       return next;
-    }, this.lockOptions());
+    }, { ...this.lockOptions(), signal });
   }
   async readFileAt(versionDir, filePath) {
     try {

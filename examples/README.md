@@ -17,11 +17,11 @@ Publish from the project root, keeping project ownership separate from the sourc
 }
 ```
 
-Use `canvas.publish`. Omit `libraries` for the diagram and mockup. Never load scripts or styles from a CDN. `window.canvas` provides storage and feedback in the sandbox; browser `localStorage` is unavailable. Do not put secrets or real customer information in example content.
+Use the native `canvas_publish` tool, or `tools.canvas.publish` through OpenCode Code Mode. The plugin supplies the calling session's directory when you omit `directory`. Omit `libraries` for the diagram and mockup. Never load scripts or styles from a CDN. `window.canvas` provides storage and feedback in the sandbox; browser `localStorage` is unavailable. Do not put secrets or real customer information in example content.
 
 Use `data-theme` for light/dark appearance. Keep a textual equivalent for charts and diagrams. Generate the drawing, labels, table, and details from the same data rather than maintaining separate copies. Split dense graphs into focused views and keep a complete table as the reference.
 
-To revise, call `canvas.read`, edit the source file, then call `canvas.update` with `filePath` and the returned `baseVersion`. A metadata-only update needs only `id`, `baseVersion`, and `title` or `tags`. Changed-content dedupe publishing also needs `baseVersion`.
+To revise, call `canvas_read`, edit the source file, then call `canvas_update` with `filePath` and the returned `baseVersion`. A metadata-only update needs only `id`, `baseVersion`, and `title` or `tags`. Changed-content dedupe publishing also needs `baseVersion`.
 
 Feedback is saved, not automatically sent to an agent. The gallery's Add feedback to chat action puts selected records in the composer for review. An explicitly opened version is a fixed snapshot; opening the artifact without a version follows new revisions.
 

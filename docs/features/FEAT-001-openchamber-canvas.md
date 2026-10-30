@@ -3,23 +3,23 @@ doc_type: feature
 feature_id: FEAT-001
 title: OpenChamber Canvas
 status: active
-implementation_status: in_progress
+implementation_status: shipped_unverified
 owner: Parth
 created: 2026-10-23
-last_updated: 2026-10-25
+last_updated: 2026-10-30
 last_verified_commit: null
-version: 1.0.0
+version: 2.0.0
 tags:
   - openchamber
   - extension
-  - mcp
+  - opencode-plugin
   - artifacts
   - gallery
   - live-refresh
   - feedback
 dependencies:
   - "@openchamber/sdk"
-  - "@modelcontextprotocol/sdk"
+  - "@opencode/plugin"
 related_features: []
 ---
 
@@ -29,38 +29,40 @@ related_features: []
 
 The [security and revision hardening](#37-security-and-revision-hardening) is built in package 0.2.0. AC-050 through AC-065 define its behavior. Verification covers the uncommitted working tree, not a new Git commit; installed-app acceptance is pending.
 
+The [native OpenCode plugin replacement](#38-native-opencode-plugin-replacement) is built in package 0.3.0. It replaces MCP entirely. The updated snapshot, implementation map, contracts, installation instructions, and §38 describe the new code. Earlier phase plans, MCP acceptance criteria and probe records are historical design evidence, not a second supported integration. Installed OpenChamber acceptance remains pending.
+
 ## 1. Feature Snapshot
 
 | Field | Details |
 |---|---|
 | Document status | Active |
-| Implementation status | 0.2.0 security and revision hardening built; installed acceptance pending |
+| Implementation status | 0.3.0 native plugin built; installed acceptance pending |
 | Owner | Parth |
-| Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, MCP server, browser panel |
+| Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, native plugin, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
 | Outcome | The artifact is stored, versioned, opened in the browser panel, and kept current |
-| Entry points | Rail panel, full-screen page, Work Status section, chat tool card, MCP tools `canvas_*` |
+| Entry points | Rail panel, full-screen page, Work Status section, chat tool card, native `canvas_*` tools |
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
-| External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode MCP client |
+| External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode plugin host |
 | Feature flag | None in v1 |
-| Last verified | 88 unit/integration tests pass. Typecheck and lint pass. The browser command passes against the actual gallery/status entries, bundled Node viewer/runtime/MCP, and light/dark authoring examples. It covers document isolation, fixed/following views, feedback handoff, drafts, search, and setup. The design detector reports no findings. Independent reviews received fixes and regression tests. Installed-app acceptance is pending. |
+| Last verified | Typecheck and the browser suite pass against this working tree. Native regressions include relocated packages, session lookup, cancellation, and actual OpenCode cold-start viewing. The browser suite covers sandboxing, fixed/following views, drafts, feedback, and native Setup at eight widths in both themes. Model selection, permission rejection, native tool cards, and desktop routing remain manual acceptance. No verified commit is claimed for uncommitted code. |
 
 ### At a Glance
 
 `openchamber_render` draws a page inside a chat message. It is bounded by the message width, scrolls away, keeps no history, and cannot receive a structured answer beyond `awaitAnswer`. This feature moves visual output into a gallery and a browser view that persist.
 
-The agent publishes through an MCP tool. A local viewer daemon serves the stored files on loopback. The gallery lists artifacts by project, opens the selected one in OpenChamber's browser panel, and shows new versions and user feedback.
+The agent publishes through a native OpenCode tool. A local viewer daemon serves the stored files on loopback. The gallery lists artifacts by project, opens the selected one in OpenChamber's browser panel, and shows new versions and user feedback.
 
 The feature is built from four parts:
 
 - An extension panel that lists artifacts and opens them.
 - An extension service that reads the store and proxies viewer requests.
 - A detached viewer daemon that serves artifact files and runtime APIs.
-- A standalone MCP server that writes the store and gives the agent tools.
+- An OpenCode server plugin that registers tools and invokes Canvas operations.
 
-Both the MCP and the service use the same viewer daemon and the same on-disk store. No OpenChamber core change is required.
+Both the plugin and the service use the same viewer daemon and the same on-disk store. No OpenChamber core change is required.
 
-The store, view policy, viewer server, runtime, pinned library set, MCP server, extension service, and gallery panel exist. The SDK UI migration is built; installed acceptance is pending.
+The store, view policy, viewer server, runtime, pinned library set, native plugin, extension service, and gallery panel exist. Installed acceptance is pending.
 
 ### Design direction
 
@@ -118,7 +120,7 @@ The user can reopen any previous artifact, switch between "This project" and "Al
 | Organization | Current project is the default filter and all projects are one click away | AC-002 and AC-003 |
 | Isolation | Artifact code cannot reach the OpenChamber API or the open network | SEC-001, SEC-011, AC-007 |
 | Kinds | HTML and bundles work in v1; Markdown, image, and PDF work in v1.1 | AC-018 to AC-021 |
-| Install | A new user can install the extension and MCP server from the setup page | Manual acceptance |
+| Install | A new user installs the extension and registers its package directory as an OpenCode plugin using Setup's JSON | AC-073 manual acceptance |
 
 No analytics are added. Success is measured by the acceptance run and local logs.
 
@@ -126,7 +128,7 @@ No analytics are added. Success is measured by the acceptance run and local logs
 
 ### Included
 
-- Publishing artifacts from an agent through MCP.
+- Publishing artifacts from an agent through the native OpenCode plugin.
 - Artifact kinds: single-file HTML in v1; bundles in v1; Markdown, image, and PDF in v1.1.
 - Version history for one artifact, including restore and compare.
 - A project filter and an all-projects view.
@@ -254,7 +256,7 @@ The extension asks for one permission, `service`, which the user approves once a
 flowchart LR
     User[User]
     Agent[OpenCode agent]
-    MCP[Canvas MCP]
+    MCP[Native Canvas plugin]
     Store[(Artifact store)]
     Panel[Gallery panel]
     Service[Canvas service]
@@ -281,7 +283,7 @@ flowchart LR
     Composer -->|user sends| Agent
 ```
 
-The agent and the gallery reach the same store through separate processes. The MCP writes. The service reads and proxies. The viewer daemon serves HTML and runtime APIs. The browser panel renders.
+The native plugin in OpenCode and the gallery's service reach the same store. The plugin writes, while the service reads and proxies. The detached viewer serves HTML and runtime APIs. The browser panel renders. The diagram retains its historical MCP node identifier only; its label and role now describe the plugin.
 
 ### Platform Facts
 
@@ -302,7 +304,7 @@ These behaviors were checked by reading the installed build and the SDK package.
 - The browser panel annotation tools are desktop-only.
 - The browser panel can read the clipboard only on the literal `localhost` hostname, not on `127.0.0.1` or `[::1]`.
 - `contributes.tools` changes how a tool call is drawn. It does not add a tool.
-- An extension cannot register an MCP server or an agent tool.
+- An extension manifest cannot register an executable agent tool. A separately registered OpenCode plugin can add native tools directly.
 
 The full reference is [openchamber-extension-platform.md](../research/openchamber-extension-platform.md).
 
@@ -442,7 +444,7 @@ An artifact is published once and updated in place. Each update appends an immut
 
 ### Existing Artifacts
 
-Phases 1 to 5, 2026-10-23:
+Implementation inspected in the uncommitted 0.3.0 working tree:
 
 | Path | What it does | Verification |
 |---|---|---|
@@ -459,30 +461,32 @@ Phases 1 to 5, 2026-10-23:
 | `src/viewer/server.ts` | `/health`, `/mint`, `/notify`, `/view`, `/events`, `/api`, `/libraries`, port file, idle exit | `tests/viewer.test.ts` |
 | `src/viewer/runtime/canvas.ts` | `window.canvas` storage, feedback, data, refresh, theme, live update | Browser e2e |
 | `src/viewer/ensure.ts` | Detached spawn, port file discovery, mint, notify | `tsc`, built-viewer e2e |
-| `src/mcp/source.ts` | `filePath` and `directoryPath` readers, external-reference scan | `tests/mcp.test.ts` |
-| `src/mcp/heartbeat.ts` | `.mcp-heartbeat.json` every 60 seconds | `tests/mcp.test.ts` |
-| `src/mcp/server.ts` | Six MCP tools, validation, viewer integration | `tests/mcp.test.ts`, built MCP e2e |
-| `src/service/routes.ts` | Service HTTP API, view URLs, feedback, export, MCP status | `tests/service.test.ts` |
+| `src/agent/source.ts` | Project-confined file/folder snapshots and external-reference scan | `tests/agent.test.ts` |
+| `src/agent/schemas.ts`, `src/agent/operations.ts` | Payload validation and six operations, store/viewer integration | `tests/agent.test.ts` |
+| `src/plugin/index.ts` | Native registration, permission actions, session context and cleanup | `tests/plugin.test.ts` |
+| `src/version.ts` | Source and bundled package version lookup | `tests/version.test.ts` |
+| `src/service/routes.ts` | Service HTTP API, view URLs, feedback, export and installed plugin path | `tests/service.test.ts` |
 | `src/service/main.ts` | Host service entry, env, signals | `tests/service.test.ts`, built service e2e |
 | `panel/index.html`, `panel/main.ts` | Gallery: list and grid, project/all/archived/trash scopes, detail, versions, actions, setup, remote warning | `tsc`, `bun run build`, manual acceptance |
-| `status/index.html`, `status/main.ts` | Work Status section with the artifact count, latest title, and MCP dot | `tsc`, `bun run build`, manual acceptance |
-| `package.json` `openchamber` block, `docs/mcp.example.json` | Extension manifest and MCP config template | `parseManifestJson`, manual install |
+| `status/index.html`, `status/main.ts` | Work Status section with artifact count and latest title | `tests/browser/panel.browser.ts` |
+| `package.json`, `docs/plugin.example.json` | Extension manifest, built plugin export and V2 plugin config template | `tests/plugin.test.ts`, manual install |
 | `tests/viewer.test.ts` | HTTP, SSE, feedback, state, bundle asset, library injection | `bun test` |
-| `tests/mcp.test.ts` | Stdio tools, publish, read, update, result, archive, file and folder sources | `bun test` |
-| `tests/service.test.ts` | Health, list, view URL error, feedback, archive, restore, trash, export, MCP status | `bun test` |
+| `tests/agent.test.ts` | Operations, source snapshots, errors and queued cancellation | `bun test` |
+| `tests/plugin.test.ts`, `tests/fixtures/plugin-host.mjs`, `tests/fixtures/native-observer.mjs` | Built native entry, relocation, real OpenCode registration and cold start | `bun test` |
+| `tests/service.test.ts` | Health, plugin path, removed MCP routes, list, feedback, restore, trash and export | `bun test` |
 | `tests/feedback.test.ts` | Feedback and runtime state units | `bun test` |
 | `src/viewer/rendering.ts` | Capture, verify, confine, and load shared immutable runtime/library snapshots | `tests/rendering.test.ts` |
 | `tests/ensure.test.ts` | Daemon compatibility, serialized restart, legacy refusal, and request deadlines | `bun test` |
-| `tests/browser/viewer.browser.ts`, `tests/browser/viewer-fixture.ts` | Real bundled Node viewer/runtime/MCP, document isolation, updates, feedback, and snapshots | `bun run test:browser` |
+| `tests/browser/viewer.browser.ts`, `tests/browser/viewer-fixture.ts` | Real bundled native plugin and Node viewer/runtime, isolation, updates, feedback and snapshots | `bun run test:browser` |
 | `examples/`, `tests/browser/examples.browser.ts` | Single-source chart/diagram and form mockup, light/dark browser coverage | `bun run test:browser` |
 
 HTML and bundle validation lives in `src/store/index.ts`. The `src/kinds` adapters are deferred until Markdown, image, and PDF exist. Splitting now would add an abstraction with one caller.
 
 None for v1. Markdown, image, PDF, and data kinds are v1.1 or v2. The `src/kinds` adapters and the `tests/viewer.spec.ts` browser suite are deferred.
 
-### Planned Artifacts
+### Original phase inventory
 
-The store, policy, viewer, build, MCP, service, and UI rows are implemented. The `src/kinds` row is deferred until a second kind needs its own adapter.
+This table records the original phase plan, including removed MCP paths. Use Existing Artifacts above and §38 for the 0.3.0 implementation. The `src/kinds` row remains deferred.
 
 | Layer | Responsibility | Planned path | Main symbol | Change type |
 |---|---|---|---|---|
@@ -522,22 +526,22 @@ The store, policy, viewer, build, MCP, service, and UI rows are implemented. The
 
 | Path or area | Classification | Rule |
 |---|---|---|
-| `panel/main.js`, `status/main.js`, `service/main.js`, `mcp/server.js`, `viewer/server.js`, `viewer/runtime/canvas.js` | Generated | Shipped built because OpenChamber never compiles extensions |
+| `panel/main.js`, `status/main.js`, `service/main.js`, `plugin/index.js`, `viewer/server.js`, `viewer/runtime/canvas.js` | Generated | Shipped built because OpenChamber never compiles extensions |
 | `viewer/libraries/` | Generated and pinned | Built by `scripts/build.ts` from the exact npm versions; `manifest.json` records bytes and SHA-256; the viewer verifies each file at startup |
 | `viewer/build.json` | Generated | Build identity hashes viewer, runtime, and library manifest bytes; never hand-edit |
 | `src/viewer/policy.ts` | Restricted | Changes need a security review and the SEC-001 test |
 | `src/viewer/runtime/canvas.ts` | Restricted | Runs inside the artifact origin; no secrets |
-| `src/mcp/source.ts` | Restricted | Source paths stay inside the project; changes need traversal tests |
+| `src/agent/source.ts` | Restricted | Source paths stay inside the project; changes need traversal tests |
 | `src/store/paths.ts` | Restricted | Changes need traversal tests |
 | `~/.config/openchamber/artifacts` | User data | Never committed to the repository |
 
 ## 12. Contracts
 
-### MCP Tools
+### Native OpenCode tools
 
 Status: **Planned**
 
-The MCP server is named `canvas`. OpenCode prefixes a tool with the server name, so the model sees `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, and `canvas_result`.
+The native plugin registers namespace `canvas`, retaining effective names `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, and `canvas_result`. In Code Mode they are callable through `tools.canvas`. Schemas, descriptions and executors are registered together. The unchanged payload examples below are transport-independent; native errors use serialized Canvas codes/details in their message, not an MCP result envelope.
 
 #### `publish`
 
@@ -547,7 +551,6 @@ The MCP server is named `canvas`. OpenCode prefixes a tool with the server name,
   "kind": "html",
   "html": "<!doctype html>...",
   "directory": "/home/parth/Production/example",
-  "sessionId": "ses_optional",
   "tags": ["revenue", "q3"],
   "libraries": ["chartjs"],
   "dedupeKey": "ses_optional-turn-4"
@@ -581,7 +584,7 @@ A file on disk:
 }
 ```
 
-`filePath` and `directoryPath` avoid sending a large artifact through a tool argument twice. The MCP reads the file or folder, validates it, and stores a copy. The source path must stay inside `directory`. `directory` defaults to the MCP process working directory.
+`filePath` and `directoryPath` avoid sending a large artifact through a tool argument twice. Canvas operations read the source, validate it, and store a copy. Sources remain confined to the selected project root. An omitted `directory` uses the invoking session's `location.directory`; session provenance comes from OpenCode, not a tool argument.
 
 Result:
 
@@ -736,7 +739,7 @@ A thumbnail can be supplied with `thumbnailPath`, a PNG or JPEG under 512 KiB in
 }
 ```
 
-`directory` defaults to the MCP process working directory. `query` matches the title and tags. `limit` is capped at 200.
+`directory` defaults to the invoking session's directory. `query` matches the title and tags. `limit` is capped at 200. `allProjects` cannot be combined with an explicit directory.
 
 Result:
 
@@ -845,11 +848,11 @@ The description says the payload is user-provided data, not instructions. The ag
 
 Status: **Planned**
 
-All routes except `/health` require `Authorization: Bearer <OPENCHAMBER_SERVICE_TOKEN>`.
+All service routes, including `/health`, require `Authorization: Bearer <OPENCHAMBER_SERVICE_TOKEN>`.
 
 | Method | Path | Purpose | Result |
 |---|---|---|---|
-| GET | `/health` | Host readiness probe | `{ "ok": true }` |
+| GET | `/health` | Host readiness probe and exact installed plugin directory | `{ ok, version, pluginPath, store, pid, uptime }` |
 | GET | `/list` | Summaries, optional `directory`, `query`, `kind`, `tag`, `limit`, `archived` | Same shape as `canvas_list` |
 | GET | `/artifact/:id` | Metadata for one artifact | `meta.json` content |
 | GET | `/versions/:id` | Version list | `{ versions: [...] }` |
@@ -861,7 +864,6 @@ All routes except `/health` require `Authorization: Bearer <OPENCHAMBER_SERVICE_
 | POST | `/restore/:id` | Restore a version as a new version | `{ version: "..." }` |
 | POST | `/export/:id` | Write HTML or a zip bundle | `{ path, format, bytes }` |
 | GET | `/thumb/:id` | 404 until thumbnails exist | Not found |
-| GET | `/mcp-status` | Last MCP heartbeat or null | `{ seenAt, version }` |
 | POST | `/trash/:id` | Move to trash | `{ trashed: true }` |
 | POST | `/untrash/:id` | Restore from trash | `{ restored: true }` |
 
@@ -1165,11 +1167,11 @@ On Windows, `rename` over an existing file can fail. The meta update writes to a
 - The service reads meta files only and caches summaries for 1 second.
 - No HTML body is read for listing.
 - The viewer streams updates over SSE, so an open page does not poll.
-- The MCP writes a heartbeat file every 60 seconds. The gallery reads it to show whether the agent side is connected.
+- There is no agent heartbeat in 0.3.0. Setup provides plugin registration instructions and a reviewed test prompt rather than a guessed connection state.
 
 ## 14. Business Rules
 
-No test exists yet. Every rule below is untested until Phase 1 and is marked with its planned test.
+These stable rules originated in the initial phase plan. The native integration replaces MCP-specific enforcement with `src/agent/operations.ts` and `tests/agent.test.ts`. BR-030 is retired by AC-071/AC-072. Later security/revision criteria tighten the original base-version and feedback wording.
 
 | Rule ID | Status | Rule | Enforcement point | Test reference |
 |---|---|---|---|---|
@@ -1668,15 +1670,15 @@ bun test
 bun run build
 ```
 
-Browser-level runtime checks are a manual headless Chrome e2e for now. `tests/viewer.spec.ts` with Playwright is planned.
+Run `bun run test:browser` for the actual bundled panel/status, native plugin, viewer/runtime, and authoring examples. The old `tests/viewer.spec.ts` plan is replaced by `tests/browser/viewer.browser.ts`.
 
 ### Manual Acceptance Run
 
 1. Install the extension from its folder.
 2. Approve `service`.
-3. Add the MCP server in Settings, MCP.
-4. Enable the agent web tool in Settings, General, OpenChamber Tools.
-5. Open the gallery setup page and confirm the service is ready and the MCP heartbeat is fresh.
+3. Merge the installed Canvas package directory into OpenCode V2's `plugins` array. Remove the old Canvas MCP entry if upgrading.
+4. Enable an agent browser tool if automatic opening is wanted.
+5. Open Setup, confirm the service path, compose the sample prompt, review it and send it. Check native tool discovery, permission rejection and native chat-card presentation. These are not proven by direct executor tests.
 6. Ask the agent for a chart with an inline script.
 7. Confirm the browser panel opens and the chart draws.
 8. Switch the gallery to All projects and reopen an older artifact.
@@ -2181,6 +2183,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-23 | 0.11.3 | Library quick open: an Open button beside the artifact count acts on the selected row, and double-clicking a row opens it, both in the 720px and full-screen layouts (0.1.5) | In progress | Parth |
 | 2026-10-24 | 0.11.4 | One-command MCP setup: the Setup page shows and copies `opencode mcp add canvas --global -- node '<path>'`, which writes the v2 entry the registration check already accepts; README install steps use it (0.1.6) | In progress | Parth |
 | 2026-10-24 | 0.11.5 | Removed the list tooltip that advertised double-click in the rail, where the first click opens the inspector instead (0.1.7) | In progress | Parth |
+| 2026-10-30 | 2.0.0 | Package 0.3.0 replaces MCP with a native OpenCode plugin, session-derived context, cancellation-aware store locks, cold-start runtime handling, simplified Setup and real-host regressions. Installed-app acceptance remains pending | Inferred | Parth |
 
 ## 31. Related Resources
 
@@ -2316,10 +2319,10 @@ This section answers the practical question: how does OpenChamber see the extens
 |---|---|---|---|---|
 | Gallery panel | Settings, Extensions | OpenChamber extension host | `service` | The rail UI, the page, the status section |
 | Extension service | Declared in the manifest | OpenChamber host on first request | `service` (full user access) | Store reads, view URL minting, export, feedback |
-| MCP server | Settings, MCP | OpenCode | OpenCode tool permissions | `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, `canvas_result` |
+| Native plugin | User or project V2 `plugins` configuration | OpenCode 2.2.0+ | OpenCode tool permission actions | `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, `canvas_result` |
 | Chat tool card | Extension manifest | OpenChamber chat | None | A Canvas header, icon, title, and Markdown output |
 
-The first two ship in one package. The MCP is a separate install. The tool card only changes how the MCP calls look.
+The panel, service and built plugin ship in one package. OpenChamber loads the extension; OpenCode separately loads its directory as a plugin. The tool card changes presentation only and still needs installed-app verification for native calls.
 
 ### Install checklist
 
@@ -2327,25 +2330,23 @@ The first two ship in one package. The MCP is a separate install. The tool card 
 2. Install the folder or git URL in Settings, Extensions.
 3. Approve the service capability.
 4. Open the Canvas panel, Setup tab.
-5. Copy the MCP JSON into Settings, MCP.
-6. Enable the agent web tool if auto-open is wanted.
-7. Click Check connection.
-8. Ask the agent to publish a test artifact.
+5. Merge Setup's package-directory entry into your existing OpenCode `plugins` array.
+6. Enable an agent browser tool if auto-open is wanted.
+7. Use `/reload` if the tools have not appeared after configuration reload.
+8. Compose Setup's sample prompt, review it, and send it. Check discovery, permission behavior, and opening in the intended session.
 
-### MCP JSON
+### Plugin JSON
 
 ```json
 {
-  "canvas": {
-    "type": "local",
-    "command": ["node", "/absolute/path/to/openchamber-canvas/mcp/server.js"]
-  }
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["/absolute/path/to/installed/canvas"]
 }
 ```
 
-Only add `environment.CANVAS_STORE` when both the MCP and the service use the same custom store. The normal path is the default store or `~/.config/openchamber/canvas.json`.
+Use the exact installed package directory shown by the service, not `plugin/index.js`. The default store is `~/.config/openchamber/artifacts`. If overriding `CANVAS_STORE`, the plugin and service must agree on the same store; configuring a new store is outside this migration.
 
-A project-scoped server is possible in Settings, MCP. The personal scope is simpler for a first install.
+A project-scoped plugin is available only where its configuration applies. User configuration is simpler when Canvas should work across projects. Preserve unrelated plugin/configuration entries.
 
 ### Other extension surfaces
 
@@ -2375,26 +2376,24 @@ A project-scoped server is possible in Settings, MCP. The personal scope is simp
 - Git install for users, with a version bump for updates.
 - Zip install for a one-off.
 - Community catalog listing when stable. The 2.5.1 Extensions page has a Browse button.
-- The MCP stays a manual Settings, MCP step. Do not edit `opencode.json` from the extension.
+- Plugin registration is a user-managed V2 configuration step. Do not edit `opencode.json` from the extension or plugin.
 
 ### Setup page
 
 The gallery's Setup tab is the install surface. It shows:
 
-- Extension status and approved capabilities.
-- Store path and size.
-- Service status.
-- MCP heartbeat and last tool call.
-- The exact MCP JSON with a Copy button.
-- The `AGENTS.md` snippet.
-- A Test artifact button that publishes a sample through the service.
-- A link to the research docs.
+- Extension-service status and store label.
+- Exact installed plugin JSON and package path, with SDK copy controls.
+- A reminder that the gallery cannot certify session tool availability.
+- A sample prompt composed into chat for review, never sent automatically.
+- Viewer compatibility and authenticated restart for known-protocol daemons.
+- Loading, delayed-request guidance, and service failure/retry without stale copy/restart actions.
 
-This reduces the most common failure: the extension is installed but the MCP is not, or the MCP points at the wrong file.
+No config scanner or agent heartbeat remains. A successful sample in the intended chat is the user-visible confirmation that the native tools loaded.
 
-### Folder and CLI fallback
+### Gallery without agent tools
 
-If the user does not want an MCP server, the service can still publish a sample and browse existing artifacts. The agent can write HTML into a project folder and the user can publish it from the gallery's "Add from file" action. This is a fallback, not the primary path. It keeps the gallery useful before the MCP is configured.
+The gallery can browse, reopen, export, restore and organize existing artifacts before the native plugin is registered. Publication and agent revision require the plugin. The gallery does not claim an unimplemented Add from file action or publish a service-side sample.
 
 ## 34. Competitive Reference
 
@@ -2551,3 +2550,127 @@ Every test added for this proposal must name its criterion ID. Paths marked Plan
 | Installed app differs from the browser host fixture | Automated runs exercise built entries and a real viewer. Report installed-app acceptance separately; do not edit the installed extension or configuration to manufacture a pass. |
 
 Verification uses `bun run typecheck`, `bun run lint`, `bun test`, `bun run test:browser`, then `bun run build`. Inspect desktop and rail layouts together once, fix the observed issues in a batch, then perform one confirmation pass. Tests, daemon probes, and example publication use isolated stores under `/tmp/opencode`, not the user's artifact store. Preserve the pre-existing research-note change. No commit, push, installation, or configuration change is authorized by this plan alone.
+
+## 38. Native OpenCode plugin replacement
+
+Status: Inferred. The approved change is implemented in the uncommitted 0.3.0 working tree. Installed OpenChamber acceptance AC-073 remains unverified. This is a breaking installation change, not a second agent integration.
+
+### Outcome and scope
+
+Users install the existing OpenChamber gallery and register its package directory as an OpenCode V2 plugin. Agents retain publish, update, list, read, archive, and result operations. There is no Canvas MCP server, stdio adapter, or MCP dependency in the resulting release. Stored artifacts, versions, feedback, rendering snapshots, and the viewer protocol do not need migration.
+
+The extension still requests only `service`. The OpenCode plugin runs as user-installed server code, with OpenCode's tool permission handling. Neither installation writes OpenCode or OpenChamber configuration automatically. The README remains aimed at fresh installs; a short separate upgrade note explains removal of the old MCP entry for existing installations.
+
+No new authoring features, artifact quality reports, annotation picker, app scaffolder, public links, or gallery redesign are included. The earlier comparison documents in `reports/` and `research_notes/` are unrelated, untracked research and must remain untouched.
+
+### Evidence and architecture probes
+
+Inspected tracked source at HEAD `8da1bda`; untracked comparison reports were present. `last_verified_commit` remains null because this is a proposed change and the repository is not clean.
+
+- The installed host plugin at `~/.config/openchamber/agent-tool/openchamber-agent-tool/index.js` registers tools with `ctx.tool.transform`. The [OpenCode V2 plugin tools guide](https://opencode.ai/v2/docs/build/plugins/server#tools) documents the same API.
+- A disposable directory package with a default plugin export was loaded by the actual bundled OpenCode `2.2.0` server. Its `canvas_probe` namespace registered effective name `canvas_probe_inspect`, with Code Mode enabled.
+- Its registered executor resolved the session through `ctx.session.get({ sessionID })` and obtained `session.location.directory`. OpenCode's tool context has the session ID and cancellation signal, not a process-specific project working directory. The production plugin must not substitute `process.cwd()` or a cached setup location for the calling session.
+- Source inspection of the local OpenCode checkout confirms that session creation stores the actual invocation directory in `location.directory` and computes `subpath` relative to the project directory for indexing. The plugin uses `session.location.directory` directly; appending `subpath` would duplicate nested path segments. The runner also checks its active location against `session.location.directory` before a turn.
+- A persistent isolated server was necessary to observe completion. The first registry request returned an empty list while plugins loaded; a subsequent request showed the plugin active. Automated installed-package checks must wait for the expected plugin state.
+- The probe used an isolated home, configuration, database, cache, and state under `/tmp/opencode`, made no model requests, and shut down its own server. Probe source and runtime files are removed before approval. No live configuration or user artifact store was changed.
+- The published `@opencode/plugin@2.2.0` types match this runtime. Use it for development typing, with no required runtime SDK import in the built local plugin. Zod already supplies operation validation; do not duplicate schemas by hand.
+
+The original probe established native registration, packaging, namespacing, and session lookup. Subsequent automated tests exercise actual OpenCode cold-start viewing, relocated built packages, and the operation/store/viewer regressions. Installed OpenChamber acceptance remains separate.
+
+Independent review reproduced two failures within AC-069/AC-070. The first actual-host test had used a missing viewer and therefore missed that OpenCode's compiled Bun executable needs `BUN_BE_BUN=1` to run the viewer script; Node-only tests masked it. A strengthened real-host cold-start regression failed with a null view URL before the launcher fix. Three queued-mutation regressions also failed before cancellation reached store locks. The store now accepts an optional invocation signal for create/update/archive, checks it while waiting and before mutation, and retains the existing atomic-commit boundary. These changes add no storage migration, viewer protocol, or public artifact feature.
+
+### Proposed data and control flow
+
+```mermaid
+sequenceDiagram
+    participant Agent as OpenCode agent
+    participant Plugin as Canvas OpenCode plugin
+    participant Session as OpenCode session API
+    participant Operations as Canvas operations
+    participant Store as Existing artifact store
+    participant Viewer as Existing viewer daemon
+    Agent->>Plugin: canvas operation with validated input
+    Plugin->>Session: Read invoking session location
+    Session-->>Plugin: Directory and session ID
+    Plugin->>Operations: Input, trusted call context, cancellation
+    Operations->>Store: Read or atomically mutate
+    Operations->>Viewer: Ensure, mint URL, notify when content changed
+    Plugin-->>Agent: JSON text result or actionable error
+```
+
+The plugin registers a `canvas` namespace and six tools, preserving effective names `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, and `canvas_result`. It resolves context for each invocation rather than at plugin setup. An explicit directory remains available for deliberate cross-project publication/listing; relative sources stay confined to the selected root. Session provenance comes from the invocation, not model-supplied `sessionId`.
+
+The operations module owns the existing payload validation, source resolution, store calls, and viewer integration. It does not register tools or start a transport. Successful results travel in the native plugin's text `content`; structured failures retain their codes and useful details. Do not return a native `output` field without an output schema. An unavailable viewer after a successful write returns a stored artifact plus warnings, not a false rollback.
+
+Cancellation is checked before mutation, during lock acquisition, and after acquisition before writing. It reaches session/viewer requests. A completed atomic store mutation is not undone when a later viewer request is cancelled. Once a detached viewer has spawned, startup stays serialized through readiness or timeout even if its first caller cancels. The cancelled caller may wait for that bounded startup before receiving its cancellation. The shared viewer is not killed.
+
+### Native implementation map
+
+The paths introduced by the approved plan now exist and are listed in §11. The table below retains the migration mapping. Source paths in its middle column are the removed implementation, not current entry points.
+
+| Area | Existing source | Planned destination or change |
+|---|---|---|
+| Tool operations and validation | `src/mcp/server.ts` | `src/agent/operations.ts`, `src/agent/schemas.ts`; no transport or automatic process startup |
+| Source snapshots | `src/mcp/source.ts` | `src/agent/source.ts`; preserve confinement and size limits |
+| Native registration | None | `src/plugin/index.ts`, built `plugin/index.js`; default export, SDK types, namespaced tools, per-call context |
+| Package identity | `src/mcp/version.ts` | `src/version.ts`; service/plugin/bundled viewer paths all resolve the package version |
+| Setup and status data | `src/service/mcp-registration.ts`, MCP routes in `src/service/routes.ts` | Remove config parsing and MCP heartbeat routes; health exposes the exact plugin package directory |
+| Gallery and Work Status | `panel/main.ts`, `status/main.ts` | Replace MCP installation copy with plugin JSON/path and reviewed sample prompt; remove MCP connection badges and registration-based gating |
+| Packaging | `package.json`, `scripts/build.ts`, `bun.lock` | Root package exports built plugin; SDK is a development dependency; no runtime node_modules required for the installed bundle; release `0.3.0` |
+| Operation regressions | `tests/mcp.test.ts` | Planned `tests/agent.test.ts`, preserving existing operation and source-security cases |
+| Plugin regressions | None | Planned `tests/plugin.test.ts`; registration, session context, validation, cancellation, unload/reload |
+| Installed-package regression | MCP branch in `tests/browser/viewer.browser.ts` | Import built plugin from a relocated package without node_modules; exercise operations against real viewer; add isolated actual-OpenCode loading check |
+| Service and UI checks | `tests/service.test.ts`, `tests/version.test.ts`, `tests/browser/host.html`, `tests/browser/panel.browser.ts` | Plugin path, removed MCP routes, updated Setup/status and existing gallery regression coverage |
+| Documentation | `README.md`, `PRODUCT.md`, `examples/README.md`, `docs/features/README.md`, `docs/research/openchamber-extension-platform.md`, `AGENTS.md` | Native install/use guidance and corrected architectural constraints; remove obsolete `docs/mcp.example.json` and maintained MCP instructions |
+
+The old `src/mcp/` files, `mcp/server.js`, MCP-only examples and tests, and `@modelcontextprotocol/sdk` dependency are removed after their useful behavior is covered by native-operation tests. Do not retain a compatibility server or modify the user's installed MCP registration. Historical research or changelog references to MCP may remain clearly historical.
+
+### Acceptance criteria and tests
+
+Added and changed tests name their criterion IDs. The table retains approved criteria and intended coverage. Automated evidence and remaining manual limitations are recorded below; AC-073 is not claimed as complete.
+
+| ID | Observable acceptance criterion | Planned tests |
+|---|---|---|
+| AC-066 | A built directory package loads in OpenCode 2.2.0, registers exactly the six Canvas operations and a discoverable namespace, and uses native text results/errors. Unloading and reloading does not duplicate registrations. No MCP connection is involved. | `tests/plugin.test.ts`; isolated actual-OpenCode loader check |
+| AC-067 | Publication and default listing use the invoking session's current directory and session provenance, including when it differs from the plugin setup location or the process working directory. A later invocation observes a moved session. Explicit directory and all-projects behavior remain supported; conflicting arguments fail. Failed session lookup does not silently fall back to another project. | `tests/plugin.test.ts`, `tests/agent.test.ts` |
+| AC-068 | Publish, read, every update mode, dedupe, archive, paginated list and feedback retain their existing behavior. Invalid payloads, path/symlink escapes, external references, oversize reads, and missing/stale base versions fail without partial writes. Metadata-only changes do not add content versions or notify views. | `tests/agent.test.ts`, existing store/source-security cases; real-viewer browser regression |
+| AC-069 | A cancelled call before mutation writes nothing. Cancellation reaches session/viewer requests. Once a version is committed, viewer failure or cancellation cannot erase it or report that it was never stored. Plugin cleanup stops owned work without stopping the shared viewer. OpenCode tool permission routing remains in use. | `tests/plugin.test.ts`, `tests/agent.test.ts`, viewer integration cases |
+| AC-070 | Existing artifacts, feedback, fixed/following views, restores, and pinned rendering remain readable and secure. Importing a relocated built plugin with no node_modules still locates its package, runtime, libraries, and viewer. The per-document sandbox and loopback-only bindings are unchanged. | `tests/rendering.test.ts`, `tests/version.test.ts`, `tests/viewer.test.ts`, `tests/browser/viewer.browser.ts`, relocated-package loader test |
+| AC-071 | Setup provides the exact installed package directory and mergeable V2 `plugins` JSON, with SDK copy controls, loading and actionable service-error/retry states. The sample prompt composes for user review without sending, even before installation can be confirmed. Neither Setup nor Work Status claims a connection based on a stale heartbeat. Existing gallery loading/empty/error/populated and long-content cases keep working without overflow. | `tests/service.test.ts`, `tests/browser/panel.browser.ts` at 390/768/1280/2048px plus relevant 320/375/1024/1440px widths |
+| AC-072 | The release contains no maintained MCP server, stdio transport, MCP dependency, heartbeat/config parser, or MCP setup controls. Built files and the lockfile agree with the native package; documentation directs fresh users to the plugin. The extension adds no permissions and writes no external configuration. | Package/build assertions in `tests/plugin.test.ts` and `tests/service.test.ts`; repository reference audit; manual documentation review |
+| AC-073 | The user can load the local package through their own configuration, discover the tools, publish/open, read/update, inspect feedback, and restore existing work in the installed app. Tool-card matching uses the actual native tool identity. No automated test is presented as proof of desktop acceptance. | Manual installed-app checklist, explicitly unverified until the user runs it; unit assertion for manifest tool matching |
+
+Earlier MCP-specific AC-043 through AC-049, AC-058 and AC-060 are replaced by the native installation/context criteria when implementation lands. Their reusable behavior, including safe composer insertion and project-local sources, remains covered. Earlier security and store criteria retain their IDs.
+
+### Completed implementation phases
+
+1. Extract and test operations without MCP. Preserve existing source/security/mutation cases and move version resolution to a neutral module. Complete AC-068 before UI work.
+2. Add the native plugin and built package export. Test per-call session attribution, validation, native permission integration, cancellation, reload, and relocated distribution without runtime dependencies. Complete AC-066/AC-067/AC-069/AC-070.
+3. Replace setup/status service contracts and gallery copy. Remove configuration scanning rather than building another partial OpenCode config resolver. Provide exact path/JSON and an always-available reviewed test prompt. Keep SDK geometry, theme handling, and draft retention. Complete AC-071.
+4. Delete the MCP implementation, dependency, generated bundle and obsolete fixtures. Rebuild distribution; update current architecture/docs and project rules without changing unrelated research. Complete AC-072.
+5. Run `bun run typecheck`, `bun run lint`, `bun test`, `bun run test:browser`, and `bun run build`. Inspect rendered Setup/gallery/status, run overflow, tokens, accessibility, semantics, then layout checks at the named widths, and obtain independent review. Provide the local package path and installed-app checklist for AC-073. Do not commit, push, install, or edit external configuration.
+
+### Named risks and fallback
+
+| Risk | Decision and fallback |
+|---|---|
+| R-NATIVE-01: OpenCode APIs differ outside the probed version | Target and test OpenCode 2.2.0 or newer. Do not ship a guessed V1 adapter. Report an unsupported runtime rather than retaining MCP. |
+| R-NATIVE-02: Plugin startup is asynchronous | Readiness checks wait for expected plugin state. An initial empty registry is not proof of a missing install. |
+| R-NATIVE-03: Setup cannot reliably infer effective plugin configuration | No partial global-config parser or connection badge. Provide explicit install instructions and a sample prompt; user acceptance establishes that tools are available in the intended session. |
+| R-NATIVE-04: Old MCP entry remains in the user's configuration | Explain its manual removal in separate upgrade guidance. Do not edit configuration, auto-disable another server, or ship two tool sets. Test native installation with no MCP entry. |
+| R-NATIVE-05: Built tool names differ in the host chat renderer | Probe native tool identity during installed acceptance and adjust only presentation matching if needed; never change security boundaries to obtain a tool card. |
+| R-NATIVE-06: Session subdirectories/worktrees differ from setup location | The source check resolves the path rule: use `session.location.directory`, without appending its project-relative `subpath`. Resolve the invoking session on each call and test distinct/moved/nested sessions. Do not use a guessed cwd fallback. |
+| R-NATIVE-07: Plugin and gallery are loaded from different package copies | Primary installation uses the gallery's exact installed package directory, not a separately cached Git plugin copy. Relocated-package tests verify paths. |
+| R-NATIVE-08: Native cancellation arrives after atomic content publication | Preserve committed content and distinguish later viewer interruption from mutation failure. Never roll back an existing content version. |
+
+Rollback is a deliberate return to the prior package and its prior user-managed MCP configuration. It never rewrites the artifact store. No installation, external configuration edit, commit, push, or release was performed.
+
+### Verification and remaining acceptance
+
+The actual-host fixture invokes a registered executor directly. It proves loading, effective names, per-call session lookup, and a working cold-start viewer URL without a model request. It does not prove model/Code Mode selection, permission allow/deny in the agent loop, native chat-card matching, or installed OpenChamber routing. AC-073 stays manual and unverified until the user checks those paths.
+
+Independent review found and received fixes for the Bun launch mode, queued mutation cancellation, and cancellation releasing startup serialization too early. Failing-before regressions reproduced a null view URL, three blocked mutation waiters, and two daemon spawns. The corrected tests retain one startup and stable daemon identity. No remaining blocker was found in the final review of the startup fix.
+
+The Setup width/theme matrix checks overflow first, then host-token presence, accessible button labels and 24px minimum SDK targets, heading hierarchy, and layout containment. These are bounded checks, not full contrast or touch-target certification. Rendered snapshots were inspected at 320, 375, 390, 768, 1024, 1280, 1440, and 2048px; both light and dark are captured by the test. The requested browser.capture tool is unavailable in this session, so verification uses the repository's real Playwright/Chrome harness rather than claiming an unavailable tool's report.
+
+Final automated results on 2026-10-30: `bun run typecheck` and `bun run lint` pass; `bun test` passes 92 tests with no failures or skips, including the actual-OpenCode test; `bun run test:browser` passes the panel/status, real viewer/native plugin, and authoring-example checks. The browser command rebuilds the distribution before execution. No production installation or user store was used for these tests.

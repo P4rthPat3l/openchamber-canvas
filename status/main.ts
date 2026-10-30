@@ -1,5 +1,5 @@
 import { connectHost } from '@openchamber/sdk';
-import { applyHostReady, mountBadge, mountBanner, mountSpinner } from '@openchamber/sdk/ui';
+import { applyHostReady, mountBanner, mountSpinner } from '@openchamber/sdk/ui';
 import type { ListResult } from '../src/store/types';
 
 const host = connectHost();
@@ -29,13 +29,12 @@ function mountStatus(root: HTMLElement) {
   latest.className = 'canvas-status-latest';
   text.append(count, latest);
   row.append(text);
-  const badge = mountBadge(row, { label: 'MCP not seen', tone: 'warning' });
   const errorRoot = document.createElement('div');
   errorRoot.hidden = true;
   const error = mountBanner(errorRoot, { title: 'Canvas service unavailable', tone: 'error', action: { label: 'Retry', onClick: () => { void refresh(); } } });
   root.append(loading, row, errorRoot);
-  return { loading, row, count, latest, badge, errorRoot,
-    dispose: () => { spinner.dispose(); badge.dispose(); error.dispose(); root.replaceChildren(); },
+  return { loading, row, count, latest, errorRoot,
+    dispose: () => { spinner.dispose(); error.dispose(); root.replaceChildren(); },
   };
 }
 
@@ -45,17 +44,11 @@ async function refresh(): Promise<void> {
   try {
     const params = new URLSearchParams({ limit: '200' });
     if (directory !== null) params.set('directory', directory);
-    const [data, heartbeat] = await Promise.all([
-      request<ListResult>(`/list?${params}`),
-      request<{ seenAt: string } | null>('/mcp-status').catch(() => null),
-    ]);
+    const data = await request<ListResult>(`/list?${params}`);
     if (owner !== generation || !ui) return;
-    const seen = heartbeat ? Date.parse(heartbeat.seenAt) : NaN;
-    const live = Number.isFinite(seen) && Date.now() - seen < 180_000;
     ui.count.textContent = `${data.artifacts.length} ${data.artifacts.length === 1 ? 'artifact' : 'artifacts'}`;
     ui.latest.textContent = data.artifacts[0]?.title ?? 'No artifacts yet';
     ui.latest.title = ui.latest.textContent;
-    ui.badge.update({ label: live ? 'MCP connected' : 'MCP not seen', tone: live ? 'success' : 'warning' });
     ui.row.hidden = false;
     ui.errorRoot.hidden = true;
   } catch {

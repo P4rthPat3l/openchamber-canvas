@@ -10,8 +10,7 @@ import type { ArtifactStoreOptions } from '../src/store/index';
 import type { CreateResult } from '../src/store/types';
 import { createServiceServer } from '../src/service/routes';
 import type { ServiceServer, ServiceServerOptions } from '../src/service/routes';
-import { MCP_VERSION } from '../src/mcp/version';
-import { inspectMcpRegistration, UNCHECKED_REGISTRATION } from '../src/service/mcp-registration';
+import { CANVAS_VERSION } from '../src/version';
 
 const temporaryRoots: string[] = [];
 const services: ServiceServer[] = [];
@@ -94,7 +93,7 @@ async function makeService(overrides: Partial<ServiceServerOptions> = {}): Promi
     storeRoot: root,
     portFile: path.join(root, '.viewer.json'),
     viewerEntry: path.join(root, 'missing-viewer.js'),
-    mcpPath: path.join(root, 'mcp', 'server.js'),
+    pluginPath: path.join(root, 'installed'),
     viewerTimeoutMs: 200,
     ...overrides,
   });
@@ -144,7 +143,7 @@ describe('canvas service', () => {
     expect(health.status).toBe(200);
     const body = (await health.json()) as { ok: boolean; version: string };
     expect(body.ok).toBe(true);
-    expect(body.version).toBe(MCP_VERSION);
+    expect(body.version).toBe(CANVAS_VERSION);
     expect((await fetch(`${fixture.base}/health`)).status).toBe(401);
   });
 
@@ -242,21 +241,13 @@ describe('canvas service', () => {
     expect(Buffer.from(entries['index.html'] ?? new Uint8Array()).toString('utf8')).toBe(page);
   });
 
-  test('reads the MCP heartbeat and returns a viewer error when the viewer is missing', async () => {
+  test('AC-071 AC-072: serves the plugin directory, removes MCP status, and reports a missing viewer', async () => {
     const fixture = await makeService();
-    const empty = await get(fixture, '/mcp-status');
-    expect(await empty.json()).toBeNull();
-
-    await fs.writeFile(
-      path.join(fixture.root, '.mcp-heartbeat.json'),
-      JSON.stringify({ seenAt: '2026-10-23T10:00:00.000Z', pid: 42, version: MCP_VERSION }),
-      'utf8',
-    );
-    const heartbeat = (await (await get(fixture, '/mcp-status')).json()) as {
-      seenAt: string;
-      version: string;
-    };
-    expect(heartbeat.version).toBe(MCP_VERSION);
+    const health = await get(fixture, '/health').then(response => response.json());
+    expect(health.pluginPath).toBe(path.join(fixture.root, 'installed'));
+    expect(health.mcpPath).toBeUndefined();
+    expect((await get(fixture, '/mcp-status')).status).toBe(404);
+    expect((await get(fixture, '/mcp-registration')).status).toBe(404);
 
     const view = await postJson(fixture, '/view-url', { id: fixture.created.id });
     expect(view.status).toBe(503);
@@ -264,99 +255,5 @@ describe('canvas service', () => {
       'VIEWER_UNAVAILABLE',
     );
     expect((await get(fixture, `/thumb/${fixture.created.id}`)).status).toBe(404);
-  });
-});
-
-describe('MCP registration', () => {
-  test('reports uncertainty when no OpenCode config exists', async () => {
-    const root = await makeRoot();
-    expect(await inspectMcpRegistration([path.join(root, 'opencode.json')], path.join(root, 'mcp', 'server.js'))).toEqual(UNCHECKED_REGISTRATION);
-  });
-
-  test('reads a v2 entry when the command points at the installed server', async () => {
-    const root = await makeRoot();
-    const mcpPath = path.join(root, 'installed', 'mcp', 'server.js');
-    const file = path.join(root, 'opencode.json');
-    await fs.writeFile(file, JSON.stringify({
-      mcp: {
-        servers: {
-          notion: { type: 'remote', url: 'https://mcp.notion.com/mcp', disabled: false },
-          canvas: { type: 'local', command: ['node', mcpPath], disabled: false },
-        },
-      },
-    }), 'utf8');
-    expect(await inspectMcpRegistration([file], mcpPath)).toEqual({
-      checked: true, registered: true, name: 'canvas', disabled: false, commandMatch: true, source: file,
-    });
-  });
-
-  test('matches an entry registered under another name and honors disabled', async () => {
-    const root = await makeRoot();
-    const mcpPath = path.join(root, 'installed', 'mcp', 'server.js');
-    const file = path.join(root, 'opencode.json');
-    await fs.writeFile(file, JSON.stringify({
-      mcp: { servers: { 'canvas-mcp': { type: 'local', command: ['node', '--silent', mcpPath], disabled: true } } },
-    }), 'utf8');
-    expect(await inspectMcpRegistration([file], mcpPath)).toEqual({
-      checked: true, registered: true, name: 'canvas-mcp', disabled: true, commandMatch: true, source: file,
-    });
-  });
-
-  test('reads a legacy v1 entry with comments and trailing commas', async () => {
-    const root = await makeRoot();
-    const mcpPath = path.join(root, 'installed', 'mcp', 'server.js');
-    const file = path.join(root, 'opencode.jsonc');
-    await fs.writeFile(file, [
-      '// user config',
-      '{',
-      '  // layers below',
-      '  "mcp": {',
-      `    "canvas": { "type": "local", "command": ["node", "${mcpPath}"], "enabled": false, },`,
-      '  },',
-      '}',
-    ].join('\n'), 'utf8');
-    expect(await inspectMcpRegistration([file], mcpPath)).toEqual({
-      checked: true, registered: true, name: 'canvas', disabled: true, commandMatch: true, source: file,
-    });
-  });
-
-  test('reports a canvas-named entry whose command matches nothing', async () => {
-    const root = await makeRoot();
-    const file = path.join(root, 'opencode.json');
-    await fs.writeFile(file, JSON.stringify({
-      mcp: { servers: { canvas: { type: 'local', command: ['node', '/old/install/mcp/server.js'] } } },
-    }), 'utf8');
-    expect(await inspectMcpRegistration([file], path.join(root, 'installed', 'mcp', 'server.js'))).toEqual({
-      checked: true, registered: false, name: 'canvas', disabled: false, commandMatch: false, source: file,
-    });
-  });
-
-  test('a broken layer stops the lookup; a clean config without canvas reads unregistered', async () => {
-    const root = await makeRoot();
-    const broken = path.join(root, 'opencode.json');
-    await fs.writeFile(broken, '{"mcp": {', 'utf8');
-    const other = path.join(root, 'opencode.jsonc');
-    await fs.writeFile(other, JSON.stringify({}), 'utf8');
-    expect((await inspectMcpRegistration([broken, other], path.join(root, 'mcp'))).checked).toBe(false);
-    const clean = path.join(root, 'clean', 'opencode.json');
-    await fs.mkdir(path.dirname(clean), { recursive: true });
-    await fs.writeFile(clean, JSON.stringify({ mcp: { servers: { 'n8n': { type: 'remote', url: 'https://n8n.local/mcp' } } } }), 'utf8');
-    expect(await inspectMcpRegistration([clean], path.join(root, 'installed', 'mcp', 'server.js'))).toEqual({
-      checked: true, registered: false, name: null, disabled: false, commandMatch: false, source: null,
-    });
-  });
-
-  test('the endpoint serves the registration state', async () => {
-    const configDir = await makeRoot();
-    const configPath = path.join(configDir, 'opencode.json');
-    const fixture = await makeService({ mcpConfigCandidates: [configPath] });
-    await fs.writeFile(configPath, JSON.stringify({
-      mcp: { servers: { canvas: { type: 'local', command: ['node', path.join(fixture.root, 'mcp', 'server.js')], disabled: false } } },
-    }), 'utf8');
-    const response = await get(fixture, '/mcp-registration');
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
-      checked: true, registered: true, name: 'canvas', disabled: false, commandMatch: true, source: configPath,
-    });
   });
 });
