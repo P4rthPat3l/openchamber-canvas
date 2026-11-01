@@ -56,6 +56,8 @@ Requirements: OpenChamber 2.5.1 or newer, OpenCode 2.2.0 or newer, and Node 24 o
 
 The gallery works without the OpenCode plugin: you can browse, open, export, and copy artifacts. The agent cannot publish or revise until the plugin is loaded. The extension does not change your OpenCode configuration, and the gallery does not guess whether a session has loaded its tools.
 
+The plugin also registers the bundled [`canvas-authoring`](skills/canvas-authoring/SKILL.md) skill with OpenCode. No separate skill installation is needed. Its instructions cover example reuse, one source file, the Canvas runtime, verification, and safe revisions. The namespace and publish/update descriptions ask agents to load it before authoring. Availability does not guarantee that a model loads it first; you can explicitly ask the agent to load `canvas-authoring`.
+
 ## Use it
 
 **Publish.** Ask the agent for a chart, dashboard, diagram, report, or interface mockup. It calls the Canvas tools and opens the result. Use `openchamber_render` for a page that belongs in the chat reply; use Canvas when you need to reopen, version, or iterate on the work.
@@ -75,7 +77,7 @@ Four parts share one store:
 - An **extension panel** lists artifacts and opens them.
 - An **extension service** reads the store, mints view URLs, and handles export and feedback.
 - A detached **viewer daemon** serves artifact HTML, the runtime API, pinned libraries, and live updates over loopback.
-- A **native OpenCode plugin** registers `publish`, `update`, `list`, `read`, `archive`, and `result` under the `canvas` namespace. Effective tool names are `canvas_publish`, `canvas_update`, and so on. OpenCode can expose them through Code Mode as `tools.canvas.publish` and related calls.
+- A **native OpenCode plugin** registers `publish`, `update`, `list`, `read`, `archive`, and `result` under the `canvas` namespace, plus the bundled `canvas-authoring` skill. Effective tool names are `canvas_publish`, `canvas_update`, and so on. OpenCode can expose them through Code Mode as `tools.canvas.publish` and related calls. The skill uses OpenCode's normal skill loader rather than another Canvas tool.
 
 The extension asks for the `service` permission only. The user separately authorizes the OpenCode plugin through their plugin configuration. Tools use OpenCode's permission system and take project/session context from the invoking session.
 
@@ -94,12 +96,14 @@ bun run test:browser
 bun run build
 ```
 
-- `bun test` covers operations, native registration, relocated packages without node_modules, store/viewer security, and service contracts. When `opencode` is on PATH, it also loads the package in an isolated real OpenCode server without a model request. That check is explicitly skipped when the CLI is absent.
+- `bun test` covers operations, native tool/skill registration, relocated packages without node_modules, authoring-resource contracts, store/viewer security, and service contracts. When `opencode` is on PATH, it also loads the package and its skill in an isolated real OpenCode server without a model request. That check is explicitly skipped when the CLI is absent.
 - `bun run test:browser` builds the distribution, tests the real panel and status entries in an opaque mock host, launches the bundled native plugin and Node viewer/runtime, and checks the examples in light and dark themes. It needs Chrome at `/usr/bin/google-chrome`.
 - `bun run build` writes the committed distribution files, including `viewer/build.json`, which pins the viewer/runtime/library build identity.
 - Browser test stores and screenshots stay under `/tmp/opencode`.
 
 Installed-app acceptance for the desktop shell, host routing, and the chat tool card remains a manual check. The automated browser suite uses a mock host and the bundled viewer, not the installed desktop UI.
+
+Three authoring review cases live under [`skills/canvas-authoring/evals/`](skills/canvas-authoring/evals/). They cover a chart, a static visual report, and revising existing work. They have not been run as paired model evaluations; registration tests do not establish faster generation or automatic skill selection. Any authoring trials must use an isolated project and artifact store, not the user's existing artifacts.
 
 ## Requirements and limits
 

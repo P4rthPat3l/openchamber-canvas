@@ -4,7 +4,7 @@ Feature documentation lives in `docs/features/`. Read the relevant feature docum
 
 ## Status
 
-The 0.3.0 native OpenCode plugin replaces MCP. The shared store, sandboxed viewer, pinned rendering snapshots, native tools/service contracts, feedback handoff, paginated gallery, status section, and authoring examples exist. Installed-app acceptance of the new plugin remains pending; do not change the installed extension to manufacture a pass.
+The 0.4.0 release keeps the 0.3.0 native OpenCode plugin and adds the bundled `canvas-authoring` skill. The shared store, sandboxed viewer, pinned rendering snapshots, native tools/service contracts, feedback handoff, paginated gallery, status section, and authoring examples exist. Installed-app acceptance remains a manual check; do not change the installed extension to manufacture a pass.
 
 ## Stack
 
@@ -12,7 +12,7 @@ The 0.3.0 native OpenCode plugin replaces MCP. The shared store, sandboxed viewe
 - Bun 1.4 for scripts, bundling, and tests.
 - The native plugin runs inside OpenCode 2.2.0 or newer. The service and detached viewer use a JavaScript runtime. All ship as bundled JavaScript; installed packages do not need node_modules or compilation.
 - `@openchamber/sdk` for the panel, the service contract, and the guest bundler.
-- `@opencode/plugin@2.2.0` supplies development types. The native bundle has no runtime SDK import. Do not reintroduce a second MCP adapter.
+- `@opencode/plugin@2.2.0` supplies development types and skill-schema constructors that build into the plugin. The native bundle has no external runtime SDK import. Do not reintroduce a second MCP adapter.
 - No UI framework. Mount the public `@openchamber/sdk/ui` components for buttons, fields, search, selects, menus, lists, badges, banners, empty states, spinners, and separators. Custom CSS and plain HTML are only for composition the installed kit lacks: responsive split, grid, version metadata, setup/status layout, and the native dialog frame.
 
 ## Commands
@@ -47,6 +47,7 @@ bun run build
 - Store paths are validated against the store root. No `..`, no symlink escape.
 - The extension asks for the `service` permission only. Do not add `filesystem`, `sessions`, or `prompt` without a documented reason.
 - Bundles run one level below the package root (`plugin/`, `service/`, `viewer/`), while source entries run under `src/<area>` and version resolution lives at `src/version.ts`. Package paths must work from source and relocated built installations without node_modules. Use `packageRoot()` for package assets.
+- The plugin registers `skills/canvas-authoring/SKILL.md` through `ctx.skill.transform`, not a custom tool or a global skill install. Ship `skills/` and referenced `examples/` with the built package. Read the skill before registering tools or writing a store; unload both registrations. Keep registered name/description aligned with the file's frontmatter. `ctx.skill.list()` returns a `data` envelope; the probed OpenCode 2.2.5 skill loader takes `id`. Test that real boundary instead of assuming a local source checkout matches the running CLI.
 - Resolve the invoking session on each tool call. Use `session.location.directory` directly; `subpath` is project-relative indexing data, not a suffix to append. Do not infer the session from process.cwd(), setup location, or model-supplied sessionId.
 - Pass invocation cancellation through session/viewer calls and store lock acquisition. A cancelled waiter cannot mutate later; once an atomic write has started it completes without rollback. Plugin unload aborts its calls, never the shared viewer.
 - When spawning a JavaScript viewer with process.execPath from OpenCode's compiled Bun host, set `BUN_BE_BUN=1`. `ELECTRON_RUN_AS_NODE=1` handles Electron but is not sufficient for OpenCode. Test cold start under the actual OpenCode binary, not only Node.

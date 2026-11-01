@@ -461,3 +461,15 @@ Canvas no longer scans OpenCode configuration or writes an MCP heartbeat. Setup 
 The isolated real-host test proves package loading, effective names, session lookup, executor behavior, and cold-start viewing without a model request. Its observer invokes the registered executor directly. It does not prove model/Code Mode selection, permission rejection, OpenChamber tool-card matching, or installed desktop routing. Those remain explicit user acceptance checks in FEAT-001 AC-073.
 
 Sources: [OpenCode plugin overview](https://opencode.ai/v2/docs/build/plugins), [server tools](https://opencode.ai/v2/docs/build/plugins/server#tools), [plugin configuration](https://opencode.ai/v2/docs/plugins), [`src/plugin/index.ts`](../../src/plugin/index.ts), [`tests/plugin.test.ts`](../../tests/plugin.test.ts).
+
+## 17. Bundled authoring skill update
+
+The published `@opencode/plugin@2.2.0` types expose `ctx.skill.transform`. A plugin can register a skill's ID, name, description, absolute resource path, and content without writing a global skill directory or asking the extension iframe to reach OpenCode. This registration belongs to the already-authorized Canvas OpenCode plugin, not the gallery manifest.
+
+An isolated OpenCode 2.2.5 probe on 2026-11-01 registered, listed, loaded, and disposed a skill from a bundled local package without `node_modules`. `ctx.skill.list()` returns a location envelope with `data`. The running version's built-in skill executor takes `id`; the older local source checkout's `name` argument failed and must not be treated as evidence for that runtime. The probe made no model request, and its own server, scratch source, and data were removed.
+
+Canvas 0.4.0 registers `canvas-authoring` from `skills/canvas-authoring/SKILL.md`, resolves its path through `packageRoot()`, and disposes it with the tool registration. Skill schema constructors are compiled into the bundle; no installed SDK dependency is required. A missing skill file fails setup before tools are registered or the store is initialized. The existing six tools, permissions, and viewer contracts remain unchanged.
+
+The skill links to the existing installed examples. Its metadata and namespace/publish/update descriptions guide agents to load it before authoring. This does not enforce tool order, auto-install the OpenCode plugin, or establish a speed or quality improvement. Actual model selection and timing need separate authoring trials. The maintained contract and manual boundaries are in [FEAT-001 §39](../features/FEAT-001-openchamber-canvas.md#39-bundled-canvas-authoring-skill).
+
+Sources: [OpenCode server skills](https://opencode.ai/v2/docs/build/plugins/server#skills), [`skills/canvas-authoring/SKILL.md`](../../skills/canvas-authoring/SKILL.md), [`tests/skill.test.ts`](../../tests/skill.test.ts), and the native/relocated tests in [`tests/plugin.test.ts`](../../tests/plugin.test.ts).

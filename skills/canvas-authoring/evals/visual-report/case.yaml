@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: visual-report
+expected_outcome: |
+  The agent loads canvas-authoring and produces one concise static HTML report
+  using only the supplied readiness facts. It does not create a framework,
+  invent metrics, or implement fake data-loading and error states.
+  It checks the actual viewer at the required widths and themes, or explicitly
+  reports unavailable verification, without repeatedly restyling acceptable output.

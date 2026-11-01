@@ -6,9 +6,9 @@ status: active
 implementation_status: shipped_unverified
 owner: Parth
 created: 2026-10-23
-last_updated: 2026-10-30
+last_updated: 2026-11-01
 last_verified_commit: null
-version: 2.0.0
+version: 2.1.0
 tags:
   - openchamber
   - extension
@@ -27,16 +27,18 @@ related_features: []
 
 > A project gallery for agent-generated artifacts that opens each one in OpenChamber's browser panel, keeps its versions, refreshes it in place, and carries user feedback back to the agent.
 
-The [security and revision hardening](#37-security-and-revision-hardening) is built in package 0.2.0. AC-050 through AC-065 define its behavior. Verification covers the uncommitted working tree, not a new Git commit; installed-app acceptance is pending.
+The [security and revision hardening](#37-security-and-revision-hardening) was built in package 0.2.0. AC-050 through AC-065 define its behavior. Verification covered the 0.2.0 working tree rather than a new Git commit; installed-app acceptance is pending.
 
-The [native OpenCode plugin replacement](#38-native-opencode-plugin-replacement) is built in package 0.3.0. It replaces MCP entirely. The updated snapshot, implementation map, contracts, installation instructions, and §38 describe the new code. Earlier phase plans, MCP acceptance criteria and probe records are historical design evidence, not a second supported integration. Installed OpenChamber acceptance remains pending.
+The [native OpenCode plugin replacement](#38-native-opencode-plugin-replacement) shipped in package 0.3.0. It replaces MCP entirely. The updated snapshot, implementation map, contracts, installation instructions, and §38 describe the new code. Earlier phase plans, MCP acceptance criteria and probe records are historical design evidence, not a second supported integration. The user reported the installed preview working; model-selection and desktop-routing acceptance remain manual.
+
+The [bundled Canvas authoring skill](#39-bundled-canvas-authoring-skill) ships in package 0.4.0. Native skill loading, lifecycle, relocated distribution, and existing regression checks are covered. The installed preview build was reported working; actual model selection and authoring-speed comparisons remain unverified.
 
 ## 1. Feature Snapshot
 
 | Field | Details |
 |---|---|
 | Document status | Active |
-| Implementation status | 0.3.0 native plugin built; installed acceptance pending |
+| Implementation status | 0.4.0 bundled authoring skill built; user-reported working; model-selection trials pending |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, native plugin, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -45,7 +47,7 @@ The [native OpenCode plugin replacement](#38-native-opencode-plugin-replacement)
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode plugin host |
 | Feature flag | None in v1 |
-| Last verified | Typecheck and the browser suite pass against this working tree. Native regressions include relocated packages, session lookup, cancellation, and actual OpenCode cold-start viewing. The browser suite covers sandboxing, fixed/following views, drafts, feedback, and native Setup at eight widths in both themes. Model selection, permission rejection, native tool cards, and desktop routing remain manual acceptance. No verified commit is claimed for uncommitted code. |
+| Last verified | Typecheck and the browser suite pass against this working tree. Native regressions include relocated packages, session lookup, cancellation, and actual OpenCode cold-start viewing. The browser suite covers sandboxing, fixed/following views, drafts, feedback, and native Setup at eight widths in both themes. Model selection, permission rejection, native tool cards, and desktop routing remain manual acceptance. Verification ran against the working tree before the 0.4.0 release commit; no separate verified commit is recorded. |
 
 ### At a Glance
 
@@ -444,7 +446,7 @@ An artifact is published once and updated in place. Each update appends an immut
 
 ### Existing Artifacts
 
-Implementation inspected in the uncommitted 0.3.0 working tree:
+Implementation was inspected in the 0.3.0 working tree:
 
 | Path | What it does | Verification |
 |---|---|---|
@@ -2553,7 +2555,7 @@ Verification uses `bun run typecheck`, `bun run lint`, `bun test`, `bun run test
 
 ## 38. Native OpenCode plugin replacement
 
-Status: Inferred. The approved change is implemented in the uncommitted 0.3.0 working tree. Installed OpenChamber acceptance AC-073 remains unverified. This is a breaking installation change, not a second agent integration.
+Status: Inferred. The approved change was implemented in the 0.3.0 working tree. Installed OpenChamber acceptance AC-073 remains unverified. This is a breaking installation change, not a second agent integration.
 
 ### Outcome and scope
 
@@ -2674,3 +2676,96 @@ Independent review found and received fixes for the Bun launch mode, queued muta
 The Setup width/theme matrix checks overflow first, then host-token presence, accessible button labels and 24px minimum SDK targets, heading hierarchy, and layout containment. These are bounded checks, not full contrast or touch-target certification. Rendered snapshots were inspected at 320, 375, 390, 768, 1024, 1280, 1440, and 2048px; both light and dark are captured by the test. The requested browser.capture tool is unavailable in this session, so verification uses the repository's real Playwright/Chrome harness rather than claiming an unavailable tool's report.
 
 Final automated results on 2026-10-30: `bun run typecheck` and `bun run lint` pass; `bun test` passes 92 tests with no failures or skips, including the actual-OpenCode test; `bun run test:browser` passes the panel/status, real viewer/native plugin, and authoring-example checks. The browser command rebuilds the distribution before execution. No production installation or user store was used for these tests.
+
+## 39. Bundled Canvas authoring skill
+
+Status: Inferred. The user approved the detailed plan, and the bundled skill ships in package 0.4.0. The installed preview build was reported working; model-selection and speed claims remain unverified. Canvas remains on its existing backend. The native-artifact migration and host bridge remain paused.
+
+### Outcome and scope
+
+When the user loads the Canvas OpenCode plugin, OpenCode also discovers `canvas-authoring` through its native skill registry. An agent can load it through the existing skill tool before creating or revising an artifact. No global skill installation, additional Canvas tool, extra extension permission, configuration writer, or backend change is needed.
+
+The skill guides efficient authoring, not general document creation or an entire design process. It explains output selection, reuse of the shipped examples, one canonical source file, project-confined `filePath` publication, Canvas runtime and sandbox constraints, bounded verification, safe revisions, and feedback handoff. It must respect user instructions and stronger project verification rules. It does not force every static report to simulate application loading/error states or require a new application scaffold.
+
+Tool and skill descriptions guide early loading. They do not enforce tool order or prove that the agent followed the skill. Automatic model selection, reduced generation time, installed OpenChamber acceptance, and output-quality improvement require separate agent-loop evidence and must not be claimed from registration tests.
+
+### Architecture-critical probe
+
+On 2026-11-01 an isolated real OpenCode 2.2.5 server loaded a disposable bundled directory plugin with no `node_modules`. The probe used the SDK 2.2.0 `Skill` constructors and `ctx.skill.transform`, registered a skill with an installation-relative absolute path, read it through `ctx.skill.list`, and invoked the built-in skill executor successfully. Disposing the registration removed the skill. The bundle had no external SDK import. The probe made no model request and changed no installed application, live configuration, or user artifact store. Its server, temporary data, and scratch source were removed before plan approval.
+
+Two probe corrections matter for implementation tests. `ctx.skill.list()` returns a location envelope containing `data`, not a plain array. In the tested 2.2.5 runtime, the built-in skill tool takes `id`, not `name`. The older local OpenCode source checkout is not authoritative for that runtime boundary. The pinned SDK types establish the development contract; execution has only been probed on 2.2.5 for this addition.
+
+### Control and data flow
+
+```mermaid
+sequenceDiagram
+    participant Package as Installed Canvas package
+    participant Plugin as Canvas plugin setup
+    participant Skills as OpenCode skill registry
+    participant Agent
+    participant Tools as Existing Canvas tools
+    Package->>Plugin: Bundled Markdown and installed package root
+    Plugin->>Skills: Register canvas-authoring metadata, content, and path
+    Skills-->>Agent: Discoverable skill description
+    Agent->>Skills: Load canvas-authoring before authoring
+    Skills-->>Agent: Authoring instructions and resource paths
+    Agent->>Tools: Publish or revise through existing contracts
+    Plugin->>Skills: Dispose registration on unload
+```
+
+The plugin uses `packageRoot()` to resolve the skill from the installed package, not from `process.cwd()` or this repository's absolute path. Relative links in the skill resolve to the installed examples. Setup reads the skill before registering it or the tools and before initializing the store, so a missing skill file fails with its missing path instead of advertising unavailable guidance. The existing six operations and invocation-context/cancellation behavior remain intact. Required SDK schema constructors compile into the shipped JavaScript; no installed SDK or node_modules directory is required.
+
+### Implementation map
+
+| Area | Files and responsibilities |
+|---|---|
+| Bundled authoring guidance | `skills/canvas-authoring/SKILL.md`; workflow, metadata, and relative links to existing examples |
+| Native skill and tool discovery | `src/plugin/index.ts`, generated `plugin/index.js`; `setup` reads the asset, registers its metadata/body/path, guides early loading, and disposes both registrations |
+| Deterministic contracts | `tests/skill.test.ts`; guidance/resource/metadata/documentation assertions and review-case presence |
+| Lifecycle and installed-package checks | `tests/plugin.test.ts`, `tests/fixtures/plugin-host.mjs`, `tests/fixtures/native-observer.mjs`; missing asset, unload/reload, relocated publishing, and actual built-in skill loading |
+| Unexecuted authoring trials | `skills/canvas-authoring/evals/`; chart, static report, and seeded existing-artifact revision prompts with expected outcomes |
+
+### Acceptance criteria and tests
+
+Every added test names its criterion ID. Deterministic criteria have automated evidence below. Review prompts are present but have not been run as paired model evaluations.
+
+| ID | Observable criterion | Validation |
+|---|---|---|
+| AC-074 | Loading Canvas registers exactly one `canvas-authoring` skill with a useful description, readable Markdown, and the installed skill path. Unload removes it; reload does not duplicate it or the existing six tools. | `tests/plugin.test.ts`, `tests/fixtures/plugin-host.mjs` |
+| AC-075 | A relocated built installation without `node_modules` exposes the same skill. Its skill/resource paths resolve inside that installation. Missing required skill content fails setup before tool/skill registration rather than advertising unavailable guidance. No files outside the isolated test root are written. | `tests/plugin.test.ts`; relocated-package fixture including `skills/` and referenced `examples/`; both child invocations override viewer entry and port-file paths |
+| AC-076 | The normal OpenCode skill tool loads the registered skill and returns its authoring content in an isolated actual server. Namespace/publish/update descriptions direct the agent to load it before writing or revising source. No new tool or forced call-order gate is introduced. | `tests/plugin.test.ts`, `tests/fixtures/native-observer.mjs`; assertions on descriptions and built-in skill output |
+| AC-077 | The shipped skill covers output routing, one canonical source, shipped examples, no CDN, bundled libraries, Canvas storage/feedback, actual-view verification, existing project checks, read-before-update/baseVersion, conflict rereads, and feedback review. All referenced resources exist; metadata and registered description agree. | `tests/skill.test.ts`; the read response's `version` is explicitly mapped to update `baseVersion`; three review prompts exist but are unexecuted |
+| AC-078 | Existing operation, viewer, sandbox, and distribution tests still pass. The package adds no permissions or runtime SDK dependency and writes no external configuration. README explains bundled skill discovery after plugin registration and does not promise automatic loading or faster generation. | Existing unit/browser suites; package and documentation assertions in `tests/plugin.test.ts` and `tests/skill.test.ts`; independent review |
+
+### Completed implementation phases
+
+1. Added `skills/canvas-authoring/SKILL.md` and focused contract/resource tests in `tests/skill.test.ts`. The skill reuses the existing chart/diagram/mockup examples rather than introducing another template set.
+2. Registered the skill in `src/plugin/index.ts`, extending the Node host fixture and plugin lifecycle tests for installed-path resolution, missing-asset startup, namespace/tool guidance, disposal, and reload. No custom instruction-returning tool was added.
+3. Extended the existing relocated-installation test and real-OpenCode observer to load the normal skill tool and verify content/path behavior. Existing publish/cold-start checks remain in place. Both relocated child invocations use explicitly isolated viewer paths.
+4. Updated `README.md`, `examples/README.md`, platform research, this feature document/index, and packaging conventions in `AGENTS.md`. Rebuilt distribution files and set the package version to 0.4.0 for this release.
+5. Ran the existing typecheck, lint, unit, browser, and build commands and obtained independent review. No UI was changed; browser suites remain regression evidence, not proof of agent selection.
+
+### Verification and remaining acceptance
+
+On 2026-11-01, `bun run typecheck`, `bun run lint`, `bun test`, `bun run test:browser`, and `bun run build` passed. The unit suite has 97 passing tests and no failures or skips, including real OpenCode 2.2.5 skill loading and cold-start viewing. The lifecycle test failed before implementation because no skill was registered. A focused instruction-contract test also failed before correcting the read-response field name.
+
+The browser suite passed gallery/status, real viewer/native tools, and all three authoring examples. Its overflow, token, label/24px accessibility, semantics, and layout gates passed in light and dark at 320, 375, 390, 768, 1024, 1280, 1440, and 2048px. Rendered Setup snapshots were inspected at 390, 1280, and 2048px in both themes. These checks use the repository's Playwright/Chrome harness, not an unavailable `browser.capture` tool, and do not certify full contrast or 44px touch targets.
+
+Independent review found no blocking production-runtime issue. It identified an inherited viewer-path risk in a relocated test and the skill's incorrect reference to a returned `baseVersion` field. The test now overrides both viewer paths for both child processes. The skill and referenced example guide now explicitly map the read response's `version` to update `baseVersion`, with a focused contract assertion. Approval/status wording was also corrected.
+
+Follow-up independent review confirmed all three findings were addressed with no remaining blockers. After those fixes, typecheck, lint, all 97 unit tests, and the full browser/build command passed again. A focused relocated-package run with deliberately inherited viewer-entry and port-file paths also passed and left its external-path sentinel directory empty.
+
+The user installed the preview build and reported it working. Remaining acceptance is explicit: actual model selection, mandatory loading order, generation-time/quality improvement, paired runs of the three review prompts, and full installed OpenChamber acceptance for this release are unverified. Skill availability is not a guarantee of selection. The new behavior was executed on OpenCode 2.2.5 against pinned SDK 2.2.0 types, not every supported runtime. No user configuration, installed application, or existing artifact data was changed. Untracked `reports/` and `research_notes/` remain untouched.
+
+### Changelog
+
+- 2026-11-01: Bundled and registered Canvas authoring guidance through the native skill registry, added installed-package/lifecycle/contract coverage and three unexecuted authoring review cases, and guided early loading without enforcing tool order. Released as package 0.4.0. No store migration.
+
+### Risks, fallback, and rollback
+
+- R-SKILL-01: An agent can skip suggested skill loading. Use precise skill/tool descriptions and keep actual model selection as an explicit agent-loop acceptance check. Do not block publication or inject the complete guide into every unrelated prompt.
+- R-SKILL-02: Installed packages may omit authoring resources. Test relocated installations and fail setup clearly when the required skill file is missing. Do not fall back to a development checkout, network download, or global skill copy.
+- R-SKILL-03: Real-host APIs vary by version. Retain the SDK 2.2.0 contract and test the actual available runtime. Report unverified runtime versions rather than inventing a compatibility adapter.
+- R-SKILL-04: A skill may increase work rather than reduce it. Keep it focused, reuse existing examples, and separate deterministic contract checks from the three human-reviewed task prompts. Timing or quality claims require measured with/without-skill runs; those are not implied by passing unit tests.
+
+Rollback removes the skill registration, bundled guidance, and discovery wording from the package. It does not touch artifact data or user configuration. No commit, push, release, installation, or external configuration edit is authorized by this plan.

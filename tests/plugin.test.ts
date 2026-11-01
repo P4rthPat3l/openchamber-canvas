@@ -18,7 +18,7 @@ afterEach(async () => {
   }
 });
 
-test('AC-066 AC-067 AC-069: native registration, moving session context, errors, cancellation and cleanup', async () => {
+test('AC-066 AC-067 AC-069 AC-074 AC-076: native tools and skill registration, context, cancellation and cleanup', async () => {
   const root = await fs.mkdtemp('/tmp/opencode/canvas-plugin-');
   roots.push(root);
   const child = Bun.spawn(['node', path.join(project, 'tests/fixtures/plugin-host.mjs'), path.join(project, 'plugin/index.js')], {
@@ -32,7 +32,7 @@ test('AC-066 AC-067 AC-069: native registration, moving session context, errors,
   expect(stderr).toBe('');
   expect(exit).toBe(0);
   const result = record.parse(JSON.parse(stdout));
-  const catalog = z.array(z.object({ name: z.string(), options: z.object({ namespace: z.string(), permission: z.string(), codemode: z.boolean() }), input: record })).parse(result.catalog);
+  const catalog = z.array(z.object({ name: z.string(), description: z.string(), options: z.object({ namespace: z.string(), permission: z.string(), codemode: z.boolean() }), input: record })).parse(result.catalog);
   expect(catalog.map(tool => tool.name).sort()).toEqual(['archive', 'list', 'publish', 'read', 'result', 'update']);
   for (const tool of catalog) {
     expect(tool.options).toEqual({ namespace: 'canvas', permission: `canvas_${tool.name}`, codemode: true });
@@ -52,14 +52,33 @@ test('AC-066 AC-067 AC-069: native registration, moving session context, errors,
   expect(result.unloadedError).toBe('AbortError');
   expect(result.reloaded).toBe(6);
   expect(result.registrations).toBe(1);
+  const skills = z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), path: z.string(), content: z.string() })).parse(result.skillCatalog);
+  expect(skills).toHaveLength(1);
+  const skill = skills[0];
+  expect(skill?.id).toBe('canvas-authoring');
+  expect(skill?.name).toBe('canvas-authoring');
+  expect(skill?.path).toBe(path.join(project, 'skills/canvas-authoring/SKILL.md'));
+  const source = await Bun.file(path.join(project, 'skills/canvas-authoring/SKILL.md')).text();
+  expect(source).toContain(`name: ${skill?.name}\n`);
+  expect(source).toContain(`description: ${skill?.description}\n`);
+  expect(skill?.content).toBe(source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim());
+  expect(result.unloadedSkills).toBe(0);
+  expect(result.reloadedSkills).toBe(1);
+  expect(result.skillRegistrations).toBe(1);
+  for (const name of ['publish', 'update']) {
+    expect(catalog.find(tool => tool.name === name)?.description).toContain('Load the canvas-authoring skill before');
+  }
+  const namespaces = z.array(z.object({ name: z.string(), description: z.string() })).parse(result.namespaces);
+  expect(namespaces.find(namespace => namespace.name === 'canvas')?.description).toContain('Load the canvas-authoring skill before');
 });
 
 describe('AC-072 AC-073: native distribution contract', () => {
   test('exports the plugin, styles native tools, and has no MCP package or transport', async () => {
     const pkg = z.object({ version: z.string(), exports: record, dependencies: record, openchamber: record }).parse(await Bun.file(path.join(project, 'package.json')).json());
-    expect(pkg.version).toBe('0.3.0');
+    expect(pkg.version).toBe('0.4.0');
     expect(pkg.exports['.']).toBe('./plugin/index.js');
     expect(pkg.dependencies['@modelcontextprotocol/sdk']).toBeUndefined();
+    expect(pkg.dependencies['@opencode/plugin']).toBeUndefined();
     expect(await Bun.file(path.join(project, 'mcp/server.js')).exists()).toBe(false);
     const contributes = z.object({ contributes: record }).parse(pkg.openchamber).contributes;
     expect(z.array(z.object({ match: z.string() })).parse(contributes.tools)[0]?.match).toBe('canvas_*');
@@ -67,18 +86,19 @@ describe('AC-072 AC-073: native distribution contract', () => {
   });
 });
 
-test('AC-070: relocated built plugin without node_modules publishes pinned HTML through the real viewer', async () => {
+test('AC-070 AC-075: relocated built plugin and bundled skill without node_modules publish through the real viewer', async () => {
   const root = await fs.mkdtemp('/tmp/opencode/canvas-relocated-');
   roots.push(root);
   const distribution = path.join(root, 'distribution');
   await fs.mkdir(distribution);
-  for (const file of ['package.json', 'plugin', 'viewer']) {
+  for (const file of ['package.json', 'plugin', 'viewer', 'skills', 'examples']) {
     await fs.cp(path.join(project, file), path.join(distribution, file), { recursive: true });
   }
   const storeRoot = path.join(root, 'store');
+  const env = { ...process.env, CANVAS_STORE: storeRoot, CANVAS_VIEWER_ENTRY: path.join(distribution, 'viewer/server.js'), CANVAS_VIEWER_PORT_FILE: path.join(storeRoot, '.viewer.json') };
   const child = Bun.spawn(['node', path.join(project, 'tests/fixtures/plugin-host.mjs'), path.join(distribution, 'plugin/index.js')], {
     cwd: root,
-    env: { ...process.env, CANVAS_STORE: storeRoot, CANVAS_VIEWER_ENTRY: path.join(distribution, 'viewer/server.js'), CANVAS_VIEWER_PORT_FILE: path.join(storeRoot, '.viewer.json') },
+    env,
     stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
   });
   child.stdin.write(JSON.stringify({ scenario: 'call', name: 'publish', args: { title: 'Relocated', html: '<h1>Relocated native artifact</h1>', libraries: ['chartjs'] }, directory: root }));
@@ -93,10 +113,47 @@ test('AC-070: relocated built plugin without node_modules publishes pinned HTML 
   expect(await response.text()).toContain('Relocated native artifact');
   expect((await new ArtifactStore({ root: storeRoot }).read(result.id)).manifest.rendering).toMatch(/^[a-f0-9]{64}$/);
   expect(await Bun.file(path.join(distribution, 'node_modules')).exists()).toBe(false);
+  const setup = Bun.spawn(['node', path.join(project, 'tests/fixtures/plugin-host.mjs'), path.join(distribution, 'plugin/index.js')], {
+    cwd: root, env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
+  });
+  setup.stdin.write(JSON.stringify({ scenario: 'all', directory: root, movedDirectory: root }));
+  setup.stdin.end();
+  const [setupOutput, setupError, setupExit] = await Promise.all([new Response(setup.stdout).text(), new Response(setup.stderr).text(), setup.exited]);
+  expect(setupError).toBe('');
+  expect(setupExit).toBe(0);
+  const relocated = z.object({ skillCatalog: z.array(z.object({ path: z.string(), content: z.string() })) }).parse(JSON.parse(setupOutput));
+  expect(relocated.skillCatalog[0]?.path).toBe(path.join(distribution, 'skills/canvas-authoring/SKILL.md'));
+  expect(relocated.skillCatalog[0]?.content).toContain('../../examples/chart.html');
+  for (const name of ['chart', 'diagram', 'mockup']) {
+    expect(await Bun.file(path.join(distribution, `examples/${name}.html`)).exists()).toBe(true);
+  }
 }, 15000);
 
+test('AC-075: a missing bundled skill fails setup before registering tools or writing a store', async () => {
+  const root = await fs.mkdtemp('/tmp/opencode/canvas-missing-skill-');
+  roots.push(root);
+  const distribution = path.join(root, 'distribution');
+  await fs.mkdir(distribution);
+  for (const file of ['package.json', 'plugin']) {
+    await fs.cp(path.join(project, file), path.join(distribution, file), { recursive: true });
+  }
+  const child = Bun.spawn(['node', path.join(project, 'tests/fixtures/plugin-host.mjs'), path.join(distribution, 'plugin/index.js')], {
+    cwd: root, env: { ...process.env, CANVAS_STORE: path.join(root, 'store') }, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
+  });
+  child.stdin.write(JSON.stringify({ scenario: 'setup', directory: root }));
+  child.stdin.end();
+  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect(stderr).toBe('');
+  expect(exit).toBe(0);
+  const result = z.object({ error: z.string(), tools: z.number(), skills: z.number() }).parse(JSON.parse(stdout));
+  expect(result.error).toContain('SKILL.md');
+  expect(result.tools).toBe(0);
+  expect(result.skills).toBe(0);
+  expect(await fs.readdir(root)).not.toContain('store');
+});
+
 const opencode = Bun.which('opencode');
-test.skipIf(opencode === null)('AC-066 AC-070: actual OpenCode registers Canvas and cold-starts a working viewer without MCP', async () => {
+test.skipIf(opencode === null)('AC-066 AC-070 AC-076: actual OpenCode loads the Canvas skill and cold-starts a working viewer', async () => {
   if (opencode === null) throw new Error('OpenCode CLI is required');
   const root = await fs.mkdtemp('/tmp/opencode/canvas-opencode-');
   roots.push(root);
@@ -128,11 +185,15 @@ test.skipIf(opencode === null)('AC-066 AC-070: actual OpenCode registers Canvas 
       await request.exited;
       await Bun.sleep(200);
     }
-    const report = z.object({ version: z.string(), names: z.array(z.string()), directory: z.string(), result: z.object({ id: z.string(), viewUrl: z.string(), warnings: z.array(z.string()) }) }).parse(await Bun.file(reportFile).json());
+    const report = z.object({ version: z.string(), names: z.array(z.string()), directory: z.string(), skill: z.object({ id: z.string(), path: z.string(), content: z.string() }), loadedSkill: z.string(), result: z.object({ id: z.string(), viewUrl: z.string(), warnings: z.array(z.string()) }) }).parse(await Bun.file(reportFile).json());
     expect(report.names).toEqual(['canvas_archive', 'canvas_list', 'canvas_publish', 'canvas_read', 'canvas_result', 'canvas_update']);
     expect(report.directory).toBe(work);
     expect((await new ArtifactStore({ root: env.CANVAS_STORE }).getMeta(report.result.id)).directory).toBe(work);
     expect(report.result.warnings).toEqual([]);
+    expect(report.skill.id).toBe('canvas-authoring');
+    expect(report.skill.path).toBe(path.join(project, 'skills/canvas-authoring/SKILL.md'));
+    expect(report.loadedSkill).toContain(report.skill.content);
+    expect(report.loadedSkill).toContain('<skill_content name="canvas-authoring">');
     const view = await fetch(report.result.viewUrl);
     expect(view.status).toBe(200);
     expect(await view.text()).toContain('Native plugin');
