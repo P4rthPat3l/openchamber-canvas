@@ -56,7 +56,7 @@ Requirements: OpenChamber 2.5.1 or newer, OpenCode 2.2.0 or newer, and Node 24 o
 
 The gallery works without the OpenCode plugin: you can browse, open, export, and copy artifacts. The agent cannot publish or revise until the plugin is loaded. The extension does not change your OpenCode configuration, and the gallery does not guess whether a session has loaded its tools.
 
-The plugin also registers the bundled [`canvas-authoring`](skills/canvas-authoring/SKILL.md) skill with OpenCode. No separate skill installation is needed. Its instructions cover example reuse, one source file, the Canvas runtime, verification, and safe revisions. The namespace and publish/update descriptions ask agents to load it before authoring. Availability does not guarantee that a model loads it first; you can explicitly ask the agent to load `canvas-authoring`.
+The plugin also registers the bundled [`canvas-authoring`](skills/canvas-authoring/SKILL.md) skill with OpenCode. No separate skill installation is needed. Its instructions cover example reuse, one source file, a preflight check, one complete publish, the Canvas runtime, actual-view verification, batched corrections, and safe revisions. The namespace and publish/update descriptions ask agents to load it before authoring. Availability does not guarantee that a model loads it first; you can explicitly ask the agent to load `canvas-authoring`.
 
 ## Use it
 

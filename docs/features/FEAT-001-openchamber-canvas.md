@@ -6,9 +6,9 @@ status: active
 implementation_status: shipped_unverified
 owner: Parth
 created: 2026-10-23
-last_updated: 2026-11-01
+last_updated: 2026-11-02
 last_verified_commit: null
-version: 2.1.0
+version: 2.1.1
 tags:
   - openchamber
   - extension
@@ -2685,7 +2685,7 @@ Status: Inferred. The user approved the detailed plan, and the bundled skill shi
 
 When the user loads the Canvas OpenCode plugin, OpenCode also discovers `canvas-authoring` through its native skill registry. An agent can load it through the existing skill tool before creating or revising an artifact. No global skill installation, additional Canvas tool, extra extension permission, configuration writer, or backend change is needed.
 
-The skill guides efficient authoring, not general document creation or an entire design process. It explains output selection, reuse of the shipped examples, one canonical source file, project-confined `filePath` publication, Canvas runtime and sandbox constraints, bounded verification, safe revisions, and feedback handoff. It must respect user instructions and stronger project verification rules. It does not force every static report to simulate application loading/error states or require a new application scaffold.
+The skill guides efficient authoring, not general document creation or an entire design process. It explains output selection, reuse of the shipped examples, one canonical source file, project-confined `filePath` publication, a preflight self-check before the first publish, one complete publish for a new artifact, Canvas runtime and sandbox constraints, bounded verification with a stop condition, batched corrections after a concrete runtime failure, safe revisions, and feedback handoff. It must respect user instructions and stronger project verification rules. It does not force every static report to simulate application loading/error states or require a new application scaffold.
 
 Tool and skill descriptions guide early loading. They do not enforce tool order or prove that the agent followed the skill. Automatic model selection, reduced generation time, installed OpenChamber acceptance, and output-quality improvement require separate agent-loop evidence and must not be claimed from registration tests.
 
@@ -2721,7 +2721,7 @@ The plugin uses `packageRoot()` to resolve the skill from the installed package,
 |---|---|
 | Bundled authoring guidance | `skills/canvas-authoring/SKILL.md`; workflow, metadata, and relative links to existing examples |
 | Native skill and tool discovery | `src/plugin/index.ts`, generated `plugin/index.js`; `setup` reads the asset, registers its metadata/body/path, guides early loading, and disposes both registrations |
-| Deterministic contracts | `tests/skill.test.ts`; guidance/resource/metadata/documentation assertions and review-case presence |
+| Deterministic contracts | `tests/skill.test.ts`; guidance/resource/metadata/documentation assertions, the preflight/publish-once/stop contract, and review-case presence |
 | Lifecycle and installed-package checks | `tests/plugin.test.ts`, `tests/fixtures/plugin-host.mjs`, `tests/fixtures/native-observer.mjs`; missing asset, unload/reload, relocated publishing, and actual built-in skill loading |
 | Unexecuted authoring trials | `skills/canvas-authoring/evals/`; chart, static report, and seeded existing-artifact revision prompts with expected outcomes |
 
@@ -2736,6 +2736,11 @@ Every added test names its criterion ID. Deterministic criteria have automated e
 | AC-076 | The normal OpenCode skill tool loads the registered skill and returns its authoring content in an isolated actual server. Namespace/publish/update descriptions direct the agent to load it before writing or revising source. No new tool or forced call-order gate is introduced. | `tests/plugin.test.ts`, `tests/fixtures/native-observer.mjs`; assertions on descriptions and built-in skill output |
 | AC-077 | The shipped skill covers output routing, one canonical source, shipped examples, no CDN, bundled libraries, Canvas storage/feedback, actual-view verification, existing project checks, read-before-update/baseVersion, conflict rereads, and feedback review. All referenced resources exist; metadata and registered description agree. | `tests/skill.test.ts`; the read response's `version` is explicitly mapped to update `baseVersion`; three review prompts exist but are unexecuted |
 | AC-078 | Existing operation, viewer, sandbox, and distribution tests still pass. The package adds no permissions or runtime SDK dependency and writes no external configuration. README explains bundled skill discovery after plugin registration and does not promise automatic loading or faster generation. | Existing unit/browser suites; package and documentation assertions in `tests/plugin.test.ts` and `tests/skill.test.ts`; independent review |
+| AC-079 | The shipped skill directs the agent to complete a source preflight before the first publish, publish one complete artifact for a new artifact, batch concrete runtime fixes into one update, and stop unless the user asks for another change or a new defect appears. The namespace, publish, and update descriptions carry the preflight and one-publish rule, and the review expectations match. The old publish-first wording is absent. | `tests/skill.test.ts` |
+
+### Publish-as-preview correction
+
+On 2026-11-02, the artifact store showed recent artifacts gaining two or three versions in one authoring pass, with one-line changes between them. The skill's instruction to publish the first coherent version and then fix failures through `canvas_update` encouraged using Canvas as the verification surface. AC-079 tightens the contract: complete a source preflight, publish one complete artifact, verify the actual view once, batch concrete fixes into one update, and stop unless the user asks for another change or a new defect appears. Tool descriptions carry the same rule because skill loading is not guaranteed.
 
 ### Completed implementation phases
 
@@ -2744,10 +2749,13 @@ Every added test names its criterion ID. Deterministic criteria have automated e
 3. Extended the existing relocated-installation test and real-OpenCode observer to load the normal skill tool and verify content/path behavior. Existing publish/cold-start checks remain in place. Both relocated child invocations use explicitly isolated viewer paths.
 4. Updated `README.md`, `examples/README.md`, platform research, this feature document/index, and packaging conventions in `AGENTS.md`. Rebuilt distribution files and set the package version to 0.4.0 for this release.
 5. Ran the existing typecheck, lint, unit, browser, and build commands and obtained independent review. No UI was changed; browser suites remain regression evidence, not proof of agent selection.
+6. On 2026-11-02, tightened the skill and tool descriptions after the store showed repeated two- and three-version passes within one authoring run. Added a preflight checklist, one-publish rule, batched correction rule, and stop condition; updated review expectations and contract tests.
 
 ### Verification and remaining acceptance
 
 On 2026-11-01, `bun run typecheck`, `bun run lint`, `bun test`, `bun run test:browser`, and `bun run build` passed. The unit suite has 97 passing tests and no failures or skips, including real OpenCode 2.2.5 skill loading and cold-start viewing. The lifecycle test failed before implementation because no skill was registered. A focused instruction-contract test also failed before correcting the read-response field name.
+
+On 2026-11-02, the preflight/publish-once guidance change passed `bun run typecheck`, `bun run lint`, `bun test` (98 passing), `bun run build`, and `bun run test:browser`. The browser suite repeated the gallery/status and real viewer/example checks in light and dark. The contract test covers the skill and tool-description wording, not model behavior: actual model selection and whether the churn drops in real authoring runs remain unmeasured. The observed store still contains the earlier multi-version artifacts; no artifact data was changed.
 
 The browser suite passed gallery/status, real viewer/native tools, and all three authoring examples. Its overflow, token, label/24px accessibility, semantics, and layout gates passed in light and dark at 320, 375, 390, 768, 1024, 1280, 1440, and 2048px. Rendered Setup snapshots were inspected at 390, 1280, and 2048px in both themes. These checks use the repository's Playwright/Chrome harness, not an unavailable `browser.capture` tool, and do not certify full contrast or 44px touch targets.
 
@@ -2760,6 +2768,7 @@ The user installed the preview build and reported it working. Remaining acceptan
 ### Changelog
 
 - 2026-11-01: Bundled and registered Canvas authoring guidance through the native skill registry, added installed-package/lifecycle/contract coverage and three unexecuted authoring review cases, and guided early loading without enforcing tool order. Released as package 0.4.0. No store migration.
+- 2026-11-02: Tightened the skill, namespace, publish/update descriptions, and review expectations around preflight, one complete publish, batched corrections, and a stop condition after observed publish-as-preview churn. No package version or store change.
 
 ### Risks, fallback, and rollback
 

@@ -2,7 +2,7 @@ schema_version: "1.1"
 name: simple-chart
 expected_outcome: |
   The agent loads canvas-authoring before writing HTML, reuses the chart pattern,
-  and publishes one Canvas artifact with the supplied values and a matching table.
-  It requests bundled chartjs rather than a CDN and checks the actual viewUrl.
-  It uses one canonical source, fixes concrete failures through updates, and
-  reports any unavailable browser verification without claiming it passed.
+  completes the preflight, and publishes one complete Canvas artifact with the
+  supplied values and a matching table. It requests bundled chartjs rather than a
+  CDN and checks the actual viewUrl. It batches any concrete runtime fix into one
+  update and reports any unavailable browser verification without claiming it passed.

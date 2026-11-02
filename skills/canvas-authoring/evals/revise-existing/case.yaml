@@ -3,6 +3,7 @@ name: revise-existing
 expected_outcome: |
   Run this case with one existing Release readiness Canvas artifact in an isolated
   project and store. The agent loads canvas-authoring, lists and reads that artifact,
-  changes only the requested content, and updates the same ID with the read version
-  as baseVersion. A conflict causes a reread and reconciliation, not a blind overwrite.
-  It checks the changed content or states the verification limit. It never deploys.
+  batches the requested content changes, preflights the changed source, and updates
+  the same ID once with the read version as baseVersion. A conflict causes a reread
+  and reconciliation, not a blind overwrite. It checks the changed content or states
+  the verification limit. It never deploys.
