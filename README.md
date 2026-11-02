@@ -32,7 +32,7 @@ The repository includes source examples you can publish or copy: a chart, a focu
 |:--:|:--:|:--:|
 | <img src="docs/images/example-chart.png" width="260" alt="Bar chart of weekly enquiries with a matching data table"> | <img src="docs/images/example-diagram.png" width="260" alt="Focused property-platform data-flow diagram"> | <img src="docs/images/example-mockup.png" width="260" alt="Listing alert preferences form"> |
 
-The examples live in [`examples/`](examples/README.md) with publishing notes. They have no external requests and work in light and dark themes.
+The examples live in [`examples/`](examples/README.md) with publishing notes. They include a fallback design system with a Light/Dark switcher, a chart, a focused data-flow diagram, and an interactive preferences mockup. They have no external requests and work in light and dark themes.
 
 ## Install
 
@@ -56,7 +56,7 @@ Requirements: OpenChamber 2.5.1 or newer, OpenCode 2.2.0 or newer, and Node 24 o
 
 The gallery works without the OpenCode plugin: you can browse, open, export, and copy artifacts. The agent cannot publish or revise until the plugin is loaded. The extension does not change your OpenCode configuration, and the gallery does not guess whether a session has loaded its tools.
 
-The plugin also registers the bundled [`canvas-authoring`](skills/canvas-authoring/SKILL.md) skill with OpenCode. No separate skill installation is needed. Its instructions cover example reuse, one source file, a preflight check, one complete publish, the Canvas runtime, actual-view verification, batched corrections, and safe revisions. The namespace and publish/update descriptions ask agents to load it before authoring. Availability does not guarantee that a model loads it first; you can explicitly ask the agent to load `canvas-authoring`.
+The plugin also registers the bundled [`canvas-authoring`](skills/canvas-authoring/SKILL.md) skill with OpenCode. No separate skill installation is needed. Its instructions cover project-first design tokens, the fallback [Canvas design system](examples/design-system.html), example reuse, one source file, a preflight check, one complete publish, the Canvas runtime, actual-view verification, batched corrections, and safe revisions. The namespace and publish/update descriptions ask agents to load it before authoring. Availability does not guarantee that a model loads it first; you can explicitly ask the agent to load `canvas-authoring`.
 
 ## Use it
 
@@ -83,7 +83,7 @@ The extension asks for the `service` permission only. The user separately author
 
 The viewer outlives a plugin reload, so an open artifact does not depend on the agent session staying alive. The browser panel renders the page; the viewer enforces the sandbox. Native annotation does not reach these sandboxed pages, so feedback and revision notes are the supported review path.
 
-More detail: [feature document](docs/features/FEAT-001-openchamber-canvas.md), [platform research](docs/research/openchamber-extension-platform.md), and [gallery design](docs/design/canvas-gallery.md).
+More detail: [feature document](docs/features/FEAT-001-openchamber-canvas.md), [platform research](docs/research/openchamber-extension-platform.md), [gallery design](docs/design/canvas-gallery.md), and [artifact design system](docs/design/artifact-design-system.md).
 
 ## Development
 

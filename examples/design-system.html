@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canvas default system</title>
+<style>
+:root{color-scheme:light;--canvas-bg:#f3efe7;--canvas-surface:#fffdf8;--canvas-surface-2:#ebe4d7;--canvas-ink:#211f1b;--canvas-muted:#6c655b;--canvas-line:#d8cfbf;--canvas-line-strong:#b4a894;--canvas-control:#8a7c68;--canvas-accent:#b85c3b;--canvas-accent-strong:#8c3e25;--canvas-accent-soft:#f1dcd0;--canvas-action:#8c3e25;--canvas-action-ink:#fffdf8;--canvas-success:#2f6b4f;--canvas-success-soft:#dcebe2;--canvas-warning:#855714;--canvas-warning-soft:#f3e5c5;--canvas-danger:#923b3b;--canvas-danger-soft:#f2dada;--canvas-focus:#2f5f7a;--canvas-shadow:0 1px 2px rgb(33 31 27 / 6%),0 14px 36px rgb(33 31 27 / 8%);--canvas-radius-sm:6px;--canvas-radius:10px;--canvas-radius-lg:18px;--font-display:ui-serif,"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;--font-body:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--font-mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace}
+[data-theme=dark]{color-scheme:dark;--canvas-bg:#171411;--canvas-surface:#201c17;--canvas-surface-2:#29241d;--canvas-ink:#f3eee5;--canvas-muted:#b9b0a2;--canvas-line:#3b342b;--canvas-line-strong:#5b5143;--canvas-control:#8f806c;--canvas-accent:#e08a66;--canvas-accent-strong:#f0a888;--canvas-accent-soft:#3b261d;--canvas-action:#e08a66;--canvas-action-ink:#171411;--canvas-success:#8fc9a7;--canvas-success-soft:#1d3226;--canvas-warning:#e0b66f;--canvas-warning-soft:#382b16;--canvas-danger:#e59a9a;--canvas-danger-soft:#3a1d1d;--canvas-focus:#8fc7e0;--canvas-shadow:0 1px 2px rgb(0 0 0 / 30%),0 18px 44px rgb(0 0 0 / 28%)}
+*{box-sizing:border-box}
+html{background:var(--canvas-bg);scrollbar-color:var(--canvas-line-strong) transparent}
+body{margin:0;background:var(--canvas-bg);color:var(--canvas-ink);font:1rem/1.6 var(--font-body);text-rendering:optimizeLegibility;caret-color:var(--canvas-accent-strong)}
+::selection{background:var(--canvas-accent-soft);color:var(--canvas-ink)}
+:focus-visible{outline:2px solid var(--canvas-focus);outline-offset:3px}
+a{color:var(--canvas-accent-strong);text-underline-offset:.18em}
+.canvas-page{width:min(100% - 2rem,72rem);margin:0 auto;padding:2.5rem 0 4rem}
+.canvas-header{display:flex;justify-content:space-between;align-items:flex-start;gap:2rem;padding-bottom:1.75rem;border-bottom:1px solid var(--canvas-line)}
+.canvas-title{max-width:14ch;margin:0;font-family:var(--font-display);font-size:clamp(2.5rem,6vw,4.8rem);font-weight:600;line-height:.96;letter-spacing:-.035em;text-wrap:balance}
+.canvas-lede{max-width:56ch;margin:1.1rem 0 0;color:var(--canvas-muted);font-size:1.05rem;text-wrap:pretty}
+.canvas-theme{display:inline-flex;flex:0 0 auto;padding:.2rem;border:1px solid var(--canvas-line);border-radius:999px;background:var(--canvas-surface);box-shadow:var(--canvas-shadow)}
+.canvas-theme button{appearance:none;border:0;border-radius:999px;background:transparent;color:var(--canvas-muted);font:650 .78rem/1 var(--font-body);letter-spacing:.02em;padding:.55rem .85rem;cursor:pointer}
+.canvas-theme button[aria-pressed=true]{background:var(--canvas-ink);color:var(--canvas-bg)}
+.canvas-section{padding-top:3.5rem}
+.canvas-section-head{display:flex;justify-content:space-between;align-items:baseline;gap:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--canvas-line)}
+.canvas-section-title{margin:0;font-family:var(--font-display);font-size:clamp(1.6rem,2.8vw,2.4rem);line-height:1.1;letter-spacing:-.02em}
+.canvas-section-note{max-width:38ch;margin:0;color:var(--canvas-muted);font-size:.9rem;text-align:right;text-wrap:pretty}
+.canvas-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.5rem;padding-top:1.5rem}
+.canvas-panel{padding:1.4rem;border:1px solid var(--canvas-line);border-radius:var(--canvas-radius);background:var(--canvas-surface)}
+.canvas-panel-title{margin:0 0 1rem;font-size:.95rem;font-weight:700;letter-spacing:.01em}
+.canvas-type-display{margin:0 0 .9rem;font-family:var(--font-display);font-size:2.6rem;line-height:1;letter-spacing:-.03em}
+.canvas-type-heading{margin:0 0 .35rem;font-size:1.15rem;line-height:1.3}
+.canvas-type-body{max-width:62ch;margin:0 0 .8rem}
+.canvas-type-caption{margin:0;color:var(--canvas-muted);font-size:.82rem;line-height:1.45}
+.canvas-swatches{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem}
+.canvas-swatch{min-width:0}
+.canvas-swatch::before{content:"";display:block;height:2.8rem;margin-bottom:.5rem;border:1px solid var(--canvas-line);border-radius:var(--canvas-radius-sm);background:var(--swatch)}
+.canvas-swatch span{display:block;font-size:.78rem;color:var(--canvas-muted)}
+.canvas-swatch strong{display:block;font-size:.82rem;font-weight:650}
+.canvas-demo{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,.65fr);gap:1.5rem;padding-top:1.5rem;align-items:start}
+.canvas-card{padding:1.5rem;border:1px solid var(--canvas-line);border-radius:var(--canvas-radius-lg);background:var(--canvas-surface);box-shadow:var(--canvas-shadow)}
+.canvas-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}
+.canvas-card-title{margin:0;font-family:var(--font-display);font-size:1.65rem;line-height:1.1;letter-spacing:-.02em}
+.canvas-card-copy{margin:.8rem 0 0;color:var(--canvas-muted)}
+.canvas-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin:1.4rem 0 0}
+.canvas-facts div{padding-top:.75rem;border-top:1px solid var(--canvas-line)}
+.canvas-facts dt{color:var(--canvas-muted);font-size:.78rem}
+.canvas-facts dd{margin:.2rem 0 0;font-weight:650}
+.canvas-badge{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .55rem;border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+.canvas-badge::before{content:"";width:.4rem;height:.4rem;border-radius:50%;background:currentColor}
+.canvas-badge--success{background:var(--canvas-success-soft);color:var(--canvas-success)}
+.canvas-badge--warning{background:var(--canvas-warning-soft);color:var(--canvas-warning)}
+.canvas-badge--danger{background:var(--canvas-danger-soft);color:var(--canvas-danger)}
+.canvas-badge--neutral{background:var(--canvas-surface-2);color:var(--canvas-muted)}
+.canvas-callout{padding:1.3rem 1.4rem;border:1px solid var(--canvas-line-strong);border-radius:var(--canvas-radius);background:var(--canvas-surface-2)}
+.canvas-callout strong{display:block;margin-bottom:.4rem;font-size:.9rem}
+.canvas-callout p{margin:0;color:var(--canvas-muted);font-size:.9rem}
+.canvas-form{display:grid;gap:1rem;max-width:34rem;padding-top:1.5rem}
+.canvas-field{display:grid;gap:.4rem;font-size:.86rem;font-weight:650}
+.canvas-input,.canvas-select{width:100%;padding:.65rem .75rem;border:1px solid var(--canvas-control);border-radius:var(--canvas-radius-sm);background:var(--canvas-surface);color:var(--canvas-ink);font:inherit}
+.canvas-input::placeholder{color:var(--canvas-muted);opacity:1}
+.canvas-check{display:flex;align-items:center;gap:.6rem;font-size:.9rem}
+.canvas-check input{inline-size:1rem;block-size:1rem;accent-color:var(--canvas-action)}
+.canvas-actions{display:flex;flex-wrap:wrap;gap:.6rem}
+.canvas-button{appearance:none;border:1px solid var(--canvas-control);border-radius:var(--canvas-radius-sm);background:var(--canvas-surface);color:var(--canvas-ink);font:650 .86rem/1 var(--font-body);padding:.7rem .9rem;cursor:pointer}
+.canvas-button:not([disabled]):hover{border-color:var(--canvas-ink)}
+.canvas-button--primary{border-color:var(--canvas-action);background:var(--canvas-action);color:var(--canvas-action-ink)}
+.canvas-button--primary:not([disabled]):hover{filter:brightness(1.08)}
+.canvas-button--quiet{border-color:transparent;background:transparent;color:var(--canvas-accent-strong);padding-inline:.35rem}
+.canvas-button[disabled]{opacity:.45;cursor:not-allowed}
+.canvas-status{margin:0;padding:.75rem 1rem;border:1px solid var(--canvas-line);border-radius:var(--canvas-radius-sm);background:var(--canvas-surface-2);color:var(--canvas-muted);font-size:.86rem}
+.canvas-table-wrap{overflow-x:auto;margin-top:1.5rem;padding:.5rem;border:1px solid var(--canvas-line);border-radius:var(--canvas-radius);background:var(--canvas-surface)}.canvas-table-hint{display:none;margin:.5rem 0 0;color:var(--canvas-muted);font-size:.78rem}
+.canvas-table{width:100%;min-width:36rem;border-collapse:collapse}
+.canvas-table caption{padding:1rem 1rem .75rem;color:var(--canvas-muted);font-size:.82rem;text-align:left}
+.canvas-table th,.canvas-table td{padding:.75rem 1rem;border-bottom:1px solid var(--canvas-line);text-align:left}
+.canvas-table th{color:var(--canvas-muted);font-size:.74rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.canvas-table tbody tr:last-child td{border-bottom:0}
+.canvas-table .num{text-align:right;font-variant-numeric:tabular-nums}
+.canvas-footer{padding-top:3.5rem;color:var(--canvas-muted);font-size:.86rem}
+.canvas-footer p{max-width:60ch;margin:0}
+@media (max-width:800px){.canvas-header{display:grid;gap:1.25rem}.canvas-page{padding-top:1.5rem}.canvas-title{max-width:12ch}.canvas-grid,.canvas-demo{grid-template-columns:1fr}.canvas-section-head{display:grid;gap:.5rem}.canvas-section-note{max-width:55ch;text-align:left}.canvas-table-hint{display:block}}
+@media (max-width:480px){.canvas-swatches{grid-template-columns:repeat(2,minmax(0,1fr))}.canvas-facts{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:no-preference){.canvas-button,.canvas-theme button{transition:background-color .16s ease,border-color .16s ease,color .16s ease,filter .16s ease}}
+</style></head>
+<body><main class="canvas-page">
+<header class="canvas-header"><div><h1 class="canvas-title">Canvas default system</h1><p class="canvas-lede">A quiet editorial baseline for artifacts. Use the project's own tokens when they exist. Start here when they do not.</p></div><div class="canvas-theme" role="group" aria-label="Theme" data-theme-switch><button type="button" data-theme-value="light" aria-pressed="true">Light</button><button type="button" data-theme-value="dark" aria-pressed="false">Dark</button></div></header>
+
+<section class="canvas-section" aria-labelledby="foundations-title"><div class="canvas-section-head"><h2 class="canvas-section-title" id="foundations-title">Foundations</h2><p class="canvas-section-note">Warm neutral surfaces, deep ink, one rust accent, and a measured type scale.</p></div><div class="canvas-grid"><article class="canvas-panel"><h3 class="canvas-panel-title">Type</h3><p class="canvas-type-display">A clear point of view.</p><p class="canvas-type-heading">Headings carry the hierarchy.</p><p class="canvas-type-body">Body copy stays near 65 characters per line. Quiet color and generous spacing do the rest. Use the same scale for every artifact so a report, a dashboard, and a mockup feel related.</p><p class="canvas-type-caption">Captions use the muted tone and a smaller measure. Sample content only.</p></article><article class="canvas-panel"><h3 class="canvas-panel-title">Color</h3><div class="canvas-swatches"><div class="canvas-swatch" style="--swatch:var(--canvas-bg)"><strong>Ground</strong><span>Page</span></div><div class="canvas-swatch" style="--swatch:var(--canvas-surface)"><strong>Surface</strong><span>Card</span></div><div class="canvas-swatch" style="--swatch:var(--canvas-ink)"><strong>Ink</strong><span>Text</span></div><div class="canvas-swatch" style="--swatch:var(--canvas-accent)"><strong>Accent</strong><span>Focus</span></div><div class="canvas-swatch" style="--swatch:var(--canvas-success)"><strong>Success</strong><span>State</span></div><div class="canvas-swatch" style="--swatch:var(--canvas-danger)"><strong>Danger</strong><span>State</span></div></div></article></div></section>
+
+<section class="canvas-section" aria-labelledby="surfaces-title"><div class="canvas-section-head"><h2 class="canvas-section-title" id="surfaces-title">Surfaces</h2><p class="canvas-section-note">A card for a concrete object. A callout for a decision or a limit.</p></div><div class="canvas-demo"><article class="canvas-card"><div class="canvas-card-head"><h3 class="canvas-card-title">Release readiness</h3><span class="canvas-badge canvas-badge--warning">Needs review</span></div><p class="canvas-card-copy">API checks passed. The mobile layout still needs a review before deployment.</p><dl class="canvas-facts"><div><dt>Owner</dt><dd>Parth</dd></div><div><dt>Updated</dt><dd>2 Nov 2026</dd></div></dl></article><aside class="canvas-callout"><strong>Use project tokens first</strong><p>If the host project has a design system, replace these values with its tokens. Keep one system per artifact.</p></aside></div></section>
+
+<section class="canvas-section" aria-labelledby="controls-title"><div class="canvas-section-head"><h2 class="canvas-section-title" id="controls-title">Controls</h2><p class="canvas-section-note">Native controls, clear labels, a visible focus ring, and a disabled state.</p></div><form class="canvas-form"><label class="canvas-field">Workspace name<input class="canvas-input" name="workspace" value="Northwind" autocomplete="off"></label><label class="canvas-field">Review cadence<select class="canvas-select" name="cadence"><option>Weekly</option><option>Every two weeks</option><option>Monthly</option></select></label><label class="canvas-check"><input type="checkbox" name="summary" checked>Send a summary after each review</label><div class="canvas-actions"><button class="canvas-button canvas-button--primary" type="button">Save changes</button><button class="canvas-button" type="button">Cancel</button><button class="canvas-button canvas-button--quiet" type="button" disabled>Unavailable</button></div><p class="canvas-status" role="status">All changes saved. This specimen does not send data.</p></form></section>
+
+<section class="canvas-section" aria-labelledby="data-title"><div class="canvas-section-head"><h2 class="canvas-section-title" id="data-title">Data</h2><p class="canvas-section-note">A table with quiet rules, tabular numerals, and state badges.</p></div><div class="canvas-table-wrap"><table class="canvas-table"><caption>Sample release checks</caption><thead><tr><th scope="col">Check</th><th scope="col">Owner</th><th scope="col" class="num">Open</th><th scope="col">State</th></tr></thead><tbody><tr><td>API contract</td><td>Parth</td><td class="num">0</td><td><span class="canvas-badge canvas-badge--success">Passed</span></td></tr><tr><td>Mobile layout</td><td>Mira</td><td class="num">2</td><td><span class="canvas-badge canvas-badge--warning">Review</span></td></tr><tr><td>Deployment approval</td><td>Parth</td><td class="num">1</td><td><span class="canvas-badge canvas-badge--neutral">Waiting</span></td></tr></tbody></table></div><p class="canvas-table-hint">Scroll sideways for all columns.</p></section>
+
+<footer class="canvas-footer"><p>Use the project's design system when it exists. Otherwise start here and keep the tokens, type, and controls consistent across the artifact.</p></footer>
+</main>
+<script>
+const root=document.documentElement;const buttons=[...document.querySelectorAll('[data-theme-switch] button[data-theme-value]')];
+function setTheme(value){if(value!=='light'&&value!=='dark')return;root.dataset.theme=value;for(const button of buttons)button.setAttribute('aria-pressed',String(button.dataset.themeValue===value))}
+for(const button of buttons)button.addEventListener('click',()=>setTheme(button.dataset.themeValue));
+setTheme(root.dataset.theme==='dark'?'dark':'light');
+</script></body></html>

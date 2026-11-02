@@ -2,11 +2,16 @@
 
 Use these source files as starting points, not as automatically installed artifacts:
 
+- `design-system.html` is the fallback visual system: warm neutral tokens, a measured type scale, surfaces, controls, data, and a Light/Dark switcher. Use it when the project has no design system.
 - `chart.html` uses the pinned `chartjs` library. Its table and chart share one dataset.
 - `diagram.html` defines nodes and flows once. Focused SVG views, the complete table, and selection details derive from that graph. Nodes support Enter and Space; flow-table buttons provide keyboard access to every flow.
 - `mockup.html` demonstrates an accessible form, runtime storage, and structured feedback. It never changes a real account.
 
 The Canvas OpenCode plugin registers the bundled [`canvas-authoring`](../skills/canvas-authoring/SKILL.md) skill. Load it through the normal skill tool before creating or revising an artifact. It points to these installed examples, so no separate skill installation or template download is needed. Read only the example that fits the task and keep one canonical project-local source; installed examples are reference material, not the source folder for a different project's artifact. Complete the skill's preflight before the first publish. Publish one complete artifact, then verify the actual view; use `canvas_update` only for a concrete defect or a user-requested change, and batch related fixes into one update.
+
+Before styling, inspect the host project for its design language: CSS custom properties, Tailwind or theme config, component styles, Storybook, or design documentation. Use its tokens and primitives. If the project has none, start from `design-system.html`. Keep one system per artifact; do not mix partial project tokens with the default. The token and primitive rationale is in [the artifact design system](../docs/design/artifact-design-system.md).
+
+The chart, diagram, and mockup examples remain focused pattern references; when you reuse one, replace its local style block with the project system or `design-system.html`, and add the fallback header and Light/Dark switcher required by the preflight.
 
 Publish from the project root, keeping project ownership separate from the source subdirectory:
 
@@ -19,9 +24,9 @@ Publish from the project root, keeping project ownership separate from the sourc
 }
 ```
 
-Use the native `canvas_publish` tool, or `tools.canvas.publish` through OpenCode Code Mode. The plugin supplies the calling session's directory when you omit `directory`. Omit `libraries` for the diagram and mockup. Never load scripts or styles from a CDN. `window.canvas` provides storage and feedback in the sandbox; browser `localStorage` is unavailable. Do not put secrets or real customer information in example content.
+Use the native `canvas_publish` tool, or `tools.canvas.publish` through OpenCode Code Mode. The plugin supplies the calling session's directory when you omit `directory`. Omit `libraries` for the design system, diagram, and mockup. Never load scripts or styles from a CDN. `window.canvas` provides storage and feedback in the sandbox; browser `localStorage` is unavailable. Do not put secrets or real customer information in example content.
 
-Use `data-theme` for light/dark appearance. Keep a textual equivalent for charts and diagrams. Generate the drawing, labels, table, and details from the same data rather than maintaining separate copies. Split dense graphs into focused views and keep a complete table as the reference.
+Use `data-theme` for light/dark appearance. Every new artifact declares both themes and includes a visible Light/Dark switcher in its header, seeded from the viewer's `document.documentElement.dataset.theme`. Keep the switch per-view rather than persisting a theme that overrides the host. Keep a textual equivalent for charts and diagrams. Generate the drawing, labels, table, and details from the same data rather than maintaining separate copies. Split dense graphs into focused views and keep a complete table as the reference.
 
 To revise, call `canvas_read`, edit the source file, then call `canvas_update` with `filePath` and the read response's `version` as `baseVersion`. Batch all requested changes into one update; do not publish an intermediate draft. A metadata-only update needs only `id`, `baseVersion`, and `title` or `tags`. Changed-content dedupe publishing also needs `baseVersion`.
 

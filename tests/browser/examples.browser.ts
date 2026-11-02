@@ -6,7 +6,7 @@ import { builtViewer } from './viewer-fixture';
 const fixture = await builtViewer();
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
 try {
-  for (const name of ['chart', 'diagram', 'mockup']) {
+  for (const name of ['design-system', 'chart', 'diagram', 'mockup']) {
     const html = await fs.readFile(`examples/${name}.html`, 'utf8');
     const artifact = await fixture.store.create({ title: name, kind: 'html', directory: process.cwd(), libraries: name === 'chart' ? ['chartjs'] : [], files: [{ path: 'index.html', content: html }] });
     const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
@@ -17,7 +17,39 @@ try {
     for (const theme of ['light', 'dark'] as const) {
       await page.goto((await fixture.mint(artifact.id, undefined, theme)).url);
       await page.waitForFunction(() => document.documentElement.dataset.theme === new URLSearchParams(location.search).get('theme'));
-      if (name === 'chart') {
+      if (name === 'design-system') {
+        const expectedBg = { light: 'rgb(243, 239, 231)', dark: 'rgb(23, 20, 17)' } as const;
+        const expectedCard = { light: 'rgb(255, 253, 248)', dark: 'rgb(32, 28, 23)' } as const;
+        const bodyBackground = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+        const cardBackground = () => page.evaluate(() => {
+          const card = document.querySelector('.canvas-card');
+          return card ? getComputedStyle(card).backgroundColor : '';
+        });
+        assert.equal(await page.locator('table tbody tr').count(), 3, 'AC-081: data primitives render');
+        await page.waitForFunction(() => {
+          const active = document.querySelector('[data-theme-switch] button[aria-pressed="true"]');
+          return active?.getAttribute('data-theme-value') === new URLSearchParams(location.search).get('theme');
+        });
+        const currentButton = page.getByRole('button', { name: theme === 'dark' ? 'Dark' : 'Light', exact: true });
+        const next = theme === 'dark' ? 'light' : 'dark';
+        const nextButton = page.getByRole('button', { name: next === 'dark' ? 'Dark' : 'Light', exact: true });
+        assert.equal(await currentButton.getAttribute('aria-pressed'), 'true', 'AC-081: switcher seeds from the viewer theme');
+        assert.equal(await nextButton.getAttribute('aria-pressed'), 'false', 'AC-081: inactive switcher is unpressed');
+        assert.equal(await bodyBackground(), expectedBg[theme], 'AC-081: page token renders');
+        assert.equal(await cardBackground(), expectedCard[theme], 'AC-081: surface token renders');
+        await nextButton.focus();
+        await page.keyboard.press('Enter');
+        assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), next, 'AC-081: keyboard switcher changes the theme');
+        assert.equal(await bodyBackground(), expectedBg[next], 'AC-081: page token changes with the theme');
+        assert.equal(await cardBackground(), expectedCard[next], 'AC-081: surface token changes with the theme');
+        assert.equal(await nextButton.getAttribute('aria-pressed'), 'true', 'AC-081: active switcher is pressed');
+        assert.equal(await currentButton.getAttribute('aria-pressed'), 'false', 'AC-081: previous switcher clears');
+        await currentButton.click();
+        assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), theme, 'AC-081: switcher restores the theme');
+        assert.equal(await bodyBackground(), expectedBg[theme], 'AC-081: page token restores');
+        assert.equal(await currentButton.getAttribute('aria-pressed'), 'true', 'AC-081: restored switcher is pressed');
+        assert.equal(await nextButton.getAttribute('aria-pressed'), 'false', 'AC-081: inactive switcher clears');
+      } else if (name === 'chart') {
         assert.equal(await page.locator('tbody tr').count(), 5, 'AC-065: table uses all chart values');
         assert.equal(await page.locator('canvas').evaluate(node => node instanceof HTMLCanvasElement && node.width > 0 && node.height > 0), true);
         await page.getByLabel('What should change?').fill('First note');
@@ -59,5 +91,5 @@ try {
     assert.deepEqual(errors, [], 'AC-065: examples have no script errors');
     await page.close();
   }
-  console.log('AC-065: chart, diagram, and mockup examples passed in light and dark themes');
+  console.log('AC-065 and AC-081: design system, chart, diagram, and mockup examples passed in light and dark themes');
 } finally { await browser.close(); await fixture.close(); }

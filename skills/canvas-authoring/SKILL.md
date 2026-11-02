@@ -17,12 +17,21 @@ Produce a useful artifact without repeated setup, duplicated source, or open-end
 
 Read only the example relevant to the task, not the whole repository:
 
+- [Design system](../../examples/design-system.html) is the default tokens-and-primitives reference when the project has none.
 - [Chart](../../examples/chart.html) uses bundled Chart.js and one dataset for the drawing and table.
 - [Diagram](../../examples/diagram.html) derives focused views, flow tables, and selection details from one graph.
 - [Mockup](../../examples/mockup.html) demonstrates form validation, persistent preferences, and structured feedback.
 - [Authoring reference](../../examples/README.md) explains publication and revision contracts.
 
-Reuse the structure or runtime pattern that fits. Do not copy unrelated sample content, invent metrics, or add a framework, build system, or local server for a self-contained page. Label sample data when the user requests a mockup. Reuse project design tokens when provided.
+Reuse the structure or runtime pattern that fits. Do not copy unrelated sample content, invent metrics, or add a framework, build system, or local server for a self-contained page. Label sample data when the user requests a mockup.
+
+## Use the project's design system
+
+Before styling the artifact, inspect the project for its design language: CSS custom properties, Tailwind or theme config, component styles, Storybook, or design documentation. Use its colors, type, spacing, radii, shadows, and motion. Map them into the artifact's own semantic tokens and keep the artifact self-contained. If the project has local font or image assets, include them as bundle files or embed them; do not add a remote font or CDN dependency.
+
+If the project has no design system, start from the Canvas default in `../../examples/design-system.html` and keep its tokens and primitives. Do not mix a partial project system with the default. One system per artifact. Do not copy the gallery's SDK controls; the artifact has its own visual language.
+
+Every new artifact declares light and dark tokens and includes a visible Light/Dark switcher in its header. Seed it from `document.documentElement.dataset.theme`, which the viewer sets, and update `data-theme` and `aria-pressed` when the user switches. Do not use `localStorage`. Use a per-view switch rather than a stored theme that overrides the host. Check both themes in the real viewer.
 
 ## Keep one source
 
@@ -51,6 +60,7 @@ Review the source against this checklist before the first publish:
 - The output belongs in Canvas. Use `openchamber_render` for a visual that belongs only in the chat reply.
 - One canonical source, local assets, and no CDN, remote font, external image, or open-network request.
 - Declared `libraries`, `data-theme` support, and a textual equivalent for every chart or diagram.
+- A project design system is used when present; otherwise the Canvas default tokens and primitives are used. Light and dark are defined, and the theme switcher is present.
 - Accessible labels, visible focus, keyboard access, and wrapping for long content.
 - `type="button"` actions with validation, pending, success, and retry states where the artifact performs an action.
 - Drawing, labels, table, and details derived from one dataset. No invented values or fake application states.

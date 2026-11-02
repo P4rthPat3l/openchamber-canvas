@@ -8,7 +8,7 @@ owner: Parth
 created: 2026-10-23
 last_updated: 2026-11-02
 last_verified_commit: null
-version: 2.1.1
+version: 2.2.0
 tags:
   - openchamber
   - extension
@@ -33,12 +33,14 @@ The [native OpenCode plugin replacement](#38-native-opencode-plugin-replacement)
 
 The [bundled Canvas authoring skill](#39-bundled-canvas-authoring-skill) ships in package 0.4.0. Native skill loading, lifecycle, relocated distribution, and existing regression checks are covered. The installed preview build was reported working; actual model selection and authoring-speed comparisons remain unverified.
 
+The [artifact design system](#40-artifact-design-system) ships in package 0.5.0. It adds the project-first fallback, the reference example, and the per-view Light/Dark switcher, with AC-080 and AC-081.
+
 ## 1. Feature Snapshot
 
 | Field | Details |
 |---|---|
 | Document status | Active |
-| Implementation status | 0.4.0 bundled authoring skill built; user-reported working; model-selection trials pending |
+| Implementation status | 0.5.0 artifact design system and 0.4.0 bundled authoring skill built; user-reported working; model-selection trials pending |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, native plugin, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -47,7 +49,7 @@ The [bundled Canvas authoring skill](#39-bundled-canvas-authoring-skill) ships i
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode plugin host |
 | Feature flag | None in v1 |
-| Last verified | Typecheck and the browser suite pass against this working tree. Native regressions include relocated packages, session lookup, cancellation, and actual OpenCode cold-start viewing. The browser suite covers sandboxing, fixed/following views, drafts, feedback, and native Setup at eight widths in both themes. Model selection, permission rejection, native tool cards, and desktop routing remain manual acceptance. Verification ran against the working tree before the 0.4.0 release commit; no separate verified commit is recorded. |
+| Last verified | Typecheck and the browser suite pass against this working tree. Native regressions include relocated packages, session lookup, cancellation, and actual OpenCode cold-start viewing. The browser suite covers sandboxing, fixed/following views, drafts, feedback, native Setup at eight widths in both themes, and the design-system example in light and dark. Model selection, permission rejection, native tool cards, and desktop routing remain manual acceptance. Verification ran against the working tree before the 0.5.0 release commit; no separate verified commit is recorded. |
 
 ### At a Glance
 
@@ -2778,3 +2780,55 @@ The user installed the preview build and reported it working. Remaining acceptan
 - R-SKILL-04: A skill may increase work rather than reduce it. Keep it focused, reuse existing examples, and separate deterministic contract checks from the three human-reviewed task prompts. Timing or quality claims require measured with/without-skill runs; those are not implied by passing unit tests.
 
 Rollback removes the skill registration, bundled guidance, and discovery wording from the package. It does not touch artifact data or user configuration. No commit, push, release, installation, or external configuration edit is authorized by this plan.
+
+## 40. Artifact design system
+
+Status: Inferred. The user approved a project-first fallback and an Anthropic-inspired editorial direction. The reference example ships in package 0.5.0; the chart, diagram, and mockup examples remain focused technical references rather than being restyled in this pass.
+
+### Outcome and scope
+
+Canvas artifacts need a coherent visual language even when the host project has no design system. The authoring skill tells the agent to inspect the project first for CSS custom properties, Tailwind or theme config, component styles, Storybook, or design documentation. When one exists, the agent maps its tokens and primitives into the self-contained artifact. When none exists, it starts from `examples/design-system.html` and keeps one system per artifact.
+
+The fallback defines warm neutral light and dark tokens, an editorial serif display with a system sans body, semantic state colors, surfaces, controls, tables, badges, callouts, and a visible Light/Dark switcher. The switcher is seeded from the viewer's `data-theme` and remains per-view; it does not persist a preference that overrides the host. The artifact stays self-contained: no CDN, remote font, external image, or gallery SDK control.
+
+### Direction
+
+The default is Anthropic-inspired editorial, not a copy of Anthropic's interface. Warm paper ground, deep ink, a restrained rust accent, a serif display voice, a workhorse system sans, quiet one-pixel rules, modest radii, and soft offset shadows. The palette is restrained: warm neutrals plus one accent, with success, warning, and danger used only for meaning. The reference avoids a hero-metric page, eyebrow labels, colored left rails, gradient text, and cards as the page structure.
+
+### Architecture and data flow
+
+The feature adds no runtime API, store field, tool, permission, or viewer endpoint. The native plugin already ships the skill and examples. The authoring guidance points to the reference, and the artifact carries its own CSS and switcher script. The viewer continues to set the initial `data-theme`; the artifact reads it and updates the root attribute when the user switches. The example is served through the existing sandbox and viewer path.
+
+### Implementation map
+
+| Area | Files and responsibilities |
+|---|---|
+| Authoring guidance | `skills/canvas-authoring/SKILL.md`; project-first design-system detection, fallback link, theme-switcher rule, preflight |
+| Fallback reference | `examples/design-system.html`; tokens, type, surfaces, controls, data, theme switcher |
+| Design documentation | `docs/design/artifact-design-system.md`; token table, primitives, constraints, verification |
+| Contract and browser coverage | `tests/skill.test.ts`, `tests/browser/examples.browser.ts`, `tests/plugin.test.ts`; link/resource assertions, real-viewer theme switch, relocated example presence |
+| User-facing docs | `README.md`, `examples/README.md`, `docs/features/README.md`, `AGENTS.md`; discoverability and constraints |
+
+### Acceptance criteria and tests
+
+| ID | Observable criterion | Validation |
+|---|---|---|
+| AC-080 | The shipped skill tells the agent to inspect and use the project's design system first, falls back to `examples/design-system.html` when none exists, keeps one system per artifact, and requires light/dark tokens plus a visible switcher seeded from the viewer's theme. The referenced example exists and the skill stays under its size limit. | `tests/skill.test.ts` |
+| AC-081 | The fallback example loads through the built viewer in light and dark with no outside requests or script errors. Its table and primitives render, the switcher is seeded from the viewer theme, computed light/dark tokens render, and keyboard activation updates `data-theme` and `aria-pressed`. The relocated package includes the example. | `tests/browser/examples.browser.ts`, `tests/plugin.test.ts` |
+
+### Verification
+
+On 2026-11-02, `bun run typecheck`, `bun run lint`, `bun test` (98 passing), `bun run build`, and `bun run test:browser` passed. The browser suite serves `design-system.html` through the built viewer in light and dark, checks the table, the seeded switcher state, the keyboard switch, and the computed page and surface tokens, and fails on outside requests or script errors. The example was inspected at 390, 900, and 1440 px in both themes. The mechanical detector reported only the warm cream ground as a common AI surface; that ground is the approved Anthropic-inspired direction, not an accidental default. The table padding finding was fixed. The relocated-package test includes the new example. This verifies the reference and the contract, not how a model will apply the system to a new artifact.
+
+### Changelog
+
+- 2026-11-02: Added the project-first artifact design system, the Anthropic-inspired fallback example, the Light/Dark switcher contract, design documentation, and browser/relocated-package coverage. Released as package 0.5.0. No runtime API or store change.
+
+### Risks, fallback, and rollback
+
+- R-DESIGN-01: A model can ignore the project system and copy the fallback. Keep the project-first instruction in the skill and test the referenced contract; actual model selection remains a separate authoring review.
+- R-DESIGN-02: A switch that persists its theme can override the viewer and make a requested light or dark view misleading. Keep the switch per-view and do not write a theme preference that outlives the open page.
+- R-DESIGN-03: A default can turn into a house style that overwhelms the project's own language. Use the fallback only when no project system exists, and never mix partial project tokens with it.
+- R-DESIGN-04: Remote fonts or copied gallery controls would break the sandbox and the app's visual boundary. Keep fonts local, use the system stacks in the fallback, and do not import the gallery SDK styles.
+
+Rollback removes the skill section, the reference example, the design document, and the new test coverage. It does not touch artifact data, the store, the viewer, or user configuration.

@@ -75,7 +75,7 @@ test('AC-066 AC-067 AC-069 AC-074 AC-076: native tools and skill registration, c
 describe('AC-072 AC-073: native distribution contract', () => {
   test('exports the plugin, styles native tools, and has no MCP package or transport', async () => {
     const pkg = z.object({ version: z.string(), exports: record, dependencies: record, openchamber: record }).parse(await Bun.file(path.join(project, 'package.json')).json());
-    expect(pkg.version).toBe('0.4.0');
+    expect(pkg.version).toBe('0.5.0');
     expect(pkg.exports['.']).toBe('./plugin/index.js');
     expect(pkg.dependencies['@modelcontextprotocol/sdk']).toBeUndefined();
     expect(pkg.dependencies['@opencode/plugin']).toBeUndefined();
@@ -123,8 +123,9 @@ test('AC-070 AC-075: relocated built plugin and bundled skill without node_modul
   expect(setupExit).toBe(0);
   const relocated = z.object({ skillCatalog: z.array(z.object({ path: z.string(), content: z.string() })) }).parse(JSON.parse(setupOutput));
   expect(relocated.skillCatalog[0]?.path).toBe(path.join(distribution, 'skills/canvas-authoring/SKILL.md'));
+  expect(relocated.skillCatalog[0]?.content).toContain('../../examples/design-system.html');
   expect(relocated.skillCatalog[0]?.content).toContain('../../examples/chart.html');
-  for (const name of ['chart', 'diagram', 'mockup']) {
+  for (const name of ['design-system', 'chart', 'diagram', 'mockup']) {
     expect(await Bun.file(path.join(distribution, `examples/${name}.html`)).exists()).toBe(true);
   }
 }, 15000);

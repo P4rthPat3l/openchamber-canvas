@@ -4,7 +4,7 @@ Feature documentation lives in `docs/features/`. Read the relevant feature docum
 
 ## Status
 
-The 0.4.0 release keeps the 0.3.0 native OpenCode plugin and adds the bundled `canvas-authoring` skill. The shared store, sandboxed viewer, pinned rendering snapshots, native tools/service contracts, feedback handoff, paginated gallery, status section, and authoring examples exist. Installed-app acceptance remains a manual check; do not change the installed extension to manufacture a pass.
+The 0.5.0 release keeps the 0.3.0 native OpenCode plugin and the 0.4.0 bundled `canvas-authoring` skill, and adds the Canvas artifact design system with a fallback reference and Light/Dark switcher. The shared store, sandboxed viewer, pinned rendering snapshots, native tools/service contracts, feedback handoff, paginated gallery, status section, and authoring examples exist. Installed-app acceptance remains a manual check; do not change the installed extension to manufacture a pass.
 
 ## Stack
 
@@ -49,6 +49,7 @@ bun run build
 - Bundles run one level below the package root (`plugin/`, `service/`, `viewer/`), while source entries run under `src/<area>` and version resolution lives at `src/version.ts`. Package paths must work from source and relocated built installations without node_modules. Use `packageRoot()` for package assets.
 - The plugin registers `skills/canvas-authoring/SKILL.md` through `ctx.skill.transform`, not a custom tool or a global skill install. Ship `skills/` and referenced `examples/` with the built package. Read the skill before registering tools or writing a store; unload both registrations. Keep registered name/description aligned with the file's frontmatter. `ctx.skill.list()` returns a `data` envelope; the probed OpenCode 2.2.5 skill loader takes `id`. Test that real boundary instead of assuming a local source checkout matches the running CLI.
 - The skill must require a source preflight before the first publish, one complete publish for a new artifact, and a single batched `canvas_update` for concrete runtime failures. Do not restore publish-first or publish-as-preview wording. Tool descriptions must carry the same rule because skill loading is optional.
+- Artifacts use the project's design system when it exists; otherwise the shipped Canvas default. Every new artifact declares light and dark tokens and includes a visible Light/Dark switcher seeded from the viewer's theme. Do not import remote fonts, add a CDN, or copy the gallery's SDK controls.
 - Resolve the invoking session on each tool call. Use `session.location.directory` directly; `subpath` is project-relative indexing data, not a suffix to append. Do not infer the session from process.cwd(), setup location, or model-supplied sessionId.
 - Pass invocation cancellation through session/viewer calls and store lock acquisition. A cancelled waiter cannot mutate later; once an atomic write has started it completes without rollback. Plugin unload aborts its calls, never the shared viewer.
 - When spawning a JavaScript viewer with process.execPath from OpenCode's compiled Bun host, set `BUN_BE_BUN=1`. `ELECTRON_RUN_AS_NODE=1` handles Electron but is not sufficient for OpenCode. Test cold start under the actual OpenCode binary, not only Node.

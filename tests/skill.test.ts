@@ -10,11 +10,11 @@ describe('AC-077: bundled Canvas authoring contract', () => {
   test('keeps a focused workflow and points to real installed examples', async () => {
     expect(source).toStartWith('---\nname: canvas-authoring\ndescription: Use before');
     expect(source.split('\n').length).toBeLessThan(150);
-    for (const heading of ['Choose the output', 'Start from the closest example', 'Keep one source', 'Author for the actual Canvas viewer', 'Preflight before publishing', 'Publish once, then verify the real runtime', 'Revise safely', 'Finish']) {
+    for (const heading of ['Choose the output', 'Start from the closest example', "Use the project's design system", 'Keep one source', 'Author for the actual Canvas viewer', 'Preflight before publishing', 'Publish once, then verify the real runtime', 'Revise safely', 'Finish']) {
       expect(source).toContain(`## ${heading}\n`);
     }
     const resources = [...source.matchAll(/\]\((\.\.?\/[^)]+)\)/g)].map(match => match[1]);
-    expect(resources).toEqual(['../../examples/chart.html', '../../examples/diagram.html', '../../examples/mockup.html', '../../examples/README.md']);
+    expect(resources).toEqual(['../../examples/design-system.html', '../../examples/chart.html', '../../examples/diagram.html', '../../examples/mockup.html', '../../examples/README.md']);
     for (const resource of resources) {
       expect(resource).toBeDefined();
       if (resource === undefined) throw new Error('Missing resource path');
@@ -38,6 +38,9 @@ describe('AC-077: bundled Canvas authoring contract', () => {
       'Stop when the request is met and the actual view passes',
       'Another update needs a new user request or a new concrete defect',
       'Batch all requested changes into one update',
+      'inspect the project for its design language', 'CSS custom properties', 'Tailwind or theme config',
+      'the Canvas default', 'One system per artifact', 'Light/Dark switcher',
+      'document.documentElement.dataset.theme', 'aria-pressed', 'per-view switch', 'both themes',
     ]) expect(source).toContain(contract);
     expect(source).not.toContain('returned `baseVersion`');
     expect(source).not.toContain('Publish the first coherent version');
