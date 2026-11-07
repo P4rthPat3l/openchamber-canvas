@@ -2,34 +2,44 @@
 
 Use these source files as starting points, not as automatically installed artifacts:
 
-- `design-system.html` is the fallback visual system: warm neutral tokens, a measured type scale, surfaces, controls, data, and a Light/Dark switcher. Use it when the project has no design system.
-- `chart.html` uses the pinned `chartjs` library. Its table and chart share one dataset.
-- `diagram.html` defines nodes and flows once. Focused SVG views, the complete table, and selection details derive from that graph. Nodes support Enter and Space; flow-table buttons provide keyboard access to every flow.
-- `mockup.html` demonstrates an accessible form, runtime storage, and structured feedback. It never changes a real account.
+- `design-system.html` is the fallback tokens-and-primitives reference when the project has no system.
+- `chart.html` uses bundled Chart.js and one dataset for its bars and table.
+- `diagram.html` derives focused views, a complete table, and keyboard-accessible details from one graph.
+- `mockup.html` demonstrates validation, pending/retry behavior, storage, and feedback. It never changes a real account.
+- `report.html` is a static decision/investigation starter. Content remains readable without scripts.
 
-The Canvas OpenCode plugin registers the bundled [`canvas-authoring`](../skills/canvas-authoring/SKILL.md) skill. Load it through the normal skill tool before creating or revising an artifact. It points to these installed examples, so no separate skill installation or template download is needed. Read only the example that fits the task and keep one canonical project-local source; installed examples are reference material, not the source folder for a different project's artifact. Complete the skill's preflight before the first publish. Publish one complete artifact, then verify the actual view; use `canvas_update` only for a concrete defect or a user-requested change, and batch related fixes into one update.
+The plugin registers the bundled [`canvas-authoring`](../skills/canvas-authoring/SKILL.md) skill. Load it before authoring. Choose the reader's scenario, then read its focused reference and closest starter. Keep one canonical project-local source; installed examples are not the source directory for another project's artifact.
 
-Before styling, inspect the host project for its design language: CSS custom properties, Tailwind or theme config, component styles, Storybook, or design documentation. Use its tokens and primitives. If the project has none, start from `design-system.html`. Keep one system per artifact; do not mix partial project tokens with the default. The token and primitive rationale is in [the artifact design system](../docs/design/artifact-design-system.md).
+Inspect the project's design language first: CSS variables, Tailwind/theme config, components, Storybook, or design docs. Use its full system. Otherwise these starters already carry the fallback foundations and viewer-seeded Light/Dark switcher. They share tokens and controls, not identical layouts. Do not assemble a new system for each artifact. See the [artifact design rules](../docs/design/artifact-design-system.md).
 
-The chart, diagram, and mockup examples remain focused pattern references; when you reuse one, replace its local style block with the project system or `design-system.html`, and add the fallback header and Light/Dark switcher required by the preflight.
+## Preview, then promote
 
-Publish from the project root, keeping project ownership separate from the source subdirectory:
+Use this payload with `canvas_preview`, or `tools.canvas.preview` through Code Mode:
 
 ```json
 {
   "title": "Property enquiries",
   "filePath": "examples/chart.html",
-  "directory": "/home/parth/Production/openchamber-canvas",
   "libraries": ["chartjs"]
 }
 ```
 
-Use the native `canvas_publish` tool, or `tools.canvas.publish` through OpenCode Code Mode. The plugin supplies the calling session's directory when you omit `directory`. Omit `libraries` for the design system, diagram, and mockup. Never load scripts or styles from a CDN. `window.canvas` provides storage and feedback in the sandbox; browser `localStorage` is unavailable. Do not put secrets or real customer information in example content.
+Source paths must be inside the invoking project. Omit `directory` for that project; an explicit directory selects project ownership, not a scratch output folder. Copy/adapt an installed starter into the actual project before previewing it. Omit libraries except for the chart starter. No CDN, external font, image, or open-network dependency is allowed.
 
-Use `data-theme` for light/dark appearance. Every new artifact declares both themes and includes a visible Light/Dark switcher in its header, seeded from the viewer's `document.documentElement.dataset.theme`. Keep the switch per-view rather than persisting a theme that overrides the host. Keep a textual equivalent for charts and diagrams. Generate the drawing, labels, table, and details from the same data rather than maintaining separate copies. Split dense graphs into focused views and keep a complete table as the reference.
+Complete source preflight and check the returned preview `viewUrl` in the actual renderer. Inspect a narrow/wide view and both themes together, including relevant interactions. Fix concrete failures in the canonical source as one batch, create another preview, and use at most one normal confirmation pass.
 
-To revise, call `canvas_read`, edit the source file, then call `canvas_update` with `filePath` and the read response's `version` as `baseVersion`. Batch all requested changes into one update; do not publish an intermediate draft. A metadata-only update needs only `id`, `baseVersion`, and `title` or `tags`. Changed-content dedupe publishing also needs `baseVersion`.
+After checks pass, call `canvas_publish` with a title and the tested `previewId`. Do not send the source again. Canvas promotes frozen source and rendering, not a reread of a changed local file. Publish one complete artifact; do not publish intermediate drafts. Direct source publication remains supported if preview is unavailable, with actual-runtime checks afterward where possible.
 
-Feedback is saved, not automatically sent to an agent. The gallery's Add feedback to chat action puts selected records in the composer for review. An explicitly opened version is a fixed snapshot; opening the artifact without a version follows new revisions.
+Previews expire after 30 minutes, belong to their invoking project/session, and never appear in the gallery. Their state and feedback are disposable and never promoted. An expired preview needs another verified snapshot. No browser means rendering remains unverified; a URL is not a successful check. Preserve a published artifact ID on viewer warnings rather than blindly publishing again.
 
-Exports contain the authored source files. The viewer-injected runtime and pinned library files are not bundled into a standalone export. A chart export needs its declared library to render outside Canvas.
+## Revise safely
+
+Read the existing artifact, edit its canonical source, and preview the complete revised snapshot with the target kind and libraries. Update the same ID with `previewId` and the read response's `version` as `baseVersion`. Promotion is full replacement, not a partial bundle merge. Direct file/merge/edit inputs remain supported. Batch requested changes into one update. Metadata-only updates need only ID, base version, and title/tags. Conflicts require a reread and reconciliation.
+
+## Runtime and export
+
+`window.canvas` provides storage and feedback inside the sandbox. Browser `localStorage` is unavailable. Use validated `type="button"` actions, never native form submission. Feedback is saved, not automatically sent to an agent. Published feedback can be added to the composer for user review through the gallery.
+
+Keep Light/Dark switches per-view. Generate chart/diagram drawings and textual equivalents from one dataset. Do not invent data, put customer records into examples, or add fake application states to static reports.
+
+An explicitly opened version stays fixed; opening an artifact without a version follows revisions. Exports contain authored files only, not the viewer-injected runtime or pinned libraries. A chart export needs its declared library outside Canvas.

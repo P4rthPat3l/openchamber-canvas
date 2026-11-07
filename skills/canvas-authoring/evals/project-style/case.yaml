@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: project-style
+expected_outcome: |
+  With project.css copied to the isolated project root, the agent inspects and uses
+  that project's cool palette and sans typography rather than the warm Canvas
+  fallback. It identifies simulated actions, tests validation, pending and retry,
+  verifies a preview, and publishes its previewId once with truthful checks.

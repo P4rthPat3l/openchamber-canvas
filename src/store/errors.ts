@@ -14,6 +14,8 @@ export type StoreErrorCode =
   | 'ENTRY_NOT_FOUND'
   | 'LOCK_TIMEOUT'
   | 'RENDERING_UNAVAILABLE'
+  | 'PREVIEW_EXPIRED'
+  | 'PREVIEW_OWNERSHIP'
   | 'STORE_UNAVAILABLE';
 
 export class StoreError extends Error {

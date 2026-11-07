@@ -2,27 +2,34 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Property enquiries</title>
 <style>
-:root{color-scheme:light;--bg:#fff;--fg:#20232a;--muted:#59616e;--accent:#365ac8;--line:#dce1e8}[data-theme=dark]{color-scheme:dark;--bg:#191c22;--fg:#edf0f5;--muted:#a9b2c0;--accent:#99b4ff;--line:#404955}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.5 system-ui,sans-serif}main{max-width:52rem;padding:1.5rem;margin:auto}h1{font-size:1.5rem}p{color:var(--muted)}.plot{height:260px}table{border-collapse:collapse;width:100%;margin-top:1.5rem}th,td{text-align:left;padding:.6rem;border-bottom:1px solid var(--line)}button,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:.4rem;padding:.6rem}textarea{display:block;width:100%;margin:.5rem 0}button{cursor:pointer}button:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+:root{color-scheme:light;--canvas-bg:#f3efe7;--canvas-surface:#fffdf8;--canvas-surface-2:#ebe4d7;--canvas-row:#f8f4ec;--canvas-ink:#211f1b;--canvas-muted:#6c655b;--canvas-line:#d8cfbf;--canvas-control:#8a7c68;--canvas-accent-strong:#8c3e25;--canvas-action:#8c3e25;--canvas-action-ink:#fffdf8;--canvas-focus:#2f5f7a;--canvas-radius-sm:6px;--canvas-radius:10px;--font-display:ui-serif,"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;--font-body:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+[data-theme=dark]{color-scheme:dark;--canvas-bg:#171411;--canvas-surface:#201c17;--canvas-surface-2:#29241d;--canvas-row:#241f19;--canvas-ink:#f3eee5;--canvas-muted:#b9b0a2;--canvas-line:#3b342b;--canvas-control:#8f806c;--canvas-accent-strong:#f0a888;--canvas-action:#e08a66;--canvas-action-ink:#171411;--canvas-focus:#8fc7e0}
+*{box-sizing:border-box}html{scrollbar-color:var(--canvas-control) transparent}body{margin:0;background:var(--canvas-bg);color:var(--canvas-ink);font:1rem/1.6 var(--font-body);caret-color:var(--canvas-accent-strong)}::selection{background:var(--canvas-surface-2);color:var(--canvas-ink)}:focus-visible{outline:2px solid var(--canvas-focus);outline-offset:3px}main{width:min(100% - 2rem,64rem);margin:auto;padding:2rem 0 3rem;overflow-wrap:anywhere}header{display:flex;justify-content:space-between;align-items:start;gap:1.5rem;padding-bottom:1.5rem;border-bottom:1px solid var(--canvas-line)}h1{font:600 clamp(1.8rem,4vw,2.8rem)/1.1 var(--font-display);margin:0;text-wrap:balance}h2{font:600 1.5rem/1.2 var(--font-display);margin:2rem 0 .75rem}p{color:var(--canvas-muted);max-width:70ch}.theme{display:flex;flex-shrink:0;gap:.25rem}.theme button[aria-pressed=true]{background:var(--canvas-ink);color:var(--canvas-bg)}button,textarea{font:inherit;color:var(--canvas-ink);background:var(--canvas-surface);border:1px solid var(--canvas-control);border-radius:var(--canvas-radius-sm);padding:.6rem .8rem}button{cursor:pointer}button:hover:not(:disabled){border-color:var(--canvas-ink)}button:disabled{opacity:.5;cursor:not-allowed}.plot{height:300px;margin:1.5rem 0;padding:1rem;border:1px solid var(--canvas-line);border-radius:var(--canvas-radius);background:var(--canvas-surface)}.table{overflow-x:auto;border:1px solid var(--canvas-line);border-radius:var(--canvas-radius);background:var(--canvas-surface)}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}caption{text-align:left;padding:.75rem 1rem;font-weight:650}th,td{text-align:left;padding:.7rem 1rem;border-bottom:1px solid var(--canvas-line)}thead{background:var(--canvas-surface-2)}tbody tr:nth-child(even){background:var(--canvas-row)}td:last-child,th:last-child{text-align:right}textarea{display:block;width:100%;margin:.5rem 0;resize:vertical}#send{background:var(--canvas-action);color:var(--canvas-action-ink)}@media(max-width:600px){header{flex-direction:column}.plot{height:260px}}
 </style></head>
-<body><main><h1>Property enquiries</h1><p>Sample enquiries received this week. The table and chart use the same dataset.</p><div class="plot"><canvas aria-label="Enquiries by day" role="img"></canvas></div><table><caption>Sample weekly enquiries</caption><thead><tr><th scope="col">Day</th><th scope="col">Enquiries</th></tr></thead><tbody></tbody></table><label for="note">What should change?</label><textarea id="note" rows="2"></textarea><button id="send" type="button">Send feedback</button><p id="status" role="status"></p></main>
+<body><main><header><div><h1>Property enquiries</h1><p>Sample enquiries received this week. Counts, not unique visitors. The table and chart use the same dataset.</p></div><div class="theme" role="group" aria-label="Theme" data-theme-switch><button type="button" data-theme-value="light" aria-pressed="false">Light</button><button type="button" data-theme-value="dark" aria-pressed="false">Dark</button></div></header><div class="plot"><canvas aria-label="Enquiries by day" role="img"></canvas></div><div class="table"><table><caption>Sample weekly enquiries</caption><thead><tr><th scope="col">Day</th><th scope="col">Enquiries</th></tr></thead><tbody></tbody></table></div><h2>Review this chart</h2><p>Feedback is saved in Canvas, not sent automatically. Preview feedback is disposable.</p><label for="note">What should change?</label><textarea id="note" rows="2"></textarea><button id="send" type="button">Send feedback</button><p id="status" role="status"></p></main>
 <script>
 const values = [{day:'Monday',count:18},{day:'Tuesday',count:26},{day:'Wednesday',count:21},{day:'Thursday',count:34},{day:'Friday',count:29}];
+const themeButtons=[...document.querySelectorAll('[data-theme-value]')];
+function setTheme(value){document.documentElement.dataset.theme=value;for(const button of themeButtons)button.setAttribute('aria-pressed',String(button.dataset.themeValue===value));document.dispatchEvent(new Event('canvas-theme-change'))}
+for(const button of themeButtons)button.addEventListener('click',()=>setTheme(button.dataset.themeValue));
+setTheme(document.documentElement.dataset.theme==='dark'?'dark':'light');
 for(const value of values){const row=document.querySelector('tbody').insertRow();row.insertCell().textContent=value.day;row.insertCell().textContent=String(value.count)}
 if (typeof Chart === 'function') {
   const css = getComputedStyle(document.documentElement);
-  const foreground = css.getPropertyValue('--fg').trim();
-  new Chart(document.querySelector('canvas'), {
+  const foreground = css.getPropertyValue('--canvas-ink').trim();
+  const chart = new Chart(document.querySelector('canvas'), {
     type: 'bar',
     data: {
       labels: values.map(value => value.day),
-      datasets: [{ label: 'Enquiries', data: values.map(value => value.count), backgroundColor: css.getPropertyValue('--accent').trim() }],
+      datasets: [{ label: 'Enquiries', data: values.map(value => value.count), backgroundColor: css.getPropertyValue('--canvas-action').trim() }],
     },
     options: {
-      responsive: true, maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { legend: { display: false } },
       scales: { x: { ticks: { color: foreground } }, y: { beginAtZero: true, ticks: { color: foreground } } },
     },
   });
+  document.addEventListener('canvas-theme-change',()=>{const css=getComputedStyle(document.documentElement);chart.data.datasets[0].backgroundColor=css.getPropertyValue('--canvas-action').trim();for(const axis of ['x','y']){chart.options.scales[axis].ticks.color=css.getPropertyValue('--canvas-ink').trim();chart.options.scales[axis].grid.color=css.getPropertyValue('--canvas-line').trim()}chart.update()});
 } else {
   document.querySelector('#status').textContent = 'Publish with libraries: ["chartjs"] to draw the chart. The table remains readable.';
 }

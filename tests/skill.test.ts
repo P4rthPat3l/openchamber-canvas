@@ -13,8 +13,8 @@ describe('AC-077: bundled Canvas authoring contract', () => {
     for (const heading of ['Choose the output', 'Start from the closest example', "Use the project's design system", 'Keep one source', 'Author for the actual Canvas viewer', 'Preflight before publishing', 'Publish once, then verify the real runtime', 'Revise safely', 'Finish']) {
       expect(source).toContain(`## ${heading}\n`);
     }
-    const resources = [...source.matchAll(/\]\((\.\.?\/[^)]+)\)/g)].map(match => match[1]);
-    expect(resources).toEqual(['../../examples/design-system.html', '../../examples/chart.html', '../../examples/diagram.html', '../../examples/mockup.html', '../../examples/README.md']);
+    const resources = [...source.matchAll(/\]\(((?:\.\.?\/|references\/)[^)]+)\)/g)].map(match => match[1]);
+    expect(resources).toEqual(['references/architecture.md', 'references/feature.md', 'references/ui-proposal.md', 'references/decision.md', 'references/investigation.md', 'references/metrics.md', '../../examples/design-system.html', '../../examples/chart.html', '../../examples/diagram.html', '../../examples/mockup.html', '../../examples/report.html', '../../examples/README.md']);
     for (const resource of resources) {
       expect(resource).toBeDefined();
       if (resource === undefined) throw new Error('Missing resource path');
@@ -92,4 +92,49 @@ test('AC-078: bundled instructions do not require global installation or claim e
   expect(readme).toContain('does not guarantee');
   const bundle = await Bun.file(path.join(project, 'plugin/index.js')).text();
   expect(bundle).not.toMatch(/(?:from|import\s*\()\s*['"]@opencode\//);
+});
+
+test('AC-087 AC-090: scenario references and preview-first guidance stay focused and bounded', async () => {
+  for (const phrase of ['## Choose the scenario', '## Verify an unpublished preview', 'canvas_preview', 'previewId', 'at most one confirmation pass', 'expire after 30 minutes', 'Metadata-only updates need no HTML or preview', 'If preview is unavailable']) expect(source).toContain(phrase);
+  const scenarios: Record<string, string[]> = {
+    architecture: ['starting rows and keys', 'one graph', 'inferred'],
+    feature: ['starting conditions', 'alternate', 'observable outcome'],
+    'ui-proposal': ['simulated', 'pending', 'retry'],
+    decision: ['evidence', 'tradeoffs', 'recommendation'],
+    investigation: ['hypotheses', 'evidence', 'historical data'],
+    metrics: ['missing data as zero', 'same dataset', 'time range'],
+  };
+  for (const [name, phrases] of Object.entries(scenarios)) {
+    const reference = await Bun.file(path.join(directory, 'references', `${name}.md`)).text();
+    expect(reference.length).toBeLessThan(4000);
+    for (const phrase of phrases) expect(reference).toContain(phrase);
+    expect(reference).toContain('Stop when');
+  }
+  const plugin = await Bun.file(path.join(project, 'src/plugin/index.ts')).text();
+  expect(plugin).toContain('previewId');
+  expect(plugin).toContain('never blindly republish');
+  expect(plugin).toContain('A returned URL does not prove verification');
+});
+
+test('AC-088: starters use the fallback tokens rather than unrelated example palettes', async () => {
+  const reference = await Bun.file(path.join(project, 'examples/design-system.html')).text();
+  const tokens = (html: string) => [...html.matchAll(/--canvas-[a-z-]+:[^;}]+/g)].map(match => match[0]);
+  for (const name of ['chart', 'diagram', 'mockup', 'report']) {
+    const html = await Bun.file(path.join(project, 'examples', `${name}.html`)).text();
+    for (const token of tokens(html)) expect(tokens(reference)).toContain(token);
+    for (const phrase of ['data-theme-switch', 'data-theme-value="light"', 'data-theme-value="dark"', 'document.documentElement.dataset.theme', 'aria-pressed']) expect(html).toContain(phrase);
+    expect(html).not.toContain('localStorage');
+    expect(html).not.toContain('https://');
+  }
+});
+
+test('AC-089: evaluation cases include project styling, long labels, empty data and a trace rubric', async () => {
+  for (const name of ['project-style', 'long-label-flow', 'empty-data']) {
+    const root = path.join(directory, 'evals', name);
+    expect(await Bun.file(path.join(root, 'prompt.md')).text()).toContain('tags: [skill-creator]');
+    expect(await Bun.file(path.join(root, 'case.yaml')).text()).toContain(`name: ${name}`);
+    expect(await Bun.file(path.join(root, 'graders/01-expected-output.md')).text()).toContain('focus: trace');
+  }
+  const protocol = await Bun.file(path.join(directory, 'evals/README.md')).text();
+  for (const phrase of ['not been run', 'skill loading', 'preview', 'publish', 'update', 'elapsed', 'correctness', 'visual', 'same model', 'isolated']) expect(protocol).toContain(phrase);
 });

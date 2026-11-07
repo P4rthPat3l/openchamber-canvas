@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { PreviewStore } from '../preview/index';
+import { installedRendering } from '../viewer/rendering';
 
 import type { ArtifactStore } from '../store/index';
 import { StoreError, isStoreError } from '../store/errors';
@@ -169,6 +171,58 @@ function resolvePublishSource(args: PublishArgs, directory: string): Promise<Pub
 
 export function createOperations(options: OperationsOptions): CanvasOperations {
 const { store, storeRoot, portFile, viewerEntry, viewerTimeoutMs } = options;
+const previews = new PreviewStore({ root: storeRoot, renderingSource: installedRendering() });
+
+function validatePreviewInput(args: PublishArgs | UpdateArgs): void {
+  if (args.html !== undefined || args.files !== undefined || args.filePath !== undefined || args.directoryPath !== undefined || args.entry !== undefined ||
+      ('restoreFrom' in args && args.restoreFrom !== undefined) || ('edits' in args && args.edits !== undefined) ||
+      ('remove' in args && args.remove !== undefined) || ('path' in args && args.path !== undefined) ||
+      ('mode' in args && args.mode !== undefined && args.mode !== 'replace') || ('dedupeKey' in args && args.dedupeKey !== undefined)) {
+    throw new StoreError('INVALID_ARTIFACT', 'previewId is a frozen full snapshot. Do not combine it with another content source or dedupeKey.');
+  }
+}
+
+async function preview(args: z.infer<typeof schemas.preview>, context: AgentContext): Promise<OperationResult> {
+  const directory = projectDirectory(args.directory, context);
+  const source = await resolvePublishSource(args, directory);
+  const external = scanPublishSource(source);
+  if (external !== null) return fail('EXTERNAL_REFERENCE', `The entry loads ${external} from a URL. Inline it or use a pinned library.`);
+  const candidate = await previews.create({ title: args.title, directory, sessionId: context.sessionId, kind: source.kind, entry: source.entry, files: source.files, libraries: args.libraries }, context.signal);
+  const viewer = await openViewer(candidate.id, context.signal, 'preview');
+  return ok({ previewId: candidate.id, viewUrl: viewer.viewUrl, expiresAt: previews.expiresAt(candidate.meta), warnings: [...source.warnings, ...viewer.warnings], verified: false });
+}
+
+async function promotePublish(args: PublishArgs, context: AgentContext): Promise<OperationResult> {
+  validatePreviewInput(args);
+  const directory = projectDirectory(args.directory, context);
+  const created = await previews.promote(args.previewId ?? '', { directory, sessionId: context.sessionId }, async snapshot => {
+    if ((args.kind !== undefined && args.kind !== snapshot.meta.kind) || (args.libraries !== undefined && JSON.stringify([...new Set(args.libraries)].sort()) !== JSON.stringify([...snapshot.meta.libraries].sort()))) {
+      throw new StoreError('INVALID_ARTIFACT', 'Kind and libraries must match the frozen preview');
+    }
+    return store.create({ title: args.title, directory, sessionId: context.sessionId, kind: snapshot.meta.kind, entry: snapshot.manifest.entry,
+      files: snapshot.files.map(file => ({ path: file.path, content: file.content })), libraries: snapshot.meta.libraries, tags: args.tags,
+      dedupeKey: `preview:${args.previewId}`, baseVersion: args.baseVersion, rendering: { root: previews.storeRoot, id: snapshot.manifest.rendering ?? '' } }, context.signal);
+  }, context.signal);
+  const viewer = await openViewer(created.id, context.signal);
+  return ok({ id: created.id, title: created.meta.title, kind: created.meta.kind, version: created.version, viewUrl: viewer.viewUrl, deduped: created.deduped, contentChanged: created.contentChanged, warnings: viewer.warnings });
+}
+
+async function promoteUpdate(args: UpdateArgs, context: AgentContext): Promise<OperationResult> {
+  validatePreviewInput(args);
+  const directory = projectDirectory(args.directory, context);
+  const updated = await previews.promote(args.previewId ?? '', { directory, sessionId: context.sessionId }, async snapshot => {
+    const target = await store.getMeta(args.id);
+    if (target.directory !== directory || target.kind !== snapshot.meta.kind || JSON.stringify([...target.libraries].sort()) !== JSON.stringify([...snapshot.meta.libraries].sort())) {
+      throw new StoreError('INVALID_UPDATE', 'Preview project, kind, and libraries must match the target artifact');
+    }
+    return store.update(args.id, { mode: 'replace', baseVersion: args.baseVersion, title: args.title, tags: args.tags,
+      entry: snapshot.manifest.entry, files: snapshot.files.map(file => ({ path: file.path, content: file.content })),
+      rendering: { root: previews.storeRoot, id: snapshot.manifest.rendering ?? '' } }, context.signal);
+  }, context.signal);
+  const viewer = await openViewer(args.id, context.signal);
+  const warnings = await notifyChange(args.id, updated.version, context.signal);
+  return ok({ id: updated.id, version: updated.version, changedFiles: updated.changedFiles, viewUrl: viewer.viewUrl, warnings: [...viewer.warnings, ...warnings] });
+}
 
 async function resolveUpdateSource(args: UpdateArgs, meta: ArtifactMeta, context: AgentContext): Promise<UpdateSource> {
   const sources = [
@@ -283,7 +337,7 @@ function summarizeMeta(meta: ArtifactMeta): Record<string, unknown> {
   };
 }
 
-async function openViewer(id: string, signal: AbortSignal): Promise<{ viewUrl: string | null; warnings: string[] }> {
+async function openViewer(id: string, signal: AbortSignal, scope?: 'preview'): Promise<{ viewUrl: string | null; warnings: string[] }> {
   const warnings: string[] = [];
   try {
     const viewer = await ensureViewer({
@@ -293,7 +347,7 @@ async function openViewer(id: string, signal: AbortSignal): Promise<{ viewUrl: s
       timeoutMs: viewerTimeoutMs,
       signal,
     });
-    const minted = await mintViewUrl(viewer, { id }, signal);
+    const minted = await mintViewUrl(viewer, { id, scope }, signal);
     return { viewUrl: minted.url, warnings };
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : 'The viewer is unavailable.');
@@ -318,7 +372,8 @@ async function notifyChange(id: string, version: string, signal: AbortSignal): P
 }
 
 async function publish(args: PublishArgs, context: AgentContext): Promise<OperationResult> {
-    try {
+     try {
+      if (args.previewId !== undefined) return await promotePublish(args, context);
       const directory = projectDirectory(args.directory, context);
       const source = await resolvePublishSource(args, directory);
       const external = scanPublishSource(source);
@@ -359,7 +414,8 @@ async function publish(args: PublishArgs, context: AgentContext): Promise<Operat
 }
 
 async function update(args: UpdateArgs, context: AgentContext): Promise<OperationResult> {
-    try {
+     try {
+      if (args.previewId !== undefined) return await promoteUpdate(args, context);
       const meta = await store.getMeta(args.id);
       const source = await resolveUpdateSource(args, meta, context);
       const external = scanUpdateSource(source);
@@ -556,6 +612,7 @@ return {
     try {
       let response: OperationResult;
       switch (name) {
+        case 'preview': response = await preview(schemas.preview.parse(input), context); break;
         case 'publish': response = await publish(schemas.publish.parse(input), context); break;
         case 'update': response = await update(schemas.update.parse(input), context); break;
         case 'list': response = await list(schemas.list.parse(input), context); break;

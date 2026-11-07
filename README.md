@@ -14,6 +14,7 @@ Canvas is an OpenChamber extension with a native OpenCode plugin. The extension 
 - **Drafts that stay put.** A revision note follows its artifact while you move around the gallery, change scope, open Setup, or wait for a response.
 - **Local rendering.** Artifacts run in OpenChamber's browser panel under a sandboxed viewer on loopback. The app origin and the open network stay out of reach.
 - **Pinned dependencies.** New versions record their runtime and library bytes. Chart.js, D3, and Mermaid are bundled locally, not loaded from a CDN.
+- **Preview before publishing.** Verify an unpublished snapshot in the same sandboxed renderer, then publish its tested source and pinned dependencies without adding development iterations to history.
 - **Search that covers the store.** Search, tags, archive state, and sort run before pagination, so an older artifact does not disappear behind the latest page.
 
 ## See it
@@ -26,7 +27,7 @@ Here is the 0.2.0 hardening report as an artifact, including the sandbox boundar
 
 ### Example artifacts
 
-The repository includes source examples you can publish or copy: a chart, a focused data-flow diagram, and an interactive preferences mockup. The diagram derives its focused views, complete flow table, and selection details from one graph definition.
+The repository includes a chart, focused data-flow diagram, preferences mockup, and static report starter. They share the fallback tokens and a Light/Dark switcher. The screenshots below predate the shared starter styling.
 
 | Chart | Diagram | Interface mockup |
 |:--:|:--:|:--:|
@@ -56,11 +57,13 @@ Requirements: OpenChamber 2.5.1 or newer, OpenCode 2.2.0 or newer, and Node 24 o
 
 The gallery works without the OpenCode plugin: you can browse, open, export, and copy artifacts. The agent cannot publish or revise until the plugin is loaded. The extension does not change your OpenCode configuration, and the gallery does not guess whether a session has loaded its tools.
 
-The plugin also registers the bundled [`canvas-authoring`](skills/canvas-authoring/SKILL.md) skill with OpenCode. No separate skill installation is needed. Its instructions cover project-first design tokens, the fallback [Canvas design system](examples/design-system.html), example reuse, one source file, a preflight check, one complete publish, the Canvas runtime, actual-view verification, batched corrections, and safe revisions. The namespace and publish/update descriptions ask agents to load it before authoring. Availability does not guarantee that a model loads it first; you can explicitly ask the agent to load `canvas-authoring`.
+The plugin also registers the bundled [`canvas-authoring`](skills/canvas-authoring/SKILL.md) skill with OpenCode. No separate skill installation is needed. It routes to six focused scenarios, uses project-first design tokens or the fallback [Canvas system](examples/design-system.html), and guides one canonical source, preview verification, one complete publication, batched corrections, and safe revisions. Tool descriptions ask agents to load it before authoring. Availability does not guarantee that a model follows the workflow; you can explicitly ask it to load `canvas-authoring`.
 
 ## Use it
 
 **Publish.** Ask the agent for a chart, dashboard, diagram, report, or interface mockup. It calls the Canvas tools and opens the result. Use `openchamber_render` for a page that belongs in the chat reply; use Canvas when you need to reopen, version, or iterate on the work.
+
+**Preview.** `canvas_preview` accepts HTML, files, or project-local paths and returns a disposable `viewUrl` and `previewId`. The agent checks the actual preview, fixes concrete failures locally, then calls publish or update with the tested `previewId`. Preview storage and feedback are isolated. Previews expire after 30 minutes and are not gallery objects. Direct source publication remains supported; no tool can guarantee that the agent performed the browser checks.
 
 **Revise.** In the inspector, write what should change. Canvas adds a draft to the chat composer; it does not send it. Review the message and send it. The agent reads the artifact before updating it.
 
@@ -77,7 +80,7 @@ Four parts share one store:
 - An **extension panel** lists artifacts and opens them.
 - An **extension service** reads the store, mints view URLs, and handles export and feedback.
 - A detached **viewer daemon** serves artifact HTML, the runtime API, pinned libraries, and live updates over loopback.
-- A **native OpenCode plugin** registers `publish`, `update`, `list`, `read`, `archive`, and `result` under the `canvas` namespace, plus the bundled `canvas-authoring` skill. Effective tool names are `canvas_publish`, `canvas_update`, and so on. OpenCode can expose them through Code Mode as `tools.canvas.publish` and related calls. The skill uses OpenCode's normal skill loader rather than another Canvas tool.
+- A **native OpenCode plugin** registers `preview`, `publish`, `update`, `list`, `read`, `archive`, and `result` under the `canvas` namespace, plus the bundled `canvas-authoring` skill. Effective names are `canvas_preview`, `canvas_publish`, and so on; Code Mode exposes `tools.canvas.preview` and related calls. The skill uses the normal skill loader.
 
 The extension asks for the `service` permission only. The user separately authorizes the OpenCode plugin through their plugin configuration. Tools use OpenCode's permission system and take project/session context from the invoking session.
 
@@ -103,7 +106,7 @@ bun run build
 
 Installed-app acceptance for the desktop shell, host routing, and the chat tool card remains a manual check. The automated browser suite uses a mock host and the bundled viewer, not the installed desktop UI.
 
-Three authoring review cases live under [`skills/canvas-authoring/evals/`](skills/canvas-authoring/evals/). They cover a chart, a static visual report, and revising existing work. They have not been run as paired model evaluations; registration tests do not establish faster generation or automatic skill selection. Any authoring trials must use an isolated project and artifact store, not the user's existing artifacts.
+Six authoring cases and a [trace-based evaluation protocol](skills/canvas-authoring/evals/README.md) cover a chart, static report, seeded revision, project-owned styling, long labels, and empty metrics. Paired model evaluations have not been run. Registration/browser tests do not establish faster generation, automatic skill selection, or reduced version churn. Trials must use isolated projects and stores, not existing user artifacts.
 
 ## Requirements and limits
 

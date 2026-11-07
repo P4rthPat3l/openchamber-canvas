@@ -8,7 +8,7 @@ Use the project's design system when it has one. Inspect CSS custom properties, 
 
 If the project has no design system, start from [`examples/design-system.html`](../../examples/design-system.html). Keep its tokens and primitives. Do not mix a partial project system with the fallback. One system per artifact.
 
-The chart, diagram, and mockup examples remain focused pattern references and are not restyled in this pass. When reusing one, replace its local style block with the project system or the fallback, and add the fallback header and Light/Dark switcher required by the preflight.
+The chart, diagram, mockup, and report starters use these fallback foundations and a viewer-seeded switcher. Their layouts differ by task. When a project has its own system, replace the fallback foundations as a whole rather than mix palettes. Scenario references explain required content and checks; tokens alone do not make an explanation accurate.
 
 ## Direction
 
@@ -23,6 +23,7 @@ This is the default for reports, dashboards, diagrams, and mockups. It is delibe
 | `--canvas-bg` | `#f3efe7` | `#171411` | Page ground |
 | `--canvas-surface` | `#fffdf8` | `#201c17` | Cards, inputs, table |
 | `--canvas-surface-2` | `#ebe4d7` | `#29241d` | Callouts, status, inset areas |
+| `--canvas-row` | `#f8f4ec` | `#241f19` | Zebra row surface |
 | `--canvas-ink` | `#211f1b` | `#f3eee5` | Primary text |
 | `--canvas-muted` | `#6c655b` | `#b9b0a2` | Secondary text |
 | `--canvas-line` | `#d8cfbf` | `#3b342b` | Quiet dividers |
@@ -64,7 +65,7 @@ The state text tones are chosen to clear 4.5:1 on their tinted backgrounds. Body
 - Card: a raised surface for one concrete object. Use it once or twice, not as the page structure.
 - Badge: a tinted pill with a small dot, a text label, and a semantic tone. Never color alone.
 - Callout: a tinted surface with a one-pixel border, a strong label, and a short explanation. No colored left rail.
-- Table: a real table with a caption, scoped headers, quiet row rules, and tabular numerals in numeric columns.
+- Table: a real table with a caption and count, scoped column and row headers, a tinted header band, zebra rows, quiet rules, tabular numerals, and a footer summary.
 - Form: a label above each native control, a clear focus ring, and a disabled state. Buttons use a verb that names the action.
 - Status: a muted inline message for saved, pending, empty, or error states.
 
@@ -90,4 +91,4 @@ Every new artifact declares light and dark tokens and includes a visible two-but
 
 ## Verification
 
-`tests/browser/examples.browser.ts` serves `design-system.html` through the built viewer in light and dark, checks the seeded switcher state, computed page and surface tokens, and keyboard activation, and fails on outside requests or script errors. `tests/skill.test.ts` checks that the authoring skill links the fallback, requires project-first detection, and requires a light/dark switcher. The browser check covers the reference example only. It does not prove how a model will apply the system to a new artifact.
+`tests/browser/examples.browser.ts` serves the reference and four starters through the built viewer. It checks shared backgrounds, viewer-seeded switchers, keyboard activation, narrow/wide layouts in both themes, chart/diagram behavior, form validation/pending/retry, static report content without scripts, and outside requests/script errors. `tests/skill.test.ts` compares starter token declarations with this reference and checks scenario guidance. These checks do not prove how a model applies the system to a new artifact. Use `canvas_preview` for actual-runtime verification before promotion.

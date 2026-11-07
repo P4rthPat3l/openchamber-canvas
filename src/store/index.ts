@@ -20,7 +20,7 @@ import {
 } from './fs';
 import { newArtifactId, newVersionId } from './id';
 import { withArtifactLock } from './lock';
-import { captureRendering } from '../viewer/rendering';
+import { captureRendering, importRendering } from '../viewer/rendering';
 import type { RenderingSource } from '../viewer/rendering';
 import {
   assertArtifactId,
@@ -183,6 +183,9 @@ export class ArtifactStore {
         return withArtifactLock(this.lockPath(existing.id), async () => {
           const current = await this.getMeta(existing.id);
           const manifest = await this.readManifest(existing.id, current.currentVersion);
+          if (input.rendering && manifest.rendering !== input.rendering.id) {
+            throw new StoreError('CONFLICT', 'The published artifact no longer uses this preview rendering. Read the current artifact before revising.', { currentVersion: current.currentVersion });
+          }
           if (manifest.entry === entry && await this.hasSameFiles(existing.id, current.currentVersion, files)) {
             if (input.baseVersion !== undefined) this.assertBaseVersion(current, input.baseVersion, 'metadata');
             const meta = { ...current, title, tags: input.tags === undefined ? current.tags : tags, updatedAt: this.now().toISOString() };
@@ -192,7 +195,7 @@ export class ArtifactStore {
           }
           const updated = await this.updateLocked(existing.id, current, {
             mode: 'replace', files: files.map(file => ({ path: file.path, content: file.bytes })),
-            entry, title, tags: input.tags, baseVersion: input.baseVersion,
+            entry, title, tags: input.tags, baseVersion: input.baseVersion, rendering: input.rendering,
           }, signal);
           return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true, contentChanged: true };
         }, { ...this.lockOptions(), signal });
@@ -202,7 +205,9 @@ export class ArtifactStore {
     signal?.throwIfAborted();
     const { id, artifactDir } = await this.allocateArtifact(title, now);
     try {
-      const rendering = await this.capture(normalizeLibraries(input.libraries));
+      const rendering = input.rendering
+        ? await importRendering(this.root, input.rendering, normalizeLibraries(input.libraries))
+        : await this.capture(normalizeLibraries(input.libraries));
       signal?.throwIfAborted();
       const version = await this.writeVersion({
         artifactDir,
@@ -280,7 +285,11 @@ export class ArtifactStore {
     }
     const now = this.now();
     const plan = await this.planUpdate(id, meta, input);
-    const rendering = input.mode === 'restore' ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries);
+    const rendering = input.mode === 'restore'
+      ? (await this.readManifest(id, input.restoreFrom)).rendering
+      : input.mode === 'replace' && input.rendering
+        ? await importRendering(this.root, input.rendering, meta.libraries)
+        : await this.capture(meta.libraries);
     signal?.throwIfAborted();
     const version = await this.writeVersion({
       artifactDir,

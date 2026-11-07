@@ -116,6 +116,7 @@ export interface CreateArtifactInput {
   live?: LiveSource[];
   now?: Date;
   baseVersion?: string;
+  rendering?: { root: string; id: string };
 }
 
 export interface TextEdit {
@@ -132,6 +133,7 @@ export type UpdateInput =
       title?: string;
       tags?: string[];
       baseVersion?: string;
+      rendering?: { root: string; id: string };
     }
   | {
       mode: 'merge';

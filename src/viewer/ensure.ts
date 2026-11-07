@@ -191,7 +191,7 @@ async function ensureViewerLocked(options: EnsureViewerOptions, restartStartedAt
 
 export async function mintViewUrl(
   state: ViewerState,
-  input: { id: string; version?: string; theme?: 'light' | 'dark'; follow?: boolean },
+  input: { id: string; version?: string; theme?: 'light' | 'dark'; follow?: boolean; scope?: 'preview' },
   signal?: AbortSignal,
 ): Promise<{ url: string; expiresAt: number }> {
   const response = await fetch(`http://127.0.0.1:${state.port}/mint`, {

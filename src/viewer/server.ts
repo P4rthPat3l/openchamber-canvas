@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ArtifactStore } from '../store/index';
+import { PreviewStore } from '../preview/index';
 import { StoreError, isStoreError } from '../store/errors';
 import { ensureDir, readJson, writeJsonAtomic } from '../store/fs';
 import { defaultStoreRoot, defaultViewerPortFile, assertArtifactId } from '../store/paths';
@@ -207,6 +208,8 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
   const build = options.build ?? viewerBuild();
   const libraries = await loadLibraries(options.librariesDir);
   const runtimeSource = await readRuntimeSource(options.runtimeFile);
+  const previews = new PreviewStore({ root: options.store.storeRoot, now: () => new Date(now()) });
+  await previews.cleanup();
   const libraryTags = (names: string[]): string =>
     names
       .filter((name) => libraries?.libraries[name] !== undefined)
@@ -330,10 +333,10 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       void close();
       return;
     }
-    if (url.pathname.startsWith('/rendering/')) {
-      const match = /^\/rendering\/([a-f0-9]{64})\/([a-z0-9-]+)\.js$/.exec(url.pathname);
+    if (url.pathname.startsWith('/rendering/') || url.pathname.startsWith('/preview-rendering/')) {
+      const match = /^\/(?:rendering|preview-rendering)\/([a-f0-9]{64})\/([a-z0-9-]+)\.js$/.exec(url.pathname);
       if (!match) throw new HttpError(404, 'NOT_FOUND', 'Rendering file not found');
-      const rendering = await loadRendering(options.store.storeRoot, match[1] ?? '');
+      const rendering = await loadRendering(url.pathname.startsWith('/preview-rendering/') ? previews.storeRoot : options.store.storeRoot, match[1] ?? '');
       const bytes = rendering.libraries[match[2] ?? ''];
       if (!bytes) throw new HttpError(404, 'NOT_FOUND', 'Rendering library not found');
       response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'X-Content-Type-Options': 'nosniff', ...runtimeCorsHeaders(), 'Cross-Origin-Resource-Policy': 'cross-origin' });
@@ -384,15 +387,18 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
     if (!isRecord(body) || typeof body.id !== 'string') {
       throw new HttpError(400, 'INVALID_REQUEST', 'id is required');
     }
+    const id = body.id;
     const versionInput = typeof body.version === 'string' ? body.version : undefined;
     if (body.version !== undefined && versionInput === undefined) {
       throw new HttpError(400, 'INVALID_REQUEST', 'version must be a string');
     }
-    const result = await options.store.read(body.id, versionInput);
-    const expiresAt = now() + VIEW_TOKEN_TTL_MS;
-    const follow = typeof body.follow === 'boolean' ? body.follow : versionInput === undefined;
+    if (body.scope !== undefined && body.scope !== 'preview') throw new HttpError(400, 'INVALID_REQUEST', 'Invalid view scope');
+    const scope = body.scope === 'preview' ? 'preview' : undefined;
+    const result = await useViewStore({ id, version: versionInput ?? '', scope }, store => store.read(id, versionInput));
+    const expiresAt = scope === 'preview' ? previews.expiresAt(result.meta) : now() + VIEW_TOKEN_TTL_MS;
+    const follow = scope === 'preview' ? false : typeof body.follow === 'boolean' ? body.follow : versionInput === undefined;
     const theme = body.theme === 'light' || body.theme === 'dark' ? body.theme : undefined;
-    const token = signViewToken(options.secret, body.id, result.version, expiresAt, { follow, theme });
+    const token = signViewToken(options.secret, body.id, result.version, expiresAt, { follow, theme, scope });
     const query = new URLSearchParams();
     if (body.theme === 'light' || body.theme === 'dark') query.set('theme', body.theme);
     query.set('follow', String(follow));
@@ -457,6 +463,10 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
     sendJson(response, 200, { notified: clients?.size ?? 0 }, runtimeCorsHeaders());
   }
 
+  async function useViewStore<T>(payload: ViewToken, action: (store: ArtifactStore) => Promise<T>): Promise<T> {
+    return payload.scope === 'preview' ? previews.use(payload.id, action) : action(options.store);
+  }
+
   async function handleView(url: URL, response: http.ServerResponse): Promise<void> {
     const match = /^\/view\/([^/]+)\/([^/]+)\/([^/]+)\/(.*)$/.exec(url.pathname);
     if (!match) throw new HttpError(404, 'NOT_FOUND', 'Not found');
@@ -472,14 +482,15 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       throw new HttpError(404, 'NOT_FOUND', 'Not found');
     }
 
-    const result = await options.store.read(id, version);
+    await useViewStore(payload, async store => {
+    const result = await store.read(id, version);
     const kind = result.meta.kind;
     if (kind !== 'html' && kind !== 'bundle') {
       throw new HttpError(501, 'UNSUPPORTED_KIND', `${kind} artifacts are not implemented yet`);
     }
     const relative = rest.length === 0 ? result.manifest.entry : rest;
     if (relative === result.manifest.entry || contentTypeFor(relative).startsWith('text/html')) {
-      const bytes = await options.store.readFile(id, version, relative);
+      const bytes = await store.readFile(id, version, relative);
       let html: string;
       try {
         html = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -489,9 +500,10 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       let source = runtimeSource;
       let tags = libraryTags(result.meta.libraries);
       if (result.manifest.rendering) {
-        const rendering = await loadRendering(options.store.storeRoot, result.manifest.rendering);
+        const rendering = await loadRendering(store.storeRoot, result.manifest.rendering);
         source = rendering.runtime;
-        tags = Object.keys(rendering.libraries).map(name => `<script src="/rendering/${rendering.id}/${name}.js"></script>`).join('');
+        const prefix = payload.scope === 'preview' ? 'preview-rendering' : 'rendering';
+        tags = Object.keys(rendering.libraries).map(name => `<script src="/${prefix}/${rendering.id}/${name}.js"></script>`).join('');
       } else if (!runtimeSource || result.meta.libraries.some(name => !libraries?.libraries[name])) {
         throw new StoreError('RENDERING_UNAVAILABLE', 'Legacy rendering dependencies are missing. Rebuild Canvas or republish with the installed libraries.');
       }
@@ -505,7 +517,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       return;
     }
 
-    const bytes = await options.store.readFile(id, version, relative);
+    const bytes = await store.readFile(id, version, relative);
     const headers: Record<string, string> = {
       'Content-Type': contentTypeFor(relative),
       'Content-Length': String(bytes.byteLength),
@@ -519,6 +531,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
     }
     response.writeHead(200, headers);
     response.end(bytes);
+    });
   }
 
   async function handleRuntime(response: http.ServerResponse): Promise<void> {
@@ -573,7 +586,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       throw new HttpError(404, 'NOT_FOUND', 'Not found');
     }
     const payload = verifyViewToken(options.secret, token, now());
-    if (payload === null || payload.id !== id) {
+    if (payload === null || payload.id !== id || payload.scope === 'preview') {
       throw new HttpError(404, 'NOT_FOUND', 'Not found');
     }
 
@@ -625,16 +638,19 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
     const payload = verifyViewToken(options.secret, token, now());
     if (payload === null) throw new HttpError(404, 'NOT_FOUND', 'Not found');
 
+    const body = request.method === 'POST' && (action === 'state' || action === 'feedback')
+      ? await readJsonBody(request, MAX_JSON_BODY) : undefined;
+    await useViewStore(payload, async store => {
+
     if (action === 'state') {
       if (request.method === 'GET') {
-        const state = await options.store.readState(payload.id);
+        const state = await store.readState(payload.id);
         sendJson(response, 200, { state }, runtimeCorsHeaders());
         return;
       }
       if (request.method !== 'POST') {
         throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Use GET or POST');
       }
-      const body = await readJsonBody(request, MAX_JSON_BODY);
       if (!isRecord(body) || typeof body.key !== 'string') {
         throw new HttpError(400, 'INVALID_REQUEST', 'key is required');
       }
@@ -643,7 +659,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       if (!remove && !isJsonValue(value)) {
         throw new HttpError(400, 'INVALID_REQUEST', 'value must be JSON');
       }
-      const state = await options.store.writeStateKey(
+      const state = await store.writeStateKey(
         payload.id,
         body.key,
         remove ? undefined : (value as JsonValue),
@@ -656,12 +672,11 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       if (request.method !== 'POST') {
         throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Use POST');
       }
-      const body = await readJsonBody(request, MAX_JSON_BODY);
       if (!isRecord(body) || !isJsonValue(body.data)) {
         throw new HttpError(400, 'INVALID_REQUEST', 'data must be JSON');
       }
       const kind = typeof body.kind === 'string' ? body.kind : 'form';
-      const record = await options.store.addFeedback(payload.id, {
+      const record = await store.addFeedback(payload.id, {
         version: payload.version,
         kind,
         data: body.data,
@@ -679,6 +694,7 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
       throw new HttpError(405, 'METHOD_NOT_ALLOWED', 'Use POST');
     }
     sendJson(response, 200, { ok: true }, runtimeCorsHeaders());
+    });
   }
 
   async function handleData(url: URL): Promise<void> {
@@ -688,12 +704,13 @@ export async function createViewerServer(options: ViewerServerOptions): Promise<
     if (token === null) throw new HttpError(404, 'NOT_FOUND', 'Not found');
     const payload = verifyViewToken(options.secret, token, now());
     if (payload === null) throw new HttpError(404, 'NOT_FOUND', 'Not found');
+    if (payload.scope === 'preview') await previews.use(payload.id, async () => undefined);
     throw new HttpError(501, 'UNSUPPORTED', 'Live sources are not implemented yet');
   }
 
   function sendStoreError(response: http.ServerResponse, error: StoreError): void {
     const status =
-      error.code === 'NOT_FOUND' || error.code === 'PATH_NOT_FOUND'
+      error.code === 'PREVIEW_EXPIRED' ? 410 : error.code === 'PREVIEW_OWNERSHIP' ? 403 : error.code === 'NOT_FOUND' || error.code === 'PATH_NOT_FOUND'
         ? 404
         : error.code === 'INVALID_PATH' || error.code === 'INVALID_ARTIFACT'
           ? 400

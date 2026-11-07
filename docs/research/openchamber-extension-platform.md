@@ -473,3 +473,11 @@ Canvas 0.4.0 and later registers `canvas-authoring` from `skills/canvas-authorin
 The skill links to the existing installed examples. Its metadata and namespace/publish/update descriptions guide agents to load it before authoring. This does not enforce tool order, auto-install the OpenCode plugin, or establish a speed or quality improvement. Actual model selection and timing need separate authoring trials. The maintained contract and manual boundaries are in [FEAT-001 §39](../features/FEAT-001-openchamber-canvas.md#39-bundled-canvas-authoring-skill).
 
 Sources: [OpenCode server skills](https://opencode.ai/v2/docs/build/plugins/server#skills), [`skills/canvas-authoring/SKILL.md`](../../skills/canvas-authoring/SKILL.md), [`tests/skill.test.ts`](../../tests/skill.test.ts), and the native/relocated tests in [`tests/plugin.test.ts`](../../tests/plugin.test.ts).
+
+## 18. Unpublished preview update
+
+The unreleased working tree adds native `canvas_preview` and optional `previewId` content inputs to publish/update. It retains direct source inputs and the existing detached daemon, not an additional service or MCP adapter. Preview tokens carry a signed scope; the daemon routes files and runtime calls to the hidden `.previews` store. Entry and secondary HTML keep the sandbox. Preview libraries are immutable bundled-library snapshots, served like existing public rendering dependencies, never arbitrary project files.
+
+Snapshots expire after 30 minutes. Promotion resolves project/session ownership from the invocation and preserves file and rendering hashes without copying preview state or feedback. Preview locks opt into live-owner protection; published-store locking retains its previous behavior. Runtime POST bodies are read before acquiring snapshot locks, and cleanup skips busy snapshots.
+
+The isolated real-OpenCode observer now invokes preview and promotes it before fetching the published URL. Relocated-package tests exercise preview and resolve scenario references without node_modules. Browser tests run the built plugin and Node viewer, including sandboxed secondary preview navigation and isolated runtime writes. These checks do not certify installed desktop routing, model selection, or lower authoring time. See [FEAT-001 section 41](../features/FEAT-001-openchamber-canvas.md#41-preview-first-authoring-and-scenario-starters).

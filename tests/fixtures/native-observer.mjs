@@ -10,14 +10,20 @@ export default {
     const session = await ctx.session.create({ title: 'Native Canvas acceptance fixture', permissions: [{ action: 'skill', resource: 'canvas-authoring', effect: 'allow' }] });
     const loader = (await ctx.tool.list()).find(tool => tool.id === 'skill');
     const loadedSkill = await loader.execute({ id: 'canvas-authoring' }, { sessionID: session.id, agent: 'build', signal: new AbortController().signal });
+    const preview = await tools.find(tool => tool.id === 'canvas_preview').execute(
+       { title: 'Actual OpenCode registration', html: '<h1>Native plugin</h1>' },
+       { sessionID: session.id, signal: new AbortController().signal },
+     );
+    const candidate = JSON.parse(preview.content);
     const published = await tools.find(tool => tool.id === 'canvas_publish').execute(
-      { title: 'Actual OpenCode registration', html: '<h1>Native plugin</h1>' },
+      { title: 'Actual OpenCode registration', previewId: candidate.previewId },
       { sessionID: session.id, signal: new AbortController().signal },
     );
     await writeFile(path.join(ctx.location.directory, 'native-result.json'), JSON.stringify({
       version: ctx.app.version,
       names: tools.map(tool => tool.id).sort(),
       result: JSON.parse(published.content),
+      preview: candidate,
       directory: session.location.directory,
       skill,
       loadedSkill: loadedSkill.content,

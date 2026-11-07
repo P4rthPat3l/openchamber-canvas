@@ -2,7 +2,7 @@
 
 | ID | Feature | Status | Implementation | Document |
 |---|---|---|---|---|
-| FEAT-001 | OpenChamber Canvas | Active | 0.5.0 artifact design system; 0.4.0 bundled authoring skill; user-reported working | [FEAT-001-openchamber-canvas.md](FEAT-001-openchamber-canvas.md) |
+| FEAT-001 | OpenChamber Canvas | Active | 0.5.0 released foundations; unreleased preview-first authoring and scenario starters built; model trials pending | [FEAT-001-openchamber-canvas.md](FEAT-001-openchamber-canvas.md) |
 
 FEAT-001 includes [security and revision hardening](FEAT-001-openchamber-canvas.md#37-security-and-revision-hardening), built in package 0.2.0 with acceptance criteria AC-050 through AC-065. Installed-app acceptance is pending.
 
@@ -12,6 +12,8 @@ The [bundled authoring skill](FEAT-001-openchamber-canvas.md#39-bundled-canvas-a
 
 The [artifact design system](FEAT-001-openchamber-canvas.md#40-artifact-design-system) ships in 0.5.0, with AC-080 and AC-081. It adds a project-first fallback, a reference example, and a per-view Light/Dark switcher.
 
+The [preview-first authoring and scenario starters](FEAT-001-openchamber-canvas.md#41-preview-first-authoring-and-scenario-starters) are built with AC-082 through AC-090. They add unpublished runtime verification, frozen promotion, preview-only ownership protection, focused scenario references, and consistent starters. Installed acceptance and paired model outcomes remain unverified. Probe evidence is in [canvas-authoring-preflight.md](../research/canvas-authoring-preflight.md).
+
 Every feature document uses stable section numbers, stable rule IDs, and the status vocabulary `Current`, `Planned`, `Inferred`, `Unknown`.
 
 Research that supports a feature lives in `docs/research/`:
@@ -20,3 +22,4 @@ Research that supports a feature lives in `docs/research/`:
 |---|---|
 | [openchamber-extension-platform.md](../research/openchamber-extension-platform.md) | Native OpenCode tools, extension/service/browser boundaries, and historical MCP research |
 | [artifact-product-landscape.md](../research/artifact-product-landscape.md) | What Claude, Claude Code, Cowork, OpenAI Canvas, and VS Code MCP Apps do |
+| [canvas-authoring-preflight.md](../research/canvas-authoring-preflight.md) | Read-only churn evidence, isolated renderer/promotion probe, and preview-first implementation limits |

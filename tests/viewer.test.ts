@@ -9,6 +9,10 @@ import type { ArtifactStoreOptions } from '../src/store/index';
 import type { CreateResult } from '../src/store/types';
 import { createViewerServer } from '../src/viewer/server';
 import type { ViewerServer } from '../src/viewer/server';
+import { PreviewStore } from '../src/preview/index';
+import { installedRendering } from '../src/viewer/rendering';
+import { signViewToken } from '../src/viewer/policy';
+import { request } from 'node:http';
 
 const temporaryRoots: string[] = [];
 const viewers: ViewerServer[] = [];
@@ -125,6 +129,81 @@ async function makeViewer(): Promise<ViewerFixture> {
 async function mint(fixture: ViewerFixture): Promise<{ url: string; expiresAt: number }> {
   return mintFor(fixture, fixture.created.id);
 }
+
+test('AC-082 AC-084 AC-085: one daemon scopes preview files/runtime and rejects expired access', async () => {
+  const fixture = await makeViewer();
+  const previews = new PreviewStore({ root: fixture.store.storeRoot, renderingSource: installedRendering() });
+  const candidate = await previews.create({ title: 'Preview', kind: 'bundle', entry: 'index.html', directory: '/project', sessionId: 'ses_preview', libraries: ['chartjs'], files: [{ path: 'index.html', content: page('Candidate') }, { path: 'second.html', content: page('Secondary candidate') }] });
+  const mintResponse = await fetch(`${fixture.base}/mint`, { method: 'POST', headers: { ...fixture.auth, 'content-type': 'application/json' }, body: JSON.stringify({ id: candidate.id, scope: 'preview', theme: 'dark', follow: true }) });
+  expect(mintResponse.status).toBe(200);
+  const minted: { url: string } = await mintResponse.json();
+  const entry = await fetch(minted.url);
+  const content = await entry.text();
+  expect(content).toContain('Candidate');
+  expect(content).toContain('"followLatest":false');
+  expect(content).toContain('/preview-rendering/');
+  for (const url of [minted.url, new URL('second.html', minted.url).href]) {
+    expect((await fetch(url)).headers.get('content-security-policy')).toContain('sandbox allow-scripts');
+  }
+  const token = new URL(minted.url).pathname.split('/')[2] ?? '';
+  const api = `${fixture.base}/api/${token}`;
+  expect((await fetch(`${api}/state`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'test', value: true }) })).status).toBe(200);
+  expect(await (await fetch(`${api}/state`)).json()).toEqual({ state: { test: true } });
+  expect((await fixture.store.list()).total).toBe(1);
+  expect(await fixture.store.readState(fixture.created.id)).toEqual({});
+  expect((await fetch(`${fixture.base}/events/${token}/${candidate.id}`)).status).toBe(404);
+  const publishedUrl = (await mint(fixture)).url;
+  const publishedToken = new URL(publishedUrl).pathname.split('/')[2] ?? '';
+  const crossView = new URL(minted.url);
+  crossView.pathname = crossView.pathname.replace(token, publishedToken);
+  expect((await fetch(crossView)).status).toBe(404);
+  const wrongScope = signViewToken(fixture.viewer.secret, fixture.created.id, fixture.created.version, Date.now() + 60_000, { scope: 'preview' });
+  expect((await fetch(`${fixture.base}/api/${wrongScope}/state`)).status).toBe(404);
+  const expired = signViewToken(fixture.viewer.secret, candidate.id, candidate.version, Date.now() - 1, { scope: 'preview' });
+  expect((await fetch(`${fixture.base}/api/${expired}/state`)).status).toBe(404);
+  expect((await fetch(minted.url.replace(token, expired))).status).toBe(404);
+});
+
+test('AC-085: an unfinished runtime body holds no preview lock or unrelated creation', async () => {
+  const fixture = await makeViewer();
+  const previews = new PreviewStore({ root: fixture.store.storeRoot, renderingSource: installedRendering() });
+  const input = { title: 'Pending body', kind: 'html' as const, directory: '/project', sessionId: 'ses_pending', files: [{ path: 'index.html', content: page() }] };
+  const candidate = await previews.create(input);
+  const minted = await fetch(`${fixture.base}/mint`, { method: 'POST', headers: { ...fixture.auth, 'content-type': 'application/json' }, body: JSON.stringify({ id: candidate.id, scope: 'preview' }) }).then(response => response.json());
+  const token = new URL(minted.url).pathname.split('/')[2];
+  const received = Promise.withResolvers<void>();
+  fixture.viewer.server.once('request', () => received.resolve());
+  const closed = Promise.withResolvers<void>();
+  const pending = request(`${fixture.base}/api/${token}/state`, { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': '500' } });
+  pending.once('error', () => closed.resolve());
+  pending.write('{"key":');
+  await received.promise;
+  const lock = path.join(previews.storeRoot, '.locks', `preview-${candidate.id}.lock`);
+  try {
+    let held = false;
+    for (let sample = 0; sample < 20; sample++) {
+      held ||= await fs.lstat(lock).then(() => true, () => false);
+      await Bun.sleep(5);
+    }
+    expect(held).toBe(false);
+    expect((await previews.create(input)).id).not.toBe(candidate.id);
+  } finally { pending.destroy(new Error('End isolated stalled-body test')); await closed.promise; }
+});
+
+test('AC-085: expired preview snapshots reject live tokens and are removed on daemon restart', async () => {
+  const fixture = await makeViewer();
+  const previews = new PreviewStore({ root: fixture.store.storeRoot, renderingSource: installedRendering(), now: () => new Date(Date.now() - 60 * 60_000) });
+  const candidate = await previews.create({ title: 'Expired', kind: 'html', directory: '/project', sessionId: 'ses_expired', files: [{ path: 'index.html', content: page() }] });
+  const token = signViewToken(fixture.viewer.secret, candidate.id, candidate.version, Date.now() + 60_000, { scope: 'preview' });
+  expect((await fetch(`${fixture.base}/view/${token}/${candidate.id}/${candidate.version}/`)).status).toBe(410);
+  expect((await fetch(`${fixture.base}/api/${token}/state`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'too-late', value: true }) })).status).toBe(410);
+  await fixture.viewer.close();
+  const rendering = installedRendering();
+  const restarted = await createViewerServer({ store: fixture.store, secret: 'restart-preview-secret-for-tests', runtimeFile: rendering.runtimeFile, librariesDir: rendering.librariesDir });
+  viewers.push(restarted);
+  expect(await fs.readdir(previews.storeRoot)).not.toContain(candidate.id);
+  expect((await fixture.store.list()).total).toBe(1);
+});
 
 async function mintFor(
   fixture: ViewerFixture,

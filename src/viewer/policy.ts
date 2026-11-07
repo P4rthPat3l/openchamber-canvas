@@ -25,6 +25,7 @@ export interface ViewToken {
   version: string;
   follow?: boolean;
   theme?: 'light' | 'dark';
+  scope?: 'preview';
 }
 
 const PERMISSIONS_POLICY = [
@@ -158,7 +159,7 @@ export function signViewToken(
   id: string,
   version: string,
   expiresAt: number,
-  context: Pick<ViewToken, 'follow' | 'theme'> = {},
+  context: Pick<ViewToken, 'follow' | 'theme' | 'scope'> = {},
 ): string {
   assertArtifactId(id);
   assertVersionId(version);
@@ -196,5 +197,6 @@ export function verifyViewToken(secret: string, token: string, now = Date.now())
   if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt <= now) return null;
   if (parsed.follow !== undefined && typeof parsed.follow !== 'boolean') return null;
   if (parsed.theme !== undefined && parsed.theme !== 'light' && parsed.theme !== 'dark') return null;
-  return { id, version, ...(typeof parsed.follow === 'boolean' ? { follow: parsed.follow } : {}), ...(parsed.theme === 'light' || parsed.theme === 'dark' ? { theme: parsed.theme } : {}) };
+  if (parsed.scope !== undefined && parsed.scope !== 'preview') return null;
+  return { id, version, ...(typeof parsed.follow === 'boolean' ? { follow: parsed.follow } : {}), ...(parsed.theme === 'light' || parsed.theme === 'dark' ? { theme: parsed.theme } : {}), ...(parsed.scope === 'preview' ? { scope: 'preview' as const } : {}) };
 }

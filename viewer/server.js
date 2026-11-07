@@ -1,8 +1,8 @@
 // src/viewer/server.ts
 import * as crypto3 from "node:crypto";
-import * as fs6 from "node:fs/promises";
+import * as fs7 from "node:fs/promises";
 import * as http from "node:http";
-import * as path8 from "node:path";
+import * as path9 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/store/index.ts
@@ -309,10 +309,45 @@ function newVersionId(now, lastVersion) {
 // src/store/lock.ts
 import * as fs3 from "node:fs/promises";
 import * as path3 from "node:path";
-async function removeStaleLock(lockDir, staleMs) {
+import { randomUUID } from "node:crypto";
+async function readOwner(lockDir) {
   try {
-    const stats = await fs3.stat(lockDir);
-    if (Date.now() - stats.mtimeMs > staleMs) {
+    const value = JSON.parse(await fs3.readFile(path3.join(lockDir, "owner.json"), "utf8"));
+    if (typeof value !== "object" || value === null || !("pid" in value) || typeof value.pid !== "number" || !Number.isSafeInteger(value.pid) || value.pid <= 0 || !("at" in value) || typeof value.at !== "string")
+      return null;
+    return { pid: value.pid, at: value.at, token: "token" in value && typeof value.token === "string" ? value.token : undefined };
+  } catch (error) {
+    if (errorCode(error) === "ENOENT" || error instanceof SyntaxError)
+      return null;
+    throw error;
+  }
+}
+function ownerIsAlive(owner) {
+  try {
+    process.kill(owner.pid, 0);
+    return true;
+  } catch (error) {
+    if (errorCode(error) === "ESRCH")
+      return false;
+    if (errorCode(error) === "EPERM")
+      return true;
+    throw error;
+  }
+}
+async function removeStaleLock(lockDir, options) {
+  try {
+    const stats = await (options.protectLiveOwner ? fs3.lstat(lockDir) : fs3.stat(lockDir));
+    if (options.protectLiveOwner && stats.isSymbolicLink())
+      throw new StoreError("INVALID_PATH", "Preview lock cannot be a symlink");
+    if (Date.now() - stats.mtimeMs > options.staleMs) {
+      if (options.protectLiveOwner) {
+        const owner = await readOwner(lockDir);
+        if (owner && ownerIsAlive(owner))
+          return;
+        const current = await fs3.lstat(lockDir);
+        if (current.ino !== stats.ino || current.dev !== stats.dev || current.mtimeMs !== stats.mtimeMs)
+          return;
+      }
       await fs3.rm(lockDir, { recursive: true, force: true });
     }
   } catch (error) {
@@ -323,16 +358,19 @@ async function removeStaleLock(lockDir, staleMs) {
 async function withArtifactLock(lockDir, action, options) {
   await ensureDir(path3.dirname(lockDir));
   const startedAt = Date.now();
+  const token = options.protectLiveOwner ? randomUUID() : undefined;
   for (;; ) {
     options.signal?.throwIfAborted();
     try {
       await fs3.mkdir(lockDir, { mode: 448 });
-      const owner = { pid: process.pid, at: new Date().toISOString() };
+      const owner = { pid: process.pid, at: new Date().toISOString(), ...token ? { token } : {} };
       try {
         await writeFileDurable(path3.join(lockDir, "owner.json"), `${JSON.stringify(owner)}
 `);
       } catch (error) {
-        await fs3.rm(lockDir, { recursive: true, force: true });
+        if (!options.protectLiveOwner || (await readOwner(lockDir))?.token === token) {
+          await fs3.rm(lockDir, { recursive: true, force: true });
+        }
         throw error;
       }
       break;
@@ -340,7 +378,7 @@ async function withArtifactLock(lockDir, action, options) {
       options.signal?.throwIfAborted();
       if (errorCode(error) !== "EEXIST")
         throw error;
-      await removeStaleLock(lockDir, options.staleMs);
+      await removeStaleLock(lockDir, options);
       if (Date.now() - startedAt >= options.timeoutMs) {
         throw new StoreError("LOCK_TIMEOUT", "Another writer held the artifact lock too long");
       }
@@ -351,7 +389,9 @@ async function withArtifactLock(lockDir, action, options) {
     options.signal?.throwIfAborted();
     return await action();
   } finally {
-    await fs3.rm(lockDir, { recursive: true, force: true });
+    if (!options.protectLiveOwner || (await readOwner(lockDir))?.token === token) {
+      await fs3.rm(lockDir, { recursive: true, force: true });
+    }
   }
 }
 
@@ -360,6 +400,17 @@ import * as fs4 from "node:fs/promises";
 import * as path4 from "node:path";
 import { fileURLToPath } from "node:url";
 var RUNTIME_API = 1;
+async function importRendering(root, source, names) {
+  const rendering = await loadRendering(source.root, source.id);
+  if (JSON.stringify(Object.keys(rendering.libraries).sort()) !== JSON.stringify([...new Set(names)].sort())) {
+    throw new StoreError("RENDERING_UNAVAILABLE", "Preview libraries do not match the artifact");
+  }
+  const directory = path4.join(source.root, ".rendering", source.id);
+  const imported = await captureRendering(root, { runtimeFile: path4.join(directory, "runtime.js"), librariesDir: directory }, names);
+  if (imported !== source.id)
+    throw new StoreError("RENDERING_UNAVAILABLE", "Preview rendering changed during promotion");
+  return imported;
+}
 function packageRoot() {
   let directory = path4.dirname(fileURLToPath(import.meta.url));
   for (let depth = 0;depth < 4; depth++) {
@@ -883,6 +934,9 @@ class ArtifactStore {
         return withArtifactLock(this.lockPath(existing.id), async () => {
           const current = await this.getMeta(existing.id);
           const manifest2 = await this.readManifest(existing.id, current.currentVersion);
+          if (input.rendering && manifest2.rendering !== input.rendering.id) {
+            throw new StoreError("CONFLICT", "The published artifact no longer uses this preview rendering. Read the current artifact before revising.", { currentVersion: current.currentVersion });
+          }
           if (manifest2.entry === entry && await this.hasSameFiles(existing.id, current.currentVersion, files)) {
             if (input.baseVersion !== undefined)
               this.assertBaseVersion(current, input.baseVersion, "metadata");
@@ -897,7 +951,8 @@ class ArtifactStore {
             entry,
             title,
             tags: input.tags,
-            baseVersion: input.baseVersion
+            baseVersion: input.baseVersion,
+            rendering: input.rendering
           }, signal);
           return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true, contentChanged: true };
         }, { ...this.lockOptions(), signal });
@@ -906,7 +961,7 @@ class ArtifactStore {
     signal?.throwIfAborted();
     const { id, artifactDir } = await this.allocateArtifact(title, now);
     try {
-      const rendering = await this.capture(normalizeLibraries(input.libraries));
+      const rendering = input.rendering ? await importRendering(this.root, input.rendering, normalizeLibraries(input.libraries)) : await this.capture(normalizeLibraries(input.libraries));
       signal?.throwIfAborted();
       const version = await this.writeVersion({
         artifactDir,
@@ -979,7 +1034,7 @@ class ArtifactStore {
     }
     const now = this.now();
     const plan = await this.planUpdate(id, meta, input);
-    const rendering = input.mode === "restore" ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries);
+    const rendering = input.mode === "restore" ? (await this.readManifest(id, input.restoreFrom)).rendering : input.mode === "replace" && input.rendering ? await importRendering(this.root, input.rendering, meta.libraries) : await this.capture(meta.libraries);
     signal?.throwIfAborted();
     const version = await this.writeVersion({
       artifactDir,
@@ -1962,13 +2017,131 @@ function applyEdits(source, edits) {
   return result;
 }
 
+// src/preview/index.ts
+import * as fs6 from "node:fs/promises";
+import * as path7 from "node:path";
+var PREVIEW_TTL_MS = 30 * 60 * 1000;
+
+class PreviewStore {
+  storeRoot;
+  store;
+  root;
+  now;
+  constructor(options) {
+    this.root = path7.resolve(options.root);
+    this.storeRoot = path7.join(this.root, ".previews");
+    this.now = options.now ?? (() => new Date);
+    this.store = new ArtifactStore({ root: this.storeRoot, renderingSource: options.renderingSource, now: this.now });
+  }
+  async init() {
+    await fs6.mkdir(this.root, { recursive: true });
+    for (const directory of [this.storeRoot, path7.join(this.storeRoot, ".locks"), path7.join(this.storeRoot, "trash")]) {
+      await fs6.mkdir(directory, { recursive: true });
+      if ((await fs6.lstat(directory)).isSymbolicLink())
+        throw new StoreError("INVALID_PATH", "Preview directories cannot be symlinks");
+      await assertRealpathWithin(this.root, directory);
+    }
+  }
+  expiresAt(meta) {
+    return Date.parse(meta.createdAt) + PREVIEW_TTL_MS;
+  }
+  async create(input, signal) {
+    signal?.throwIfAborted();
+    await this.cleanup(signal);
+    return this.store.create(input, signal);
+  }
+  async use(id, action, signal) {
+    await this.init();
+    assertArtifactId(id);
+    return withArtifactLock(this.lockPath(id), async () => {
+      const directory = path7.join(this.storeRoot, id);
+      try {
+        if ((await fs6.lstat(directory)).isSymbolicLink())
+          throw new StoreError("INVALID_PATH", "Preview cannot be a symlink");
+        await assertRealpathWithin(this.storeRoot, directory);
+      } catch (error) {
+        if (errorCode(error) === "ENOENT")
+          throw new StoreError("NOT_FOUND", "Preview not found. Create a new preview.");
+        throw error;
+      }
+      const meta = await this.store.getMeta(id);
+      if (this.expiresAt(meta) <= this.now().getTime())
+        throw new StoreError("PREVIEW_EXPIRED", "Preview expired. Create and verify a new preview before publishing.");
+      signal?.throwIfAborted();
+      return action(this.store, meta);
+    }, { retryMs: 25, timeoutMs: 5000, staleMs: 30000, protectLiveOwner: true, signal });
+  }
+  async promote(id, owner, action, signal) {
+    return this.use(id, async (store, meta) => {
+      if (meta.directory !== owner.directory || meta.sessionId !== owner.sessionId) {
+        throw new StoreError("PREVIEW_OWNERSHIP", "Preview belongs to another project or session. Create a preview in this session.");
+      }
+      const snapshot = await store.readVersion(id);
+      for (const file of snapshot.files) {
+        if (file.bytes !== file.content.byteLength || file.sha256 !== sha256(file.content)) {
+          throw new StoreError("INVALID_ARTIFACT", "Preview content changed. Create and verify a new preview.");
+        }
+      }
+      if (!snapshot.manifest.rendering)
+        throw new StoreError("RENDERING_UNAVAILABLE", "Preview has no pinned rendering");
+      await loadRendering(this.storeRoot, snapshot.manifest.rendering);
+      signal?.throwIfAborted();
+      return action(snapshot);
+    }, signal);
+  }
+  async cleanup(signal) {
+    await this.init();
+    for (const entry of await fs6.readdir(this.storeRoot, { withFileTypes: true })) {
+      signal?.throwIfAborted();
+      if (!entry.isDirectory() || !ARTIFACT_ID_RE.test(entry.name))
+        continue;
+      let initial;
+      try {
+        initial = await this.store.getMeta(entry.name);
+      } catch (error) {
+        if (errorCode(error) === "NOT_FOUND")
+          continue;
+        throw error;
+      }
+      if (this.expiresAt(initial) > this.now().getTime())
+        continue;
+      try {
+        await withArtifactLock(this.lockPath(entry.name), async () => {
+          let meta;
+          try {
+            meta = await this.store.getMeta(entry.name);
+          } catch (error) {
+            if (errorCode(error) === "NOT_FOUND")
+              return;
+            throw error;
+          }
+          if (this.expiresAt(meta) > this.now().getTime())
+            return;
+          const directory = path7.join(this.storeRoot, entry.name);
+          if ((await fs6.lstat(directory)).isSymbolicLink())
+            return;
+          await assertRealpathWithin(this.storeRoot, directory);
+          signal?.throwIfAborted();
+          await fs6.rm(directory, { recursive: true });
+        }, { retryMs: 25, timeoutMs: 0, staleMs: 30000, protectLiveOwner: true, signal });
+      } catch (error) {
+        if (errorCode(error) !== "LOCK_TIMEOUT")
+          throw error;
+      }
+    }
+  }
+  lockPath(id) {
+    return path7.join(this.storeRoot, ".locks", `preview-${id}.lock`);
+  }
+}
+
 // src/viewer/ensure.ts
 import { readFileSync } from "node:fs";
-import * as path7 from "node:path";
+import * as path8 from "node:path";
 var VIEWER_PROTOCOL = 2;
 function viewerBuild() {
   try {
-    const value = JSON.parse(readFileSync(path7.join(packageRoot(), "viewer/build.json"), "utf8"));
+    const value = JSON.parse(readFileSync(path8.join(packageRoot(), "viewer/build.json"), "utf8"));
     if (isRecord2(value) && typeof value.id === "string")
       return value.id;
   } catch {}
@@ -2122,7 +2295,9 @@ function verifyViewToken(secret, token, now = Date.now()) {
     return null;
   if (parsed.theme !== undefined && parsed.theme !== "light" && parsed.theme !== "dark")
     return null;
-  return { id, version, ...typeof parsed.follow === "boolean" ? { follow: parsed.follow } : {}, ...parsed.theme === "light" || parsed.theme === "dark" ? { theme: parsed.theme } : {} };
+  if (parsed.scope !== undefined && parsed.scope !== "preview")
+    return null;
+  return { id, version, ...typeof parsed.follow === "boolean" ? { follow: parsed.follow } : {}, ...parsed.theme === "light" || parsed.theme === "dark" ? { theme: parsed.theme } : {}, ...parsed.scope === "preview" ? { scope: "preview" } : {} };
 }
 
 // src/viewer/server.ts
@@ -2169,7 +2344,7 @@ function injectRuntime(html, source, libraryTags) {
 }
 async function readRuntimeSource(file) {
   try {
-    return await fs6.readFile(file, "utf8");
+    return await fs7.readFile(file, "utf8");
   } catch {
     return "";
   }
@@ -2218,7 +2393,7 @@ function requireSecret(request, response, secret) {
 }
 async function loadLibraries(directory) {
   try {
-    const raw = await readJson(path8.join(directory, "manifest.json"));
+    const raw = await readJson(path9.join(directory, "manifest.json"));
     if (!isRecord4(raw) || raw.schema !== 1)
       return null;
     if (typeof raw.set !== "string" || raw.set.length === 0)
@@ -2229,7 +2404,7 @@ async function loadLibraries(directory) {
     for (const [name, value] of Object.entries(raw.libraries)) {
       if (!isRecord4(value))
         continue;
-      if (typeof value.file !== "string" || path8.basename(value.file) !== value.file)
+      if (typeof value.file !== "string" || path9.basename(value.file) !== value.file)
         continue;
       if (typeof value.bytes !== "number" || typeof value.sha256 !== "string")
         continue;
@@ -2238,7 +2413,7 @@ async function loadLibraries(directory) {
     const verified2 = {};
     for (const [name, record2] of Object.entries(libraries)) {
       try {
-        const bytes = await fs6.readFile(path8.join(directory, record2.file));
+        const bytes = await fs7.readFile(path9.join(directory, record2.file));
         const hash = crypto3.createHash("sha256").update(bytes).digest("hex");
         if (hash !== record2.sha256 || bytes.byteLength !== record2.bytes)
           continue;
@@ -2259,6 +2434,8 @@ async function createViewerServer(options) {
   const build = options.build ?? viewerBuild();
   const libraries = await loadLibraries(options.librariesDir);
   const runtimeSource = await readRuntimeSource(options.runtimeFile);
+  const previews = new PreviewStore({ root: options.store.storeRoot, now: () => new Date(now()) });
+  await previews.cleanup();
   const libraryTags = (names) => names.filter((name) => libraries?.libraries[name] !== undefined).map((name) => `<script src="/libraries/${name}.js"></script>`).join("");
   const sseClients = new Map;
   const viewContexts = new Map;
@@ -2266,8 +2443,8 @@ async function createViewerServer(options) {
   let lastActivity = now();
   let isClosed = false;
   let resolveClosed = null;
-  const closed = new Promise((resolve4) => {
-    resolveClosed = resolve4;
+  const closed = new Promise((resolve5) => {
+    resolveClosed = resolve5;
   });
   const server = http.createServer((request, response) => {
     lastActivity = now();
@@ -2297,8 +2474,8 @@ async function createViewerServer(options) {
         client.end();
     }
     sseClients.clear();
-    await new Promise((resolve4) => {
-      server.close(() => resolve4());
+    await new Promise((resolve5) => {
+      server.close(() => resolve5());
       server.closeAllConnections();
     });
     resolveClosed?.();
@@ -2316,14 +2493,14 @@ async function createViewerServer(options) {
     }
   }, Math.min(Math.max(Math.floor(idleMs / 2), 10), 60000));
   idleTimer.unref();
-  await new Promise((resolve4, reject) => {
+  await new Promise((resolve5, reject) => {
     server.once("error", reject);
     server.listen(port, host, () => {
       const address = server.address();
       if (address !== null && typeof address === "object") {
         port = address.port;
       }
-      resolve4();
+      resolve5();
     });
   });
   async function handleRequest(request, response) {
@@ -2340,7 +2517,7 @@ async function createViewerServer(options) {
         ok: true,
         pid: process.pid,
         uptime: now() - startedAt,
-        store: path8.basename(options.store.storeRoot),
+        store: path9.basename(options.store.storeRoot),
         librarySet: libraries?.set ?? null,
         protocol: VIEWER_PROTOCOL,
         build
@@ -2360,11 +2537,11 @@ async function createViewerServer(options) {
       close();
       return;
     }
-    if (url.pathname.startsWith("/rendering/")) {
-      const match = /^\/rendering\/([a-f0-9]{64})\/([a-z0-9-]+)\.js$/.exec(url.pathname);
+    if (url.pathname.startsWith("/rendering/") || url.pathname.startsWith("/preview-rendering/")) {
+      const match = /^\/(?:rendering|preview-rendering)\/([a-f0-9]{64})\/([a-z0-9-]+)\.js$/.exec(url.pathname);
       if (!match)
         throw new HttpError(404, "NOT_FOUND", "Rendering file not found");
-      const rendering = await loadRendering(options.store.storeRoot, match[1] ?? "");
+      const rendering = await loadRendering(url.pathname.startsWith("/preview-rendering/") ? previews.storeRoot : options.store.storeRoot, match[1] ?? "");
       const bytes = rendering.libraries[match[2] ?? ""];
       if (!bytes)
         throw new HttpError(404, "NOT_FOUND", "Rendering library not found");
@@ -2414,15 +2591,19 @@ async function createViewerServer(options) {
     if (!isRecord4(body) || typeof body.id !== "string") {
       throw new HttpError(400, "INVALID_REQUEST", "id is required");
     }
+    const id = body.id;
     const versionInput = typeof body.version === "string" ? body.version : undefined;
     if (body.version !== undefined && versionInput === undefined) {
       throw new HttpError(400, "INVALID_REQUEST", "version must be a string");
     }
-    const result = await options.store.read(body.id, versionInput);
-    const expiresAt = now() + VIEW_TOKEN_TTL_MS;
-    const follow = typeof body.follow === "boolean" ? body.follow : versionInput === undefined;
+    if (body.scope !== undefined && body.scope !== "preview")
+      throw new HttpError(400, "INVALID_REQUEST", "Invalid view scope");
+    const scope = body.scope === "preview" ? "preview" : undefined;
+    const result = await useViewStore({ id, version: versionInput ?? "", scope }, (store) => store.read(id, versionInput));
+    const expiresAt = scope === "preview" ? previews.expiresAt(result.meta) : now() + VIEW_TOKEN_TTL_MS;
+    const follow = scope === "preview" ? false : typeof body.follow === "boolean" ? body.follow : versionInput === undefined;
     const theme = body.theme === "light" || body.theme === "dark" ? body.theme : undefined;
-    const token = signViewToken(options.secret, body.id, result.version, expiresAt, { follow, theme });
+    const token = signViewToken(options.secret, body.id, result.version, expiresAt, { follow, theme, scope });
     const query = new URLSearchParams;
     if (body.theme === "light" || body.theme === "dark")
       query.set("theme", body.theme);
@@ -2480,6 +2661,9 @@ async function createViewerServer(options) {
     }
     sendJson(response, 200, { notified: clients?.size ?? 0 }, runtimeCorsHeaders());
   }
+  async function useViewStore(payload, action) {
+    return payload.scope === "preview" ? previews.use(payload.id, action) : action(options.store);
+  }
   async function handleView(url, response) {
     const match = /^\/view\/([^/]+)\/([^/]+)\/([^/]+)\/(.*)$/.exec(url.pathname);
     if (!match)
@@ -2495,53 +2679,56 @@ async function createViewerServer(options) {
     if (payload === null || payload.id !== id || payload.version !== version) {
       throw new HttpError(404, "NOT_FOUND", "Not found");
     }
-    const result = await options.store.read(id, version);
-    const kind = result.meta.kind;
-    if (kind !== "html" && kind !== "bundle") {
-      throw new HttpError(501, "UNSUPPORTED_KIND", `${kind} artifacts are not implemented yet`);
-    }
-    const relative2 = rest.length === 0 ? result.manifest.entry : rest;
-    if (relative2 === result.manifest.entry || contentTypeFor(relative2).startsWith("text/html")) {
-      const bytes2 = await options.store.readFile(id, version, relative2);
-      let html;
-      try {
-        html = new TextDecoder("utf-8", { fatal: true }).decode(bytes2);
-      } catch {
-        throw new HttpError(500, "INVALID_ARTIFACT", "Entry is not valid UTF-8");
+    await useViewStore(payload, async (store) => {
+      const result = await store.read(id, version);
+      const kind = result.meta.kind;
+      if (kind !== "html" && kind !== "bundle") {
+        throw new HttpError(501, "UNSUPPORTED_KIND", `${kind} artifacts are not implemented yet`);
       }
-      let source = runtimeSource;
-      let tags = libraryTags(result.meta.libraries);
-      if (result.manifest.rendering) {
-        const rendering = await loadRendering(options.store.storeRoot, result.manifest.rendering);
-        source = rendering.runtime;
-        tags = Object.keys(rendering.libraries).map((name) => `<script src="/rendering/${rendering.id}/${name}.js"></script>`).join("");
-      } else if (!runtimeSource || result.meta.libraries.some((name) => !libraries?.libraries[name])) {
-        throw new StoreError("RENDERING_UNAVAILABLE", "Legacy rendering dependencies are missing. Rebuild Canvas or republish with the installed libraries.");
-      }
-      const context = { followLatest: payload.follow ?? url.searchParams.get("follow") !== "false", theme: payload.theme };
-      source = `window.__canvasView = ${JSON.stringify(context)};
+      const relative2 = rest.length === 0 ? result.manifest.entry : rest;
+      if (relative2 === result.manifest.entry || contentTypeFor(relative2).startsWith("text/html")) {
+        const bytes2 = await store.readFile(id, version, relative2);
+        let html;
+        try {
+          html = new TextDecoder("utf-8", { fatal: true }).decode(bytes2);
+        } catch {
+          throw new HttpError(500, "INVALID_ARTIFACT", "Entry is not valid UTF-8");
+        }
+        let source = runtimeSource;
+        let tags = libraryTags(result.meta.libraries);
+        if (result.manifest.rendering) {
+          const rendering = await loadRendering(store.storeRoot, result.manifest.rendering);
+          source = rendering.runtime;
+          const prefix = payload.scope === "preview" ? "preview-rendering" : "rendering";
+          tags = Object.keys(rendering.libraries).map((name) => `<script src="/${prefix}/${rendering.id}/${name}.js"></script>`).join("");
+        } else if (!runtimeSource || result.meta.libraries.some((name) => !libraries?.libraries[name])) {
+          throw new StoreError("RENDERING_UNAVAILABLE", "Legacy rendering dependencies are missing. Rebuild Canvas or republish with the installed libraries.");
+        }
+        const context = { followLatest: payload.follow ?? url.searchParams.get("follow") !== "false", theme: payload.theme };
+        source = `window.__canvasView = ${JSON.stringify(context)};
 ${source}`;
-      const injected = injectRuntime(html, source, tags);
-      const headers2 = viewHeaders({ kind, host, port });
-      headers2["Content-Length"] = String(Buffer.byteLength(injected, "utf8"));
-      response.writeHead(200, headers2);
-      response.end(injected);
-      return;
-    }
-    const bytes = await options.store.readFile(id, version, relative2);
-    const headers = {
-      "Content-Type": contentTypeFor(relative2),
-      "Content-Length": String(bytes.byteLength),
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-      "Cross-Origin-Resource-Policy": "cross-origin",
-      "Access-Control-Allow-Origin": "null"
-    };
-    if (relative2.toLowerCase().endsWith(".svg")) {
-      headers["Content-Security-Policy"] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
-    }
-    response.writeHead(200, headers);
-    response.end(bytes);
+        const injected = injectRuntime(html, source, tags);
+        const headers2 = viewHeaders({ kind, host, port });
+        headers2["Content-Length"] = String(Buffer.byteLength(injected, "utf8"));
+        response.writeHead(200, headers2);
+        response.end(injected);
+        return;
+      }
+      const bytes = await store.readFile(id, version, relative2);
+      const headers = {
+        "Content-Type": contentTypeFor(relative2),
+        "Content-Length": String(bytes.byteLength),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Cross-Origin-Resource-Policy": "cross-origin",
+        "Access-Control-Allow-Origin": "null"
+      };
+      if (relative2.toLowerCase().endsWith(".svg")) {
+        headers["Content-Security-Policy"] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
+      }
+      response.writeHead(200, headers);
+      response.end(bytes);
+    });
   }
   async function handleRuntime(response) {
     if (runtimeSource.length === 0) {
@@ -2569,7 +2756,7 @@ ${source}`;
       throw new HttpError(404, "NOT_FOUND", "Library not found");
     let bytes;
     try {
-      bytes = await fs6.readFile(path8.join(options.librariesDir, library2.file));
+      bytes = await fs7.readFile(path9.join(options.librariesDir, library2.file));
     } catch {
       throw new HttpError(404, "NOT_FOUND", "Library file not found");
     }
@@ -2593,7 +2780,7 @@ ${source}`;
       throw new HttpError(404, "NOT_FOUND", "Not found");
     }
     const payload = verifyViewToken(options.secret, token, now());
-    if (payload === null || payload.id !== id) {
+    if (payload === null || payload.id !== id || payload.scope === "preview") {
       throw new HttpError(404, "NOT_FOUND", "Not found");
     }
     response.writeHead(200, {
@@ -2643,49 +2830,50 @@ ${source}`;
     const payload = verifyViewToken(options.secret, token, now());
     if (payload === null)
       throw new HttpError(404, "NOT_FOUND", "Not found");
-    if (action === "state") {
-      if (request.method === "GET") {
-        const state2 = await options.store.readState(payload.id);
-        sendJson(response, 200, { state: state2 }, runtimeCorsHeaders());
+    const body = request.method === "POST" && (action === "state" || action === "feedback") ? await readJsonBody(request, MAX_JSON_BODY) : undefined;
+    await useViewStore(payload, async (store) => {
+      if (action === "state") {
+        if (request.method === "GET") {
+          const state2 = await store.readState(payload.id);
+          sendJson(response, 200, { state: state2 }, runtimeCorsHeaders());
+          return;
+        }
+        if (request.method !== "POST") {
+          throw new HttpError(405, "METHOD_NOT_ALLOWED", "Use GET or POST");
+        }
+        if (!isRecord4(body) || typeof body.key !== "string") {
+          throw new HttpError(400, "INVALID_REQUEST", "key is required");
+        }
+        const remove = body.delete === true;
+        const value = body.value;
+        if (!remove && !isJsonValue(value)) {
+          throw new HttpError(400, "INVALID_REQUEST", "value must be JSON");
+        }
+        const state = await store.writeStateKey(payload.id, body.key, remove ? undefined : value);
+        sendJson(response, 200, { ok: true, state }, runtimeCorsHeaders());
+        return;
+      }
+      if (action === "feedback") {
+        if (request.method !== "POST") {
+          throw new HttpError(405, "METHOD_NOT_ALLOWED", "Use POST");
+        }
+        if (!isRecord4(body) || !isJsonValue(body.data)) {
+          throw new HttpError(400, "INVALID_REQUEST", "data must be JSON");
+        }
+        const kind = typeof body.kind === "string" ? body.kind : "form";
+        const record2 = await store.addFeedback(payload.id, {
+          version: payload.version,
+          kind,
+          data: body.data
+        });
+        sendJson(response, 200, { id: record2.id, createdAt: record2.createdAt }, runtimeCorsHeaders());
         return;
       }
       if (request.method !== "POST") {
-        throw new HttpError(405, "METHOD_NOT_ALLOWED", "Use GET or POST");
-      }
-      const body = await readJsonBody(request, MAX_JSON_BODY);
-      if (!isRecord4(body) || typeof body.key !== "string") {
-        throw new HttpError(400, "INVALID_REQUEST", "key is required");
-      }
-      const remove = body.delete === true;
-      const value = body.value;
-      if (!remove && !isJsonValue(value)) {
-        throw new HttpError(400, "INVALID_REQUEST", "value must be JSON");
-      }
-      const state = await options.store.writeStateKey(payload.id, body.key, remove ? undefined : value);
-      sendJson(response, 200, { ok: true, state }, runtimeCorsHeaders());
-      return;
-    }
-    if (action === "feedback") {
-      if (request.method !== "POST") {
         throw new HttpError(405, "METHOD_NOT_ALLOWED", "Use POST");
       }
-      const body = await readJsonBody(request, MAX_JSON_BODY);
-      if (!isRecord4(body) || !isJsonValue(body.data)) {
-        throw new HttpError(400, "INVALID_REQUEST", "data must be JSON");
-      }
-      const kind = typeof body.kind === "string" ? body.kind : "form";
-      const record2 = await options.store.addFeedback(payload.id, {
-        version: payload.version,
-        kind,
-        data: body.data
-      });
-      sendJson(response, 200, { id: record2.id, createdAt: record2.createdAt }, runtimeCorsHeaders());
-      return;
-    }
-    if (request.method !== "POST") {
-      throw new HttpError(405, "METHOD_NOT_ALLOWED", "Use POST");
-    }
-    sendJson(response, 200, { ok: true }, runtimeCorsHeaders());
+      sendJson(response, 200, { ok: true }, runtimeCorsHeaders());
+    });
   }
   async function handleData(url) {
     const match = /^\/data\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(url.pathname);
@@ -2697,10 +2885,14 @@ ${source}`;
     const payload = verifyViewToken(options.secret, token, now());
     if (payload === null)
       throw new HttpError(404, "NOT_FOUND", "Not found");
+    if (payload.scope === "preview")
+      await previews.use(payload.id, async () => {
+        return;
+      });
     throw new HttpError(501, "UNSUPPORTED", "Live sources are not implemented yet");
   }
   function sendStoreError(response, error) {
-    const status = error.code === "NOT_FOUND" || error.code === "PATH_NOT_FOUND" ? 404 : error.code === "INVALID_PATH" || error.code === "INVALID_ARTIFACT" ? 400 : error.code === "TOO_LARGE" || error.code === "TOO_MANY_FILES" ? 413 : 500;
+    const status = error.code === "PREVIEW_EXPIRED" ? 410 : error.code === "PREVIEW_OWNERSHIP" ? 403 : error.code === "NOT_FOUND" || error.code === "PATH_NOT_FOUND" ? 404 : error.code === "INVALID_PATH" || error.code === "INVALID_ARTIFACT" ? 400 : error.code === "TOO_LARGE" || error.code === "TOO_MANY_FILES" ? 413 : 500;
     sendError(response, status, error.code, error.message);
   }
   return {
@@ -2719,16 +2911,16 @@ async function main() {
   const store = new ArtifactStore({ root: storeRoot });
   await store.init();
   const secret = crypto3.randomBytes(32).toString("hex");
-  const viewerDir = path8.dirname(fileURLToPath2(import.meta.url));
+  const viewerDir = path9.dirname(fileURLToPath2(import.meta.url));
   const viewer = await createViewerServer({
     store,
     secret,
-    runtimeFile: path8.join(viewerDir, "runtime", "canvas.js"),
-    librariesDir: path8.join(viewerDir, "libraries"),
+    runtimeFile: path9.join(viewerDir, "runtime", "canvas.js"),
+    librariesDir: path9.join(viewerDir, "libraries"),
     idleMs,
     onIdle: () => process.exit(0)
   });
-  await ensureDir(path8.dirname(portFile));
+  await ensureDir(path9.dirname(portFile));
   await writeJsonAtomic(portFile, {
     schema: 1,
     port: viewer.port,
@@ -2744,7 +2936,7 @@ async function main() {
   process.on("SIGINT", shutdown);
   await viewer.closed;
 }
-var isMain = process.argv[1] !== undefined && path8.resolve(process.argv[1]) === fileURLToPath2(import.meta.url);
+var isMain = process.argv[1] !== undefined && path9.resolve(process.argv[1]) === fileURLToPath2(import.meta.url);
 if (isMain) {
   await main();
 }

@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: long-label-flow
+expected_outcome: |
+  The architecture scenario preserves all supplied actors, process and store names,
+  labels the two data flows, and provides a matching textual equivalent. It wraps
+  long labels or contains scrolling without clipping, uses fallback light/dark
+  styling, verifies a preview, and promotes once. It invents no real code or schema.

@@ -12,6 +12,17 @@ interface Library { file: string; bytes: number; sha256: string }
 interface RenderingManifest { api: number; runtime: Library; libraries: Record<string, Library> }
 export interface Rendering { runtime: string; libraries: Record<string, Buffer>; id: string }
 
+export async function importRendering(root: string, source: { root: string; id: string }, names: string[]): Promise<string> {
+  const rendering = await loadRendering(source.root, source.id);
+  if (JSON.stringify(Object.keys(rendering.libraries).sort()) !== JSON.stringify([...new Set(names)].sort())) {
+    throw new StoreError('RENDERING_UNAVAILABLE', 'Preview libraries do not match the artifact');
+  }
+  const directory = path.join(source.root, '.rendering', source.id);
+  const imported = await captureRendering(root, { runtimeFile: path.join(directory, 'runtime.js'), librariesDir: directory }, names);
+  if (imported !== source.id) throw new StoreError('RENDERING_UNAVAILABLE', 'Preview rendering changed during promotion');
+  return imported;
+}
+
 export function packageRoot(): string {
   let directory = path.dirname(fileURLToPath(import.meta.url));
   for (let depth = 0; depth < 4; depth++) {

@@ -1,0 +1,27 @@
+:root {
+  color-scheme: light;
+  --page: #f7fafc;
+  --surface: #ffffff;
+  --text: #172b3a;
+  --muted: #4e6473;
+  --line: #667f8f;
+  --action: #00695c;
+  --action-text: #ffffff;
+  --focus: #005ea8;
+  --radius: 4px;
+  --font: system-ui, sans-serif;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #101c26;
+  --surface: #182b39;
+  --text: #eff7fc;
+  --muted: #b2c8d7;
+  --line: #829bab;
+  --action: #80dfcb;
+  --action-text: #101c26;
+  --focus: #9ed1ff;
+}
+body { background: var(--page); color: var(--text); font: 1rem/1.5 var(--font); }
+h1, h2 { font-family: var(--font); font-weight: 700; }
+input, select, button { border-radius: var(--radius); }

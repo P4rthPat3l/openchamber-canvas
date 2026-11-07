@@ -3,6 +3,7 @@ import { chromium } from 'playwright';
 import { builtViewer } from './viewer-fixture';
 import * as path from 'node:path';
 import { z } from 'zod';
+import { PreviewStore } from '../../src/preview/index';
 
 const fixture = await builtViewer();
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
@@ -89,6 +90,36 @@ try {
   async function publish(arguments_: Record<string, unknown>): Promise<{ id: string; version: string; viewUrl: string }> {
     return z.object({ id: z.string(), version: z.string(), viewUrl: z.string() }).parse(await call('publish', arguments_));
   }
+  const beforePreview = (await fixture.store.list()).total;
+  const candidate = z.object({ previewId: z.string(), viewUrl: z.string(), verified: z.literal(false) }).parse(await call('preview', {
+    title: 'Unpublished browser candidate', kind: 'bundle', entry: 'index.html', libraries: ['chartjs'], files: [
+      { path: 'index.html', content: '<!doctype html><html><head></head><body><h1>Candidate</h1><canvas id="plot"></canvas><a id="next" href="second.html">Next</a><script>new Chart(document.querySelector("#plot"),{type:"bar",data:{labels:["A"],datasets:[{data:[3]}]},options:{animation:false}})</script></body></html>' },
+      { path: 'second.html', content: '<!doctype html><html><body><h1>Secondary preview</h1></body></html>' },
+    ],
+  }));
+  assert.equal((await fixture.store.list()).total, beforePreview, 'AC-082: preview is absent from published listings');
+  await page.goto(candidate.viewUrl);
+  assert.equal(await page.evaluate(() => typeof Reflect.get(window, 'Chart')), 'function', 'AC-082: preview uses injected pinned Chart.js');
+  assert.equal(await page.evaluate(() => window.canvas?.followLatest), false, 'AC-082: preview does not subscribe to published changes');
+  assert.deepEqual(await inspect(), { storage: false, network: false, runtime: true }, 'AC-084: preview keeps sandbox');
+  await page.evaluate(async () => { await window.canvas?.storage.set('preview-only', true); await window.canvas?.feedback({ preview: true }); });
+  await Promise.all([page.waitForURL('**/second.html'), page.locator('#next').click()]);
+  assert.deepEqual(await inspect(), { storage: false, network: false, runtime: true }, 'AC-084: secondary preview remains sandboxed');
+  const promoted = await publish({ title: 'Promoted browser candidate', previewId: candidate.previewId });
+  assert.equal((await fixture.store.list()).total, (beforePreview ?? 0) + 1, 'AC-083: only promotion creates a published artifact');
+  assert.equal((await fixture.store.getMeta(promoted.id)).versions.length, 1, 'AC-083: promoted artifact starts with one version');
+  assert.deepEqual(await fixture.store.readState(promoted.id), {}, 'AC-083: preview state is not copied');
+  assert.equal((await fixture.store.feedbackPage(promoted.id)).total, 0, 'AC-083: preview feedback is not copied');
+  const previews = new PreviewStore({ root: fixture.root });
+  const source = await previews.use(candidate.previewId, store => store.read(candidate.previewId));
+  const stored = await fixture.store.read(promoted.id);
+  assert.deepEqual(stored.manifest.files, source.manifest.files, 'AC-083: source hashes survive promotion');
+  assert.equal(stored.manifest.rendering, source.manifest.rendering, 'AC-083: rendering hash survives promotion');
+  const retried = await publish({ title: 'Promoted browser candidate', previewId: candidate.previewId });
+  assert.equal(retried.id, promoted.id, 'AC-083: retry reuses published artifact');
+  await page.goto(promoted.viewUrl);
+  assert.equal(await page.locator('h1').innerText(), 'Candidate');
+  verified.add('AC-082'); verified.add('AC-083'); verified.add('AC-084');
   const first = await publish({ title: 'Dedupe following', dedupeKey: 'browser-follow', html: '<head></head><h1>First</h1>' });
   await page.goto(first.viewUrl);
   const next = await publish({ title: 'Dedupe following', dedupeKey: 'browser-follow', baseVersion: first.version, html: '<head></head><h1>Second</h1>' });

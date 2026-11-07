@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: empty-data
+expected_outcome: |
+  The metrics scenario identifies an absent export, dates, and missing observations
+  without fabricating a zero series, total, trend or loading state. It uses a clear
+  static empty explanation, fallback light/dark styling, verifies a preview, and
+  promotes once with honest limits. It does not build an upload application.

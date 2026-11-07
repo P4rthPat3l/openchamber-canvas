@@ -8,7 +8,8 @@ import { createOperations } from '../src/agent/operations';
 import type { CanvasOperations } from '../src/agent/operations';
 import { schemas } from '../src/agent/schemas';
 import type { OperationName } from '../src/agent/schemas';
-import { installedRendering } from '../src/viewer/rendering';
+import { captureRendering, installedRendering } from '../src/viewer/rendering';
+import { PreviewStore } from '../src/preview/index';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const temporaryRoots: string[] = [];
@@ -176,10 +177,11 @@ describe('AC-068: Canvas operations', () => {
     const missing = await call(client, 'update', { id, html: page });
     expect(missing.isError).toBe(true);
   });
-  test('lists the six tools', async () => {
+  test('AC-086: lists preview alongside the six existing tools', async () => {
     expect(Object.keys(schemas).sort()).toEqual([
       'archive',
       'list',
+      'preview',
       'publish',
       'read',
       'result',
@@ -375,4 +377,84 @@ describe('AC-068: Canvas operations', () => {
       })).value.artifacts,
     ).toHaveLength(1);
   });
+});
+
+test('AC-082 AC-083 AC-090: preview is unpublished, promotes frozen files once, and preserves viewer warnings', async () => {
+  const { client, root, store } = await makeClient();
+  const project = path.join(root, 'project');
+  await fs.mkdir(project);
+  await fs.writeFile(path.join(project, 'source.html'), page);
+  const preview = z.object({ previewId: z.string(), viewUrl: z.null(), expiresAt: z.number(), verified: z.literal(false), warnings: z.array(z.string()) }).parse((await call(client, 'preview', { title: 'Candidate', directory: project, filePath: 'source.html' })).value);
+  expect(preview.warnings.length).toBeGreaterThan(0);
+  expect((await store.list()).total).toBe(0);
+  await fs.writeFile(path.join(project, 'source.html'), '<h1>Changed after preview</h1>');
+  const input = { title: 'Frozen', directory: project, previewId: preview.previewId };
+  const first = await call(client, 'publish', input);
+  const retry = await call(client, 'publish', input);
+  expect(first.isError).toBe(false);
+  expect(retry.value.id).toBe(first.value.id);
+  expect(retry.value.version).toBe(first.value.version);
+  expect(retry.value.deduped).toBe(true);
+  const result = await store.readVersion(String(first.value.id));
+  expect(new TextDecoder().decode(result.files[0]?.content)).toBe(page);
+  expect(result.meta.versions).toHaveLength(1);
+  const previews = new PreviewStore({ root });
+  const snapshot = await previews.use(preview.previewId, source => source.read(preview.previewId));
+  expect(result.manifest.rendering).toBe(snapshot.manifest.rendering);
+  expect(first.value.viewUrl).toBeNull();
+  expect((await store.list()).total).toBe(1);
+  const invalid = await call(client, 'publish', { ...input, html: page });
+  expect(invalid.isError).toBe(true);
+  const foreign = await client.execute('publish', input, { directory: projectRoot, sessionId: 'ses_other', signal: new AbortController().signal });
+  expect(z.object({ error: z.object({ code: z.literal('PREVIEW_OWNERSHIP') }) }).safeParse(foreign.value).success).toBe(true);
+});
+
+test('AC-083 AC-084 AC-090: preview updates keep the same ID and reject conflicts or mismatches without mutation', async () => {
+  const { client, store } = await makeClient();
+  const first = z.object({ id: z.string(), version: z.string() }).parse((await call(client, 'publish', { title: 'Existing', html: page })).value);
+  const candidate = z.object({ previewId: z.string() }).parse((await call(client, 'preview', { title: 'Revision', html: '<h1>Revised</h1>' })).value);
+  const updated = await call(client, 'update', { ...first, baseVersion: first.version, previewId: candidate.previewId });
+  expect(updated.isError).toBe(false);
+  expect(updated.value.id).toBe(first.id);
+  expect((await store.getMeta(first.id)).versions).toHaveLength(2);
+  const conflict = await call(client, 'update', { id: first.id, baseVersion: first.version, previewId: candidate.previewId });
+  expect(z.object({ code: z.string() }).parse(conflict.value.error).code).toBe('CONFLICT');
+  for (const input of [{ libraries: ['chartjs'] }, { kind: 'bundle', entry: 'index.html', files: [{ path: 'index.html', content: page }] }]) {
+    const other = await call(client, 'preview', { title: 'Mismatch', ...(input.kind ? input : { ...input, html: page }) });
+    expect(other.isError).toBe(false);
+    const rejected = await call(client, 'update', { id: first.id, baseVersion: updated.value.version, previewId: other.value.previewId });
+    expect(rejected.isError).toBe(true);
+  }
+  expect((await store.getMeta(first.id)).versions).toHaveLength(2);
+});
+
+test('AC-084 AC-085: preview rejects remote assets, escaping sources, and cancellation before writing', async () => {
+  const { client, store, root } = await makeClient();
+  for (const input of [{ html: '<script src="https://example.com/x.js"></script>' }, { directory: root, filePath: '../outside.html' }]) {
+    expect((await call(client, 'preview', { title: 'Invalid', ...input })).isError).toBe(true);
+  }
+  const controller = new AbortController();
+  controller.abort();
+  await expect(client.execute('preview', { title: 'Cancelled', html: page }, { directory: projectRoot, sessionId: 'ses_cancelled', signal: controller.signal })).rejects.toThrow();
+  expect((await store.list()).total).toBe(0);
+});
+
+test('AC-083 AC-090: preview retries honor baseVersion and reject later untested rendering without changing metadata', async () => {
+  const { client, store, root } = await makeClient();
+  const preview = z.object({ previewId: z.string() }).parse((await call(client, 'preview', { title: 'Retry', html: page })).value);
+  const first = z.object({ id: z.string(), version: z.string() }).parse((await call(client, 'publish', { title: 'Original title', previewId: preview.previewId })).value);
+  const mismatch = await call(client, 'publish', { title: 'Must not overwrite', previewId: preview.previewId, baseVersion: '20200101T000000000Z' });
+  expect(mismatch.isError).toBe(true);
+  expect((await store.getMeta(first.id)).title).toBe('Original title');
+  const alternate = path.join(root, 'alternate');
+  await fs.mkdir(alternate);
+  const runtimeFile = path.join(alternate, 'runtime.js');
+  await fs.writeFile(runtimeFile, 'window.differentRuntime = true;');
+  const rendering = await captureRendering(alternate, { runtimeFile, librariesDir: installedRendering().librariesDir }, []);
+  const later = await store.update(first.id, { mode: 'replace', baseVersion: first.version, files: [{ path: 'index.html', content: page }], rendering: { root: alternate, id: rendering } });
+  const retry = await call(client, 'publish', { title: 'Original title', previewId: preview.previewId });
+  expect(retry.isError).toBe(true);
+  expect(z.object({ code: z.string() }).parse(retry.value.error).code).toBe('CONFLICT');
+  expect((await store.read(first.id)).manifest.rendering).toBe(rendering);
+  expect((await store.getMeta(first.id)).currentVersion).toBe(later.version);
 });

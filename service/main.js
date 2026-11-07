@@ -306,10 +306,45 @@ function newVersionId(now, lastVersion) {
 // src/store/lock.ts
 import * as fs3 from "node:fs/promises";
 import * as path3 from "node:path";
-async function removeStaleLock(lockDir, staleMs) {
+import { randomUUID } from "node:crypto";
+async function readOwner(lockDir) {
   try {
-    const stats = await fs3.stat(lockDir);
-    if (Date.now() - stats.mtimeMs > staleMs) {
+    const value = JSON.parse(await fs3.readFile(path3.join(lockDir, "owner.json"), "utf8"));
+    if (typeof value !== "object" || value === null || !("pid" in value) || typeof value.pid !== "number" || !Number.isSafeInteger(value.pid) || value.pid <= 0 || !("at" in value) || typeof value.at !== "string")
+      return null;
+    return { pid: value.pid, at: value.at, token: "token" in value && typeof value.token === "string" ? value.token : undefined };
+  } catch (error) {
+    if (errorCode(error) === "ENOENT" || error instanceof SyntaxError)
+      return null;
+    throw error;
+  }
+}
+function ownerIsAlive(owner) {
+  try {
+    process.kill(owner.pid, 0);
+    return true;
+  } catch (error) {
+    if (errorCode(error) === "ESRCH")
+      return false;
+    if (errorCode(error) === "EPERM")
+      return true;
+    throw error;
+  }
+}
+async function removeStaleLock(lockDir, options) {
+  try {
+    const stats = await (options.protectLiveOwner ? fs3.lstat(lockDir) : fs3.stat(lockDir));
+    if (options.protectLiveOwner && stats.isSymbolicLink())
+      throw new StoreError("INVALID_PATH", "Preview lock cannot be a symlink");
+    if (Date.now() - stats.mtimeMs > options.staleMs) {
+      if (options.protectLiveOwner) {
+        const owner = await readOwner(lockDir);
+        if (owner && ownerIsAlive(owner))
+          return;
+        const current = await fs3.lstat(lockDir);
+        if (current.ino !== stats.ino || current.dev !== stats.dev || current.mtimeMs !== stats.mtimeMs)
+          return;
+      }
       await fs3.rm(lockDir, { recursive: true, force: true });
     }
   } catch (error) {
@@ -320,16 +355,19 @@ async function removeStaleLock(lockDir, staleMs) {
 async function withArtifactLock(lockDir, action, options) {
   await ensureDir(path3.dirname(lockDir));
   const startedAt = Date.now();
+  const token = options.protectLiveOwner ? randomUUID() : undefined;
   for (;; ) {
     options.signal?.throwIfAborted();
     try {
       await fs3.mkdir(lockDir, { mode: 448 });
-      const owner = { pid: process.pid, at: new Date().toISOString() };
+      const owner = { pid: process.pid, at: new Date().toISOString(), ...token ? { token } : {} };
       try {
         await writeFileDurable(path3.join(lockDir, "owner.json"), `${JSON.stringify(owner)}
 `);
       } catch (error) {
-        await fs3.rm(lockDir, { recursive: true, force: true });
+        if (!options.protectLiveOwner || (await readOwner(lockDir))?.token === token) {
+          await fs3.rm(lockDir, { recursive: true, force: true });
+        }
         throw error;
       }
       break;
@@ -337,7 +375,7 @@ async function withArtifactLock(lockDir, action, options) {
       options.signal?.throwIfAborted();
       if (errorCode(error) !== "EEXIST")
         throw error;
-      await removeStaleLock(lockDir, options.staleMs);
+      await removeStaleLock(lockDir, options);
       if (Date.now() - startedAt >= options.timeoutMs) {
         throw new StoreError("LOCK_TIMEOUT", "Another writer held the artifact lock too long");
       }
@@ -348,7 +386,9 @@ async function withArtifactLock(lockDir, action, options) {
     options.signal?.throwIfAborted();
     return await action();
   } finally {
-    await fs3.rm(lockDir, { recursive: true, force: true });
+    if (!options.protectLiveOwner || (await readOwner(lockDir))?.token === token) {
+      await fs3.rm(lockDir, { recursive: true, force: true });
+    }
   }
 }
 
@@ -357,6 +397,17 @@ import * as fs4 from "node:fs/promises";
 import * as path4 from "node:path";
 import { fileURLToPath } from "node:url";
 var RUNTIME_API = 1;
+async function importRendering(root, source, names) {
+  const rendering = await loadRendering(source.root, source.id);
+  if (JSON.stringify(Object.keys(rendering.libraries).sort()) !== JSON.stringify([...new Set(names)].sort())) {
+    throw new StoreError("RENDERING_UNAVAILABLE", "Preview libraries do not match the artifact");
+  }
+  const directory = path4.join(source.root, ".rendering", source.id);
+  const imported = await captureRendering(root, { runtimeFile: path4.join(directory, "runtime.js"), librariesDir: directory }, names);
+  if (imported !== source.id)
+    throw new StoreError("RENDERING_UNAVAILABLE", "Preview rendering changed during promotion");
+  return imported;
+}
 function packageRoot() {
   let directory = path4.dirname(fileURLToPath(import.meta.url));
   for (let depth = 0;depth < 4; depth++) {
@@ -884,6 +935,9 @@ class ArtifactStore {
         return withArtifactLock(this.lockPath(existing.id), async () => {
           const current = await this.getMeta(existing.id);
           const manifest2 = await this.readManifest(existing.id, current.currentVersion);
+          if (input.rendering && manifest2.rendering !== input.rendering.id) {
+            throw new StoreError("CONFLICT", "The published artifact no longer uses this preview rendering. Read the current artifact before revising.", { currentVersion: current.currentVersion });
+          }
           if (manifest2.entry === entry && await this.hasSameFiles(existing.id, current.currentVersion, files)) {
             if (input.baseVersion !== undefined)
               this.assertBaseVersion(current, input.baseVersion, "metadata");
@@ -898,7 +952,8 @@ class ArtifactStore {
             entry,
             title,
             tags: input.tags,
-            baseVersion: input.baseVersion
+            baseVersion: input.baseVersion,
+            rendering: input.rendering
           }, signal);
           return { id: existing.id, version: updated.version, meta: updated.meta, deduped: true, contentChanged: true };
         }, { ...this.lockOptions(), signal });
@@ -907,7 +962,7 @@ class ArtifactStore {
     signal?.throwIfAborted();
     const { id, artifactDir } = await this.allocateArtifact(title, now);
     try {
-      const rendering = await this.capture(normalizeLibraries(input.libraries));
+      const rendering = input.rendering ? await importRendering(this.root, input.rendering, normalizeLibraries(input.libraries)) : await this.capture(normalizeLibraries(input.libraries));
       signal?.throwIfAborted();
       const version = await this.writeVersion({
         artifactDir,
@@ -980,7 +1035,7 @@ class ArtifactStore {
     }
     const now = this.now();
     const plan = await this.planUpdate(id, meta, input);
-    const rendering = input.mode === "restore" ? (await this.readManifest(id, input.restoreFrom)).rendering : await this.capture(meta.libraries);
+    const rendering = input.mode === "restore" ? (await this.readManifest(id, input.restoreFrom)).rendering : input.mode === "replace" && input.rendering ? await importRendering(this.root, input.rendering, meta.libraries) : await this.capture(meta.libraries);
     signal?.throwIfAborted();
     const version = await this.writeVersion({
       artifactDir,

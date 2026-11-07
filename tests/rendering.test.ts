@@ -5,6 +5,58 @@ import { ArtifactStore } from '../src/store/index';
 import { sha256 } from '../src/store/fs';
 import { captureRendering, loadRendering, installedRendering } from '../src/viewer/rendering';
 import { createViewerServer } from '../src/viewer/server';
+import { PreviewStore } from '../src/preview/index';
+
+test('AC-083 AC-084: promotion imports the tested renderer despite package changes and rejects corrupt dependencies', async () => {
+  const root = await fs.mkdtemp('/tmp/opencode/canvas-promote-rendering-');
+  try {
+    const assets = path.join(root, 'assets');
+    await fs.mkdir(assets);
+    const source = { runtimeFile: path.join(assets, 'runtime.js'), librariesDir: assets };
+    await fs.writeFile(source.runtimeFile, 'window.testedRuntime = true;');
+    await fs.writeFile(path.join(assets, 'manifest.json'), JSON.stringify({ libraries: {} }));
+    const previews = new PreviewStore({ root, renderingSource: source });
+    const owner = { directory: root, sessionId: 'ses_rendering_preview' };
+    const candidate = await previews.create({ ...owner, title: 'Frozen', kind: 'html', files: [{ path: 'index.html', content: '<h1>Frozen</h1>' }] });
+    await fs.writeFile(source.runtimeFile, 'window.untestedRuntime = true;');
+    const destination = new ArtifactStore({ root, renderingSource: source });
+    const promote = () => previews.promote(candidate.id, owner, snapshot => destination.create({ ...owner, title: 'Promoted', kind: 'html', files: snapshot.files.map(file => ({ path: file.path, content: file.content })), rendering: { root: previews.storeRoot, id: snapshot.manifest.rendering ?? '' } }));
+    const published = await promote();
+    const reference = (await destination.read(published.id)).manifest.rendering ?? '';
+    expect((await loadRendering(root, reference)).runtime).toContain('testedRuntime');
+    expect((await loadRendering(root, reference)).runtime).not.toContain('untestedRuntime');
+    await fs.writeFile(path.join(previews.storeRoot, '.rendering', reference, 'runtime.js'), 'tampered');
+    await expect(promote()).rejects.toMatchObject({ code: 'RENDERING_UNAVAILABLE' });
+    expect((await destination.list()).total).toBe(1);
+    await fs.unlink(path.join(previews.storeRoot, '.rendering', reference, 'runtime.js'));
+    await expect(promote()).rejects.toMatchObject({ code: 'RENDERING_UNAVAILABLE' });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('AC-083: a changed-content preview retry keeps the tested rendering after the package changes', async () => {
+  const root = await fs.mkdtemp('/tmp/opencode/canvas-retry-rendering-');
+  try {
+    const assets = path.join(root, 'assets');
+    await fs.mkdir(assets);
+    const source = { runtimeFile: path.join(assets, 'runtime.js'), librariesDir: assets };
+    await fs.writeFile(source.runtimeFile, 'window.testedRuntime = true;');
+    await fs.writeFile(path.join(assets, 'manifest.json'), JSON.stringify({ libraries: {} }));
+    const previews = new PreviewStore({ root, renderingSource: source });
+    const owner = { directory: root, sessionId: 'ses_retry_rendering' };
+    const candidate = await previews.create({ ...owner, title: 'Tested', kind: 'html', files: [{ path: 'index.html', content: '<h1>Tested</h1>' }] });
+    const destination = new ArtifactStore({ root, renderingSource: source });
+    const promote = (baseVersion?: string) => previews.promote(candidate.id, owner, snapshot => destination.create({ ...owner, title: 'Promoted', kind: 'html', dedupeKey: `preview:${candidate.id}`, baseVersion,
+      files: snapshot.files.map(file => ({ path: file.path, content: file.content })), rendering: { root: previews.storeRoot, id: snapshot.manifest.rendering ?? '' } }));
+    const published = await promote();
+    const tested = (await destination.read(published.id)).manifest.rendering;
+    const later = await destination.update(published.id, { mode: 'replace', baseVersion: published.version, files: [{ path: 'index.html', content: '<h1>Edited later</h1>' }] });
+    expect((await destination.read(published.id)).manifest.rendering).toBe(tested);
+    await fs.writeFile(source.runtimeFile, 'window.untestedRuntime = true;');
+    const retried = await promote(later.version);
+    expect(retried.contentChanged).toBe(true);
+    expect((await destination.read(published.id, retried.version)).manifest.rendering).toBe(tested);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
 
 test('AC-061 AC-062: rendering bytes survive dependency updates and restarts; restores retain references', async () => {
   const root = await fs.mkdtemp('/tmp/opencode/canvas-rendering-');

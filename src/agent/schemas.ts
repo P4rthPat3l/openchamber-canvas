@@ -6,8 +6,7 @@ export const fileSchema = z.object({
   contentBase64: z.string().max(7 * 1024 * 1024).optional(),
 });
 
-export const schemas = {
-  publish: z.object({
+const publishSchema = z.object({
     title: z.string().min(1).max(200),
     kind: z.enum(['html', 'bundle']).optional(),
     html: z.string().min(1).max(2 * 1024 * 1024).optional(),
@@ -20,10 +19,16 @@ export const schemas = {
     libraries: z.array(z.string().regex(/^[a-z0-9-]{1,32}$/)).max(16).optional(),
     dedupeKey: z.string().min(1).max(200).optional(),
     baseVersion: z.string().min(1).optional(),
-  }),
+    previewId: z.string().min(1).max(80).optional(),
+  });
+
+export const schemas = {
+  preview: publishSchema.omit({ dedupeKey: true, baseVersion: true, previewId: true }),
+  publish: publishSchema,
   update: z.object({
     id: z.string().min(1),
     baseVersion: z.string().min(1),
+    previewId: z.string().min(1).max(80).optional(),
     mode: z.enum(['merge', 'replace']).optional(),
     html: z.string().min(1).max(2 * 1024 * 1024).optional(),
     files: z.array(fileSchema).max(200).optional(),

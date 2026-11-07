@@ -20,11 +20,12 @@ Artifacts live in the project's store, not in a chat transcript. They keep sandb
 
 ## Operating Context
 
-The user works in an OpenChamber project with the agent in the main chat. The extension panel sits on the right rail and can open full-screen. The gallery calls the extension service for reads, view URLs, export, and feedback. A native OpenCode plugin registers the six Canvas operations in the OpenCode server. Both share `~/.config/openchamber/artifacts`. The extension asks for the `service` permission only.
+The user works in an OpenChamber project with the agent in the main chat. The extension panel sits on the right rail and can open full-screen. The gallery calls the extension service for reads, view URLs, export, and feedback. A native OpenCode plugin registers seven Canvas operations in the OpenCode server. Both share `~/.config/openchamber/artifacts`. The extension asks for the `service` permission only.
 
 ## Capabilities and Constraints
 
 - HTML and bundle artifacts in v1. Markdown, image, PDF, and data kinds are deferred.
+- Unpublished 30-minute previews use the same viewer with isolated state/feedback. Publishing or updating a preview ID copies the tested files and pinned rendering, never preview state. Existing direct source inputs remain supported.
 - Versions, restore, archive, trash, favorites, tags, search, export, feedback, and session provenance.
 - New versions pin their runtime and libraries; historical views stay fixed unless following is explicitly requested. Legacy versions remain readable but are labelled unpinned.
 - Feedback is readable and selectable in the gallery. Adding it to chat composes a draft and records that action; it does not send a message or claim the agent has read it.

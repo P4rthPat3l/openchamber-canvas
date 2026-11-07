@@ -6,9 +6,9 @@ status: active
 implementation_status: shipped_unverified
 owner: Parth
 created: 2026-10-23
-last_updated: 2026-11-02
+last_updated: 2026-11-07
 last_verified_commit: null
-version: 2.2.0
+version: 2.3.0
 tags:
   - openchamber
   - extension
@@ -35,12 +35,14 @@ The [bundled Canvas authoring skill](#39-bundled-canvas-authoring-skill) ships i
 
 The [artifact design system](#40-artifact-design-system) ships in package 0.5.0. It adds the project-first fallback, the reference example, and the per-view Light/Dark switcher, with AC-080 and AC-081.
 
+The [preview-first authoring and scenario starters](#41-preview-first-authoring-and-scenario-starters) are built in the working tree without a release-version change. The native preview tool, frozen promotion, scenario references, and consistent starters exist. Installed-app acceptance and paired model evaluations remain unverified.
+
 ## 1. Feature Snapshot
 
 | Field | Details |
 |---|---|
 | Document status | Active |
-| Implementation status | 0.5.0 artifact design system and 0.4.0 bundled authoring skill built; user-reported working; model-selection trials pending |
+| Implementation status | 0.5.0 released foundations; unreleased preview-first authoring and scenario starters built; installed acceptance and paired model trials pending |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, native plugin, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -109,7 +111,7 @@ The browser panel already solves rendering, JavaScript, annotation, DevTools, an
 
 ### Desired Outcome
 
-The user asks an agent for a chart, dashboard, diagram, report, or HTML mockup. The agent calls one tool. The artifact is stored, the browser panel opens it, and the gallery shows it in the right rail under the project it belongs to. When the agent updates it, the open page refreshes in place. When the user fills a form or picks an option in the artifact, the gallery can put that answer in the chat box for the user to send.
+The user asks an agent for a chart, dashboard, diagram, report, or HTML mockup. The agent can verify an unpublished preview before promoting its tested content into a stored, versioned artifact. Direct publication remains available. When the agent updates it, the open page refreshes in place. When the user submits feedback in a published artifact, the gallery can put that answer in the chat box for review. Preview feedback stays disposable and never reaches the gallery.
 
 The user can reopen any previous artifact, switch between "This project" and "All projects", inspect versions, restore an older one, export a copy, and attach it to a session.
 
@@ -193,6 +195,7 @@ Probe results on 2026-10-23:
 | Term | Meaning |
 |---|---|
 | Artifact | One stored item with a title, a project, a kind, and a version history |
+| Preview | An unpublished, project/session-owned snapshot that expires after 30 minutes and has isolated runtime state and feedback |
 | Canvas | The feature as a whole. The name is used in the extension id, MCP server, and tool names |
 | Gallery | The extension panel that lists artifacts and opens them |
 | Store | The directory tree at `~/.config/openchamber/artifacts` |
@@ -545,7 +548,7 @@ This table records the original phase plan, including removed MCP paths. Use Exi
 
 Status: **Planned**
 
-The native plugin registers namespace `canvas`, retaining effective names `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, and `canvas_result`. In Code Mode they are callable through `tools.canvas`. Schemas, descriptions and executors are registered together. The unchanged payload examples below are transport-independent; native errors use serialized Canvas codes/details in their message, not an MCP result envelope.
+The native plugin registers namespace `canvas`, with `canvas_preview`, `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, and `canvas_result`. In Code Mode they are callable through `tools.canvas`. Schemas, descriptions and executors are registered together. Existing source payloads remain supported. Native errors use serialized Canvas codes/details in their message, not an MCP result envelope. Section 41 defines preview inputs and promotion; `previewId` replaces the content source for publish or full-replacement update.
 
 #### `publish`
 
@@ -2832,3 +2835,135 @@ On 2026-11-02, `bun run typecheck`, `bun run lint`, `bun test` (98 passing), `bu
 - R-DESIGN-04: Remote fonts or copied gallery controls would break the sandbox and the app's visual boundary. Keep fonts local, use the system stacks in the fallback, and do not import the gallery SDK styles.
 
 Rollback removes the skill section, the reference example, the design document, and the new test coverage. It does not touch artifact data, the store, the viewer, or user configuration.
+
+## 41. Preview-first authoring and scenario starters
+
+Status: Inferred. The user approved the full detailed plan on 2026-11-07 through the implementation-scope form, then approved preview-only lock protection after independent review. AC-082 through AC-090 are implemented in the working tree. No clean verification commit or installed-package acceptance is claimed. Paired model evaluations remain unexecuted.
+
+### Outcome and evidence
+
+An agent should verify a candidate in the actual Canvas renderer before creating a published artifact or version. It should start from an example appropriate to the user's software-development task, rather than assemble mismatched technical examples and a separate design-system reference.
+
+The existing skill already requires source preflight, one complete publish, batched corrections, and a stop condition. It offers no non-publishing runtime preview. Existing instruction tests do not prove model behavior. Recent metadata confirms closely spaced versions; conversation excerpts do not establish the cause of every update.
+
+The [research record](../research/canvas-authoring-preflight.md) includes the command, initial probe-input failure, successful output, and limits. The installed skill matches this checkout. The isolated probe preserved file hashes and pinned rendering across promotion without copying state or feedback.
+
+### Included and excluded scope
+
+Implemented additions:
+
+- One additive native `canvas_preview` operation for immutable, unpublished HTML or bundle snapshots.
+- Promotion through existing publish/update operations without rereading local source.
+- Preview-scoped storage/feedback, expiry, project/session ownership, and existing sandbox protections.
+- One short entry skill with focused references for architecture walkthroughs, feature walkthroughs, UI proposals, technical decisions, investigation reports, and metrics dashboards. Explain actors, starting conditions, steps, data changes, alternate paths, and observable outcomes where relevant. Distinguish simulations from real actions.
+- Align chart, diagram, and mockup starters with the established fallback. Add a small static report starter for decisions/investigations. Preserve the user's uncommitted table improvements and existing runtime examples.
+- Repeatable evaluation cases, trace-based scoring instructions, and an honest baseline. Mechanical tests and observed model behavior remain separate evidence.
+
+Excluded: gallery redesign, WYSIWYG editing, frameworks for authored pages, a second HTML-serving process, remote assets, extra extension permissions, user-data migration, history removal/compaction, a hard revision cap, global skill installation, installed-package updates, automatic chat sending, and unapproved paid/model evaluation runs.
+
+### Journey and data flow
+
+```mermaid
+flowchart TD
+    Request[User asks for an artifact or revision] --> Scenario[Choose scenario and project design system]
+    Scenario --> Source[Edit one canonical local source]
+    Source --> Snapshot[Preview freezes validated source and rendering]
+    Snapshot --> Browser[Existing daemon serves sandboxed preview]
+    Browser --> Check{Requested behavior passes?}
+    Check -->|Concrete defects| Source
+    Check -->|Passes| Promote[Publish or update from preview ID]
+    Promote --> Valid{Ownership, expiry, and base valid?}
+    Valid -->|No| Error[Explain failure and write no published content]
+    Valid -->|Yes| Published[One published version with tested content]
+```
+
+Only the existing daemon executes candidate HTML, inside its sandboxed view. The agent still performs the checks; a preview URL does not certify success. Local corrections create candidate snapshots, not published versions. Normal verification uses one batched pass and at most one confirmation pass. Report remaining concrete failures instead of hiding them or restyling indefinitely.
+
+Preview resolves exactly one existing content source and freezes its files, entry, kind, libraries, rendering reference, invoking project/session, and creation time. Its runtime writes affect only preview state/feedback. Promotion copies frozen files and rendering, never state/feedback. Editing local source afterward cannot silently change the promoted result.
+
+### Contracts and compatibility
+
+- `preview` accepts the same content-source choices and limits as publication. It returns `previewId`, `viewUrl`, `expiresAt`, and warnings, not a claim of successful browser verification. Paths remain project-confined.
+- Snapshots live beneath a hidden `.previews` directory and never appear in published listings, version counts, favorites, exports, or pending-feedback totals. Reuse existing snapshot/rendering formats internally. These snapshots are not published versions or a long-lived gallery object.
+- Snapshots expire after 30 minutes. Expiry is checked on view, runtime access, and promotion even before cleanup. Cleanup runs on viewer startup and preview creation. It skips unexpired and busy snapshots and uses the same protected snapshot lock as promotion; it never traverses symlinks or touches published artifacts.
+- Tokens explicitly distinguish preview and published scopes. A token cannot access the other scope's files, state, feedback, or events. The single daemon selects the correct store. Artifact source cannot choose scope.
+- `publish` accepts `previewId` instead of another content source. Existing title/metadata inputs remain. Stable deduplication prevents duplicate artifacts on retry. Reuse requires valid ownership and expiry, honors an explicit `baseVersion`, and rejects an intervening rendering change instead of returning an untested runtime as success.
+- `update` accepts `previewId` as a full-replacement source, with artifact ID and required `baseVersion`. Preview kind and libraries must match the target. Stale bases still fail without mutation. Keep existing edits, merge, metadata-only, and restore inputs.
+- Promotion requires the snapshot's project and session to match the invocation. Cross-project selection remains explicit and cannot change during promotion. Never trust a model-supplied session ID.
+- Promotion preserves pinned rendering exactly. Missing or tampered dependencies fail without substitution. Existing stored metadata needs no migration.
+- Existing runtime API signatures work against disposable preview state/feedback. Preview submissions do not reach the gallery or chat. Published runtime behavior is unchanged.
+- Keep direct publish/update available. Prefer preview-first in guidance without inventing checks or repeatedly publishing when preview/browser support is absent.
+
+### Implementation map
+
+| Area | Paths and responsibility |
+|---|---|
+| Preview snapshots | `src/preview/index.ts`, `tests/preview.test.ts`; ownership, immutable storage, expiry, promotion reads, cleanup locking |
+| Native contracts | Existing `src/agent/schemas.ts`, `src/agent/operations.ts`, `src/plugin/index.ts`, `tests/agent.test.ts`, `tests/plugin.test.ts`, `tests/fixtures/plugin-host.mjs`, `tests/fixtures/native-observer.mjs`; preview and promotion inputs, registration, cancellation, relocated distribution |
+| Frozen dependencies | Existing `src/store/index.ts`, `src/viewer/rendering.ts`, `tests/rendering.test.ts`; trusted internal rendering import without substituting installed dependencies |
+| Preview-only protected locks | `src/store/lock.ts`, `tests/preview.test.ts`; opt-in live-owner protection, ownership tokens, abandoned-lock recovery, and successor-safe release. Default published-store behavior stays unchanged |
+| Scoped viewer | Existing `src/viewer/server.ts`, `src/viewer/policy.ts`, `src/viewer/ensure.ts`, `tests/viewer.test.ts`, `tests/policy.test.ts`, `tests/ensure.test.ts`; one daemon, scoped files/runtime access, compatibility |
+| Browser checks | Existing `tests/browser/viewer.browser.ts`, `tests/browser/examples.browser.ts`; preview, isolation, promotion, themes, viewports, starter behavior |
+| Authoring guidance | `skills/canvas-authoring/SKILL.md`, `skills/canvas-authoring/evals/`, `tests/skill.test.ts`, `skills/canvas-authoring/references/`; scenario routing, completion criteria, evaluation contracts |
+| Starters | `examples/chart.html`, `examples/diagram.html`, `examples/mockup.html`, `examples/README.md`, `examples/report.html`; fallback foundations and task-specific layouts |
+| Documentation | Existing `README.md`, `PRODUCT.md`, `AGENTS.md`, `docs/design/artifact-design-system.md`, feature index and this document; new research record; behavior, evidence, and limits |
+| Generated | Plugin/viewer bundles rebuilt by the existing build command, never edited manually |
+
+All listed source paths exist. Generated bundles are rebuilt, not hand-edited. The installed application and external configuration remain restricted and unchanged. The pre-existing table improvements in the design-system documentation, reference HTML, and browser assertions are preserved.
+
+### Acceptance criteria and tests
+
+Tests name their criterion IDs. The paths below contain automated checks; instruction contracts do not prove actual agent compliance. AC-089 model outcomes and AC-090 real trace behavior remain unverified until model trials run.
+
+| ID | Observable criterion | Evidence |
+|---|---|---|
+| AC-082 | Preview creates no published artifact/version/state/feedback. The actual renderer runs HTML and bundles with libraries, themes, and disposable storage/feedback. | `tests/preview.test.ts`, `tests/viewer.test.ts`, `tests/browser/viewer.browser.ts` |
+| AC-083 | Publish promotes identical source hashes/rendering into one version, ignores later local or installed-runtime changes, and excludes preview state/feedback. Retried publish does not duplicate. Update adds one version to the same ID, and rejects stale base, kind mismatch, or library mismatch without mutation. | `tests/preview.test.ts`, `tests/agent.test.ts`, `tests/rendering.test.ts`, `tests/browser/viewer.browser.ts` |
+| AC-084 | Tokens cannot cross scopes. Entry and secondary HTML keep `sandbox allow-scripts`, viewer-only connections, blocked native forms/network/app access, and project-confined assets. Foreign project/session promotion and missing/tampered rendering fail without publication. | `tests/policy.test.ts`, `tests/viewer.test.ts`, `tests/preview.test.ts`, `tests/browser/viewer.browser.ts` |
+| AC-085 | Expired, invalid, or cancelled calls cannot publish. Expired views/runtime writes fail clearly. Cleanup handles abandoned snapshots and serializes with promotion. Restart/compatibility handling does not expose previews as published objects. | `tests/preview.test.ts`, `tests/viewer.test.ts`, `tests/ensure.test.ts`, `tests/agent.test.ts` |
+| AC-086 | Preview registers, unloads/reloads, and works from a relocated built package without node_modules. Keep the six existing operations. Real invocation sessions supply ownership/cancellation. No additional extension permission or external config write. | `tests/plugin.test.ts`, `tests/fixtures/plugin-host.mjs`, `tests/fixtures/native-observer.mjs` |
+| AC-087 | The short entry skill routes to six focused scenarios, preserves project-first design, and states scenario-specific content/completion checks. Static outputs avoid fake app states; mockups identify simulated actions. All resources resolve after relocation. | `tests/skill.test.ts`, `tests/plugin.test.ts`; human review |
+| AC-088 | Chart, diagram, mockup, and report use fallback tokens and a viewer-seeded Light/Dark switcher at narrow/wide sizes in both themes. Chart/table share data; diagram details support keyboards; forms preserve validation/pending/retry behavior; report content is readable without scripts. | `tests/browser/examples.browser.ts`, `tests/skill.test.ts`; bounded screenshots at 390 and 1280 pixels |
+| AC-089 | Evaluation cases cover new output and seeded revision, project/fallback styling, and a long-label/empty-data case. The rubric records skill loading, scenario choice, tool calls, correctness, browser checks, time, and visual review. Separate model observations from mechanical tests; fewer versions alone do not prove quality. | `tests/skill.test.ts`; baseline and protocol. Paired model runs remain explicitly unverified until executed |
+| AC-090 | Skill/tool descriptions agree on preview-first, one complete publish, batched corrections, and stopping. Missing browser/preview, viewer warnings, and conflicts do not produce false verification claims or blind duplicate publications. | `tests/skill.test.ts`, `tests/agent.test.ts`; trace rubric |
+
+### Implementation phases and verification
+
+1. Build isolated snapshots, ownership, expiry, and promotion reads, with AC-082 through AC-085 tests. Then add scoped routing to the existing daemon. Keep published routes compatible. Do not add a second server or weaken CSP.
+2. Add the native preview operation and preview-ID publish/update inputs. Test actual OpenCode registration, relocation, retries, cancellation, and existing direct-input modes. Stop and revise this plan if an architecture-critical assumption fails.
+3. Update the short skill and scenario references. Align starters and add the report using the existing fallback language, preserving the pending table improvement. No new framework, remote asset, or gallery SDK control in artifacts.
+4. Extend browser checks. Inspect screenshots in one batched pass, fix concrete failures together, then perform at most one confirmation pass for ordinary visual refinement.
+5. Record baseline/evaluation instructions without manufacturing model results. Run `bun run typecheck`, `bun run lint`, `bun test`, `bun run test:browser`, and `bun run build`. Obtain independent review of user-facing changes and the security boundary. Synchronize the feature doc, index, and reusable project conventions with actual implementation.
+
+The proposal authorized no release version, installed-app update, or paid model evaluation. The user later approved staging, then commit and push, in separate turns. Installed desktop routing remains manual acceptance unless exercised separately.
+
+### Risks, fallback, and rollback
+
+- R-PREVIEW-01: The probe used an isolated store, not scoped stores in a shared daemon. If routing cannot preserve token separation, stop rather than relax the sandbox or ship another renderer.
+- R-PREVIEW-02: Cleanup and promotion can race. Lock the snapshot for both, verify frozen content, and fail rather than reread changed local source.
+- R-PREVIEW-03: Models may ignore guidance or over-refine previews. Keep instructions short and verification bounded; score time and quality as well as published counts. No reduced-churn claim without agent-loop evidence.
+- R-PREVIEW-04: More references can increase context cost. Read one scenario and starter, not the whole collection. Prefer limited duplication to a new artifact runtime dependency.
+- R-PREVIEW-05: Existing fallback/browser edits are user work. Preserve them and report conflicts before changing those sections.
+- R-PREVIEW-06: Conversation excerpts are not complete executor traces. The baseline shows closely spaced versions, not a proven causal diagnosis or measured productivity improvement.
+
+### Review discovery and approved lock correction
+
+Independent review reproduced four correctness failures in the initial implementation. All reproductions used isolated stores. The existing shared lock helper considers a directory stale after 30 seconds without checking whether its owner is still alive. That invalidated the assumption that using this helper unchanged prevents cleanup during a long promotion. Implementation paused, and the user approved protection for preview locks only through the scope form.
+
+The approved narrow fix adds an opt-in live-owner check to the shared helper for preview locks only, with focused tests. Existing published-store lock behavior stays unchanged. Preview cleanup skips busy expired snapshots rather than blocking unrelated creation. A former owner must not remove a successor's lock. PID liveness checks use signal zero only and never stop a process. PID reuse can conservatively delay abandoned-lock recovery; it must not authorize stealing an active lock.
+
+The other findings remain within AC-083 and AC-085: read/validate runtime request bodies before acquiring a preview lock, skip unexpired snapshots during cleanup before waiting for their locks, reject dedupe retries whose current rendering no longer matches the tested snapshot, and honor an explicitly supplied publish `baseVersion`. Add regression tests for each before correcting the implementation. Do not treat the earlier passing suites as verification of these missing cases.
+
+A second independent review confirmed all four corrections in the current source and found one more gap. A changed-content dedupe retry passed the rendering check, then called `updateLocked` without the preview rendering, so it captured whatever runtime was installed at that moment. The store now forwards the preview rendering on that path. `tests/rendering.test.ts` reproduces the case by changing the installed runtime between publication and retry; it failed before the fix and passes after it. The reviewer found no issue in token scoping, ownership, expiry enforcement, secondary-HTML sandboxing, or published-lock behavior.
+
+### Verification
+
+On 2026-11-07, `bun run typecheck`, `bun run lint`, `bun test` (116 passing across 12 files), `bun run test:browser`, and `bun run build` passed. The browser suite exercises the built plugin and Node viewer. It covers sandboxed preview entry and secondary HTML, isolated preview storage and feedback, promotion that preserves file and rendering hashes, and the five starters at 390 and 1280 px in both themes. `bun test` includes the isolated real-OpenCode observer, which previews and then promotes. Screenshots were reviewed in one batched pass and one confirmation pass. The confirmation pass moved the report's narrow-screen scroll hint above its table.
+
+Unverified: installed desktop routing, paired model evaluations (AC-089 outcomes), and real agent traces for AC-090. No package version changed.
+
+Rollback removes additive preview registration/guidance while retaining direct publish/update and published history. Abandoning expired previews needs no user-data migration. Never remove published versions during cleanup.
+
+### Changelog
+
+- 2026-11-07: Added unpublished previews, frozen publish/update promotion, preview-only lock protection after independent review, six scenario references, consistent starters, and evaluation fixtures. Preserved direct inputs and published history. A second review fixed rendering capture on changed-content preview retries. No package-version change, installation, or user-artifact mutation.
