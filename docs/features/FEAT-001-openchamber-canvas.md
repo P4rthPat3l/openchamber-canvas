@@ -35,14 +35,14 @@ The [bundled Canvas authoring skill](#39-bundled-canvas-authoring-skill) ships i
 
 The [artifact design system](#40-artifact-design-system) ships in package 0.5.0. It adds the project-first fallback, the reference example, and the per-view Light/Dark switcher, with AC-080 and AC-081.
 
-The [preview-first authoring and scenario starters](#41-preview-first-authoring-and-scenario-starters) are built in the working tree without a release-version change. The native preview tool, frozen promotion, scenario references, and consistent starters exist. Installed-app acceptance and paired model evaluations remain unverified.
+The [preview-first authoring and scenario starters](#41-preview-first-authoring-and-scenario-starters) ship in package 0.6.0. The native preview tool, frozen promotion, scenario references, and consistent starters exist. Installed-app acceptance and paired model evaluations remain unverified.
 
 ## 1. Feature Snapshot
 
 | Field | Details |
 |---|---|
 | Document status | Active |
-| Implementation status | 0.5.0 released foundations; unreleased preview-first authoring and scenario starters built; installed acceptance and paired model trials pending |
+| Implementation status | 0.6.0 released foundations; model trials pending |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, native plugin, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -2960,10 +2960,10 @@ A second independent review confirmed all four corrections in the current source
 
 On 2026-11-07, `bun run typecheck`, `bun run lint`, `bun test` (116 passing across 12 files), `bun run test:browser`, and `bun run build` passed. The browser suite exercises the built plugin and Node viewer. It covers sandboxed preview entry and secondary HTML, isolated preview storage and feedback, promotion that preserves file and rendering hashes, and the five starters at 390 and 1280 px in both themes. `bun test` includes the isolated real-OpenCode observer, which previews and then promotes. Screenshots were reviewed in one batched pass and one confirmation pass. The confirmation pass moved the report's narrow-screen scroll hint above its table.
 
-Unverified: installed desktop routing, paired model evaluations (AC-089 outcomes), and real agent traces for AC-090. No package version changed.
+Unverified: installed desktop routing, paired model evaluations (AC-089 outcomes), and real agent traces for AC-090.
 
 Rollback removes additive preview registration/guidance while retaining direct publish/update and published history. Abandoning expired previews needs no user-data migration. Never remove published versions during cleanup.
 
 ### Changelog
 
-- 2026-11-07: Added unpublished previews, frozen publish/update promotion, preview-only lock protection after independent review, six scenario references, consistent starters, and evaluation fixtures. Preserved direct inputs and published history. A second review fixed rendering capture on changed-content preview retries. No package-version change, installation, or user-artifact mutation.
+- 2026-11-07: Added unpublished previews, frozen publish/update promotion, preview-only lock protection after independent review, six scenario references, consistent starters, and evaluation fixtures. Preserved direct inputs and published history. A second review fixed rendering capture on changed-content preview retries. Bumped to package 0.6.0. No installation or user-artifact mutation.

@@ -75,7 +75,7 @@ test('AC-066 AC-067 AC-069 AC-074 AC-076 AC-086: native tools and skill registra
 describe('AC-072 AC-073: native distribution contract', () => {
   test('exports the plugin, styles native tools, and has no MCP package or transport', async () => {
     const pkg = z.object({ version: z.string(), exports: record, dependencies: record, openchamber: record }).parse(await Bun.file(path.join(project, 'package.json')).json());
-    expect(pkg.version).toBe('0.5.0');
+    expect(pkg.version).toBe('0.6.0');
     expect(pkg.exports['.']).toBe('./plugin/index.js');
     expect(pkg.dependencies['@modelcontextprotocol/sdk']).toBeUndefined();
     expect(pkg.dependencies['@opencode/plugin']).toBeUndefined();

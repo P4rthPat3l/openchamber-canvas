@@ -4,7 +4,7 @@ Feature documentation lives in `docs/features/`. Read the relevant feature docum
 
 ## Status
 
-The 0.5.0 release keeps the 0.3.0 native OpenCode plugin and the 0.4.0 bundled `canvas-authoring` skill, and adds the Canvas artifact design system with a fallback reference and Light/Dark switcher. The shared store, sandboxed viewer, pinned rendering snapshots, native tools/service contracts, feedback handoff, paginated gallery, status section, and authoring examples exist. Installed-app acceptance remains a manual check; do not change the installed extension to manufacture a pass.
+The 0.6.0 release adds unpublished `canvas_preview` snapshots, frozen publish/update promotion, preview-only lock protection, task-based scenario references, and aligned starters. It keeps the 0.5.0 artifact design system with fallback tokens and Light/Dark switcher, the 0.3.0 native OpenCode plugin, and the 0.4.0 bundled `canvas-authoring` skill. The shared store, sandboxed viewer, pinned rendering snapshots, native tools/service contracts, feedback handoff, paginated gallery, status section, and authoring examples exist. Installed-app acceptance remains a manual check; do not change the installed extension to manufacture a pass.
 
 ## Stack
 
