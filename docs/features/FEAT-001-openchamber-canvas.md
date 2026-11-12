@@ -6,8 +6,8 @@ status: active
 implementation_status: shipped_unverified
 owner: Parth
 created: 2026-10-23
-last_updated: 2026-11-12
-last_verified_commit: null
+last_updated: 2026-11-13
+last_verified_commit: 5fee926
 version: 2.5.0
 tags:
   - openchamber
@@ -44,7 +44,7 @@ The [host-managed OpenCode plugin delivery](#42-host-managed-opencode-plugin-del
 | Field | Details |
 |---|---|
 | Document status | Active |
-| Implementation status | 0.7.0 released foundations; installed acceptance pending |
+| Implementation status | 0.7.0 package; installed acceptance pending |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, native plugin, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -53,7 +53,7 @@ The [host-managed OpenCode plugin delivery](#42-host-managed-opencode-plugin-del
 | Data stores | `~/.config/openchamber/artifacts` on the machine that runs OpenChamber |
 | External systems | OpenChamber extension host, OpenChamber browser panel, OpenCode plugin host |
 | Feature flag | None in v1 |
-| Last verified | Typecheck and the browser suite pass against this working tree. Native regressions include relocated packages, session lookup, cancellation, and actual OpenCode cold-start viewing. The browser suite covers sandboxing, fixed/following views, drafts, feedback, native Setup at eight widths in both themes, and the design-system example in light and dark. Model selection, permission rejection, native tool cards, and desktop routing remain manual acceptance. Verification ran against the working tree before the 0.5.0 release commit; no separate verified commit is recorded. |
+| Last verified | Typecheck, 118 unit tests, the full browser suite, and the build pass against 5fee926. Native regressions include relocated packages, session lookup, cancellation, the real OpenCode 2.2.6 folder-plugin load, and cold-start viewing. The browser suite covers sandboxing, fixed/following views, drafts, feedback, native Setup at eight widths in both themes, managed delivery, and the design-system example. Model selection, permission rejection, native tool cards, installed-app acceptance (AC-095 and AC-096), and desktop routing remain manual. |
 
 ### At a Glance
 
@@ -2053,8 +2053,8 @@ If OpenChamber ships its own Canvases surface:
 
 - Folder install for development.
 - Git install for users. Bump `version` to ship updates.
-- Community catalog listing once the extension is stable. The 2.5.1 Extensions page has a Browse button.
-- The MCP server stays a manual Settings, MCP step. Do not edit `opencode.json` from the extension.
+- Community catalog listing once the extension is stable. The 2.7.0 Extensions page has a Browse button.
+- The native plugin is host-managed on 0.7.0 or newer. The 0.3.0 through 0.6.0 releases used a manual `plugins` entry. Do not edit `opencode.json` from the extension.
 
 ## 26. Risks and Limitations
 
@@ -2193,7 +2193,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-24 | 0.11.4 | One-command MCP setup: the Setup page shows and copies `opencode mcp add canvas --global -- node '<path>'`, which writes the v2 entry the registration check already accepts; README install steps use it (0.1.6) | In progress | Parth |
 | 2026-10-24 | 0.11.5 | Removed the list tooltip that advertised double-click in the rail, where the first click opens the inspector instead (0.1.7) | In progress | Parth |
 | 2026-10-30 | 2.0.0 | Package 0.3.0 replaces MCP with a native OpenCode plugin, session-derived context, cancellation-aware store locks, cold-start runtime handling, simplified Setup and real-host regressions. Installed-app acceptance remains pending | Inferred | Parth |
-| 2026-11-12 | 2.5.0 | Host-managed plugin delivery in package 0.7.0 on OpenChamber 2.7.0 (`contributes.opencodePlugin`), replacing the manual `opencode.json` step. Manifest, Setup, native/real-OpenCode and browser tests, and docs updated. Installed acceptance remains pending | Inferred | Parth |
+| 2026-11-13 | 2.5.0 | Host-managed plugin delivery in package 0.7.0 on OpenChamber 2.7.0 (`contributes.opencodePlugin`), replacing the manual `opencode.json` step. Manifest, Setup, native/real-OpenCode and browser tests, and docs updated. Committed as 5fee926. Installed acceptance remains pending | Inferred | Parth |
 
 ## 31. Related Resources
 
@@ -2380,7 +2380,7 @@ A project-scoped plugin entry is available only where its configuration applies.
 - Folder install for development.
 - Git install for users, with a version bump for updates.
 - Zip install for a one-off.
-- Community catalog listing when stable. The 2.5.1 Extensions page has a Browse button.
+- Community catalog listing when stable. The 2.7.0 Extensions page has a Browse button.
 - Plugin delivery is host-managed. OpenChamber 2.7.0 or newer lists the contributed `plugin/` folder in its managed OpenCode config while Canvas is enabled and approved. Neither the extension nor Setup writes `opencode.json`.
 
 ### Setup page
@@ -2969,7 +2969,7 @@ Rollback removes additive preview registration/guidance while retaining direct p
 
 ## 42. Host-managed OpenCode plugin delivery
 
-Status: Inferred. Implemented in the working tree on 2026-11-12 against `@openchamber/sdk@2.7.0` and OpenCode 2.2.6. Automated checks pass; installed-app acceptance (AC-095, AC-096) is pending. The previous behavior below describes 0.6.0.
+Status: Inferred. Committed as 5fee926 on 2026-11-13 against `@openchamber/sdk@2.7.0` and OpenCode 2.2.6. Automated checks pass; installed-app acceptance (AC-095, AC-096) is pending. The previous behavior below describes 0.6.0.
 
 ### Previous behavior (0.6.0)
 
@@ -3082,7 +3082,7 @@ AC-071 and AC-073 are superseded. Their JSON and manual-registration clauses no 
 
 ### Verification
 
-On 2026-11-12, `bun run typecheck`, `bun run lint`, `bun test` (118 passing across 13 files), `bun run test:browser`, and `bun run build` passed. The unit suite includes the isolated OpenCode 2.2.6 folder-plugin load and the `/api/plugin` active state. The panel suite covers the managed delivery copy, the package path copy, the sample prompt, service error and retry, and the long installed path at every checked width in both themes.
+Against the tree committed as 5fee926, on 2026-11-12 and 2026-11-13, `bun run typecheck`, `bun run lint`, `bun test` (118 passing across 13 files), `bun run test:browser`, and `bun run build` passed. The unit suite includes the isolated OpenCode 2.2.6 folder-plugin load and the `/api/plugin` active state. The panel suite covers the managed delivery copy, the package path copy, the sample prompt, service error and retry, and the long installed path at every checked width in both themes.
 
 Independent review found documentation gaps and one incorrect claim that the UI kit was visually unchanged. Those are corrected here. The SDK 2.7.0 look changes are not visually compared against 2.5.1 screenshots; the browser suite checks layout, tokens, labels, and target size, not appearance.
 
@@ -3108,4 +3108,4 @@ Unverified: installed-app acceptance (AC-095) and rollback (AC-096).
 
 ### Changelog
 
-- 2026-11-12: Shipped host-managed plugin delivery in package 0.7.0. The manifest contributes `plugin/`, Setup teaches managed delivery instead of a config edit, and the native, manifest, and browser tests cover the new path. Installed-app acceptance and rollback remain pending.
+- 2026-11-13: Shipped host-managed plugin delivery in package 0.7.0, committed as 5fee926. The manifest contributes `plugin/`, Setup teaches managed delivery instead of a config edit, and the native, manifest, and browser tests cover the new path. Installed-app acceptance and rollback remain pending.

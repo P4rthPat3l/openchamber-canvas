@@ -2,7 +2,7 @@
 
 | ID | Feature | Status | Implementation | Document |
 |---|---|---|---|---|
-| FEAT-001 | OpenChamber Canvas | Active | 0.7.0 released foundations; installed acceptance pending | [FEAT-001-openchamber-canvas.md](FEAT-001-openchamber-canvas.md) |
+| FEAT-001 | OpenChamber Canvas | Active | 0.7.0 package; installed acceptance pending | [FEAT-001-openchamber-canvas.md](FEAT-001-openchamber-canvas.md) |
 
 FEAT-001 includes [security and revision hardening](FEAT-001-openchamber-canvas.md#37-security-and-revision-hardening), built in package 0.2.0 with acceptance criteria AC-050 through AC-065. Installed-app acceptance is pending.
 

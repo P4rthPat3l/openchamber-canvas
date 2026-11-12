@@ -32,7 +32,7 @@ The user works in an OpenChamber project with the agent in the main chat. The ex
 - Search covers the full scope before pagination. Revision drafts survive navigation for the current panel session.
 - Artifact HTML is untrusted and runs only in the browser panel, never in the extension page.
 - The viewer and service bind loopback. The view response keeps `sandbox allow-scripts`.
-- The user registers the installed Canvas package directory in OpenCode's `plugins` configuration. Setup provides the exact path and JSON, plus a reviewed sample prompt. There is no MCP server or guessed connection badge.
+- OpenChamber 2.7.0 or newer loads the Canvas plugin into the OpenCode it runs while the extension is enabled and approved. The extension does not ask the user to edit `opencode.json`. Setup shows the package path and a reviewed sample prompt. There is no MCP server or guessed connection badge.
 - The UI must use the public OpenChamber SDK UI components and theme tokens and feel native to the app; the panel is not a separate brand surface. Custom CSS is limited to composition the installed kit lacks.
 
 ## Evidence on Hand
