@@ -1,15 +1,16 @@
-# Switch an existing Canvas installation to the native plugin
+# Upgrade Canvas to the host-managed plugin
 
-Canvas 0.3.0 replaces its MCP server with an OpenCode plugin. It requires OpenCode 2.2.0 or newer. There is no MCP compatibility server in this release.
+Canvas 0.7.0 requires OpenChamber 2.7.0 or newer. OpenChamber loads the Canvas plugin into its OpenCode while the extension is enabled and approved, so there is no `plugins` entry to add. This guide covers an update from any earlier Canvas release, including the 0.3.0 MCP replacement.
 
-1. Update or reload the Canvas extension so its service and Setup page use the new package.
-2. Remove or disable your old Canvas registration in Settings → MCP. If you registered it directly in a configuration file, remove only that Canvas entry. Keep other MCP servers and settings.
-3. Open Canvas → Setup and copy the plugin configuration. Merge the exact installed package directory into your existing OpenCode `plugins` array. Do not point it at `plugin/index.js` or the removed `mcp/server.js`.
-4. OpenCode watches its configuration. Use `/reload` if the tools have not appeared, then send Setup's sample prompt after reviewing it.
-5. Confirm the six `canvas_*` tools are available, open an existing artifact, and ask the agent to read and revise a test artifact using its current `baseVersion`.
+1. Update or reload the Canvas extension.
+2. Approve `service` and `opencodePlugin`.
+3. If Canvas 0.6.0 or earlier is registered, remove its package directory from the OpenCode `plugins` array in `~/.config/opencode/opencode.json` or the project configuration. Do not add a replacement entry.
+4. If a Canvas entry remains in Settings → MCP from 0.2.0, remove it. Keep other MCP servers and settings.
+5. Open Canvas → Setup. Confirm the installed package path and the managed delivery statement, then review and send the sample prompt.
+6. Confirm the seven `canvas_*` tools are available and open an existing artifact.
 
-The gallery and plugin should use the same installed package directory and the same store. The default store remains `~/.config/openchamber/artifacts`. Existing artifacts, versions, feedback, runtime storage, and pinned rendering snapshots do not need conversion. Removing an MCP registration must not delete that store.
+The default store remains `~/.config/openchamber/artifacts`. Existing artifacts, versions, feedback, runtime storage, and pinned rendering snapshots do not need conversion. Neither the extension nor Setup writes your OpenCode configuration.
 
-Neither the extension nor the plugin edits your configuration automatically. A project-scoped plugin is available only in that project's applicable configuration. The Setup page cannot certify that a particular session has loaded the plugin; test it in the intended chat.
+OpenChamber reports the delivery state on the Extensions card. If the managed config does not reach the OpenCode in use, use Add to global config there, or restart the OpenCode that OpenChamber runs. Sessions in isolated spaces do not receive the plugin. Setup cannot certify that a session has loaded it; test it in the intended chat.
 
-If you must return to the previous release, restore that package and its previous MCP configuration yourself. Do not rewrite the artifact store.
+To return to 0.6.0, reinstall that version and re-add the installed package directory to the `plugins` array. Setup keeps showing the package path. Do not rewrite the artifact store.

@@ -876,7 +876,7 @@ function mountSetup(parent: Element) {
   const recheck = action(toolbar, handles, 'Check again', load, 'outline', 'sm', 'refresh');
   const intro = element('header', node, 'canvas-setup-intro');
   element('h1', intro, 'canvas-title', 'Set up Canvas');
-  element('p', intro, 'canvas-muted', 'The gallery works on its own. Add the OpenCode plugin to let the agent publish and update artifacts.');
+  element('p', intro, 'canvas-muted', 'The gallery works on its own. The agent needs the Canvas plugin to publish and update artifacts.');
   const errorRoot = element('div', node);
   errorRoot.hidden = true;
   const error = mountBanner(errorRoot, { tone: 'error', title: 'Could not check setup' });
@@ -888,17 +888,15 @@ function mountSetup(parent: Element) {
   const store = element('p', extension, 'canvas-muted');
   const plugin = element('section', node, 'canvas-setup-section');
   sectionHeading(plugin, 'terminal', 'OpenCode plugin');
-  element('p', plugin, 'canvas-muted', 'Requires OpenCode 2.2.0 or newer. Merge this entry into the plugins array in your user or project opencode.json. Keep your other entries. The path points to this installed Canvas package.');
+  element('p', plugin, 'canvas-muted', 'OpenChamber 2.7.0 or newer loads this package into the OpenCode it runs while Canvas is enabled and approved. If the agent does not see the Canvas tools, open Settings → Extensions and follow the note on the Canvas card.');
   const config = element('pre', plugin, 'canvas-code');
   config.tabIndex = 0;
-  config.setAttribute('aria-label', 'OpenCode plugin configuration');
+  config.setAttribute('aria-label', 'Installed package path');
   config.setAttribute('aria-live', 'polite');
   let pluginPath = '';
-  let pluginConfig = '';
   const configActions = element('div', plugin, 'canvas-actions');
-  const copyConfig = action(configActions, handles, 'Copy plugin config', () => copy(pluginConfig, 'Plugin config'), 'default', 'sm', 'copy');
-  const copyPath = action(configActions, handles, 'Copy path', () => copy(pluginPath, 'Plugin path'), 'ghost', 'sm', 'copy');
-  const pluginNotice = mountBanner(plugin, { tone: 'info', title: 'Confirm the tools in chat', body: 'The gallery cannot confirm which plugins your session has loaded. OpenCode watches configuration changes; use /reload if needed, then send the sample prompt below.' });
+  const copyPath = action(configActions, handles, 'Copy path', () => copy(pluginPath, 'Package path'), 'default', 'sm', 'copy');
+  const pluginNotice = mountBanner(plugin, { tone: 'info', title: 'Confirm the tools in chat', body: 'The gallery cannot confirm which plugins your session has loaded. Send the sample prompt below to check.' });
   const agent = element('section', node, 'canvas-setup-section');
   sectionHeading(agent, 'message', 'Try Canvas');
   element('p', agent, 'canvas-muted', 'Add the sample prompt to chat, review it, then send it to check that Canvas tools are available.');
@@ -913,13 +911,13 @@ function mountSetup(parent: Element) {
   }, 'outline', 'sm', 'refresh');
   restart.update({ disabled: true });
   handles.push(error, extensionBadge, pluginNotice);
-  copyConfig.update({ disabled: true }); copyPath.update({ disabled: true });
+  copyPath.update({ disabled: true });
 
   async function load(): Promise<void> {
     const owner = ++setupRequest;
     recheck.update({ loading: true });
     errorRoot.hidden = true;
-    copyConfig.update({ disabled: true }); copyPath.update({ disabled: true });
+    copyPath.update({ disabled: true });
     restart.update({ disabled: true });
     viewerText.textContent = 'Checking compatibility';
     config.textContent = 'Checking the installed package path…';
@@ -935,9 +933,8 @@ function mountSetup(parent: Element) {
       extensionBadge.update({ label: status.status === 'ready' ? 'Running' : status.status, tone: status.status === 'ready' ? 'success' : 'warning' });
       store.textContent = `Store: ${health.store}`;
       pluginPath = health.pluginPath;
-      pluginConfig = JSON.stringify({ $schema: 'https://opencode.ai/config.json', plugins: [pluginPath] }, null, 2);
-      config.textContent = pluginConfig;
-      copyConfig.update({ disabled: false }); copyPath.update({ disabled: false });
+      config.textContent = pluginPath;
+      copyPath.update({ disabled: false });
       try {
         const state = await request<{ status: string; restartable: boolean }>('/viewer-status');
         if (owner !== setupRequest) return;

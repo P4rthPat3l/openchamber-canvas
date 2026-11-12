@@ -1,8 +1,8 @@
 # OpenChamber extension platform
 
-Status: research. Verified against OpenChamber 2.5.1 on 2026-10-23.
+Status: research. Base verification against OpenChamber 2.5.1 on 2026-10-23; the extension-platform sections below were re-checked against OpenChamber 2.7.0 and `@openchamber/sdk@2.7.0` on 2026-11-12.
 
-Canvas 0.3.0 replaces the MCP-specific implementation described in this historical platform investigation. Read [the native-plugin update](#16-native-opencode-tools-update) for the current registration mechanism. The earlier MCP/config/heartbeat sections document the old implementation, not a current requirement.
+Canvas 0.3.0 replaced the MCP-specific implementation described in this historical platform investigation. Canvas 0.7.0 ships its OpenCode plugin through `contributes.opencodePlugin` on OpenChamber 2.7.0 and newer. Read [the native-plugin update](#16-native-opencode-tools-update) for the current registration mechanism. The earlier MCP/config/heartbeat sections document the old implementation, not a current requirement.
 
 This document records how an OpenChamber extension is packaged, installed, loaded, and connected to a local process and to agent tools. It is the platform reference for FEAT-001.
 
@@ -10,8 +10,8 @@ This document records how an OpenChamber extension is packaged, installed, loade
 
 | Source | What it establishes |
 |---|---|
-| Installed app at `/opt/OpenChamber` | Version 2.5.1, Electron shell, bundled web app |
-| `@openchamber/sdk@2.5.1` at `~/.bun/install/cache/@openchamber/sdk@2.5.1@@@1/` | Manifest, iframe protocol, host API, service contract |
+| Installed app at `/opt/OpenChamber` | Base version 2.5.1; re-checked at 2.7.0 on 2026-11-12, including managed plugin delivery, `contributes.opencodePlugin`, and service events |
+| `@openchamber/sdk@2.5.1` at `~/.bun/install/cache/@openchamber/sdk@2.5.1@@@1/` | Base manifest, iframe protocol, host API, service contract; 2.7.0 declarations used for the current facts where noted |
 | `~/.config/openchamber/extensions/` | Real installed extensions: Excalidraw, Kanban, Resource Monitor |
 | `~/.config/openchamber/extensions.json` | Install paths, capability grants, service scopes, storage ids |
 | `~/.config/openchamber/agent-tool/` | Built-in OpenCode plugin: `openchamber`, `openchamber_render`, `openchamber_knowledge`, `openchamber_notify` |
@@ -43,7 +43,7 @@ The important separation for Canvas:
 - The agent tools are an MCP server.
 - The chat card is a presentation rule in the extension manifest.
 
-An extension manifest cannot register an executable agent tool. OpenCode plugins can register tools directly, while MCP is another supported mechanism. Neither mechanism draws a rail panel; that remains the OpenChamber extension's responsibility.
+An extension manifest cannot declare agent tools directly. OpenCode plugins register tools, and MCP is the alternative mechanism. Since OpenChamber 2.7.0, `contributes.opencodePlugin` ships a plugin folder inside the extension, and the host lists it in the managed OpenCode config while the extension is enabled and approved. Neither mechanism draws a rail panel; that remains the OpenChamber extension's responsibility.
 
 ## 3. Package and install
 
@@ -238,7 +238,7 @@ panel (iframe) --serviceRequest--> host --HTTP 127.0.0.1:port--> service process
 
 - `serviceRequest` response is capped at 8 MB. A larger answer is `RESPONSE_TOO_LARGE` and the whole body is dropped.
 - The request timeout is 20 seconds.
-- There is no streaming call from the panel to the service. A service cannot push events to the panel through `serviceRequest`.
+- Since 2.7.0, a service pushes to open frames with `emit` and the panel listens with `host.onServiceEvent`. `serviceRequest` itself stays request and response.
 - Error codes: `NO_SERVICE`, `DISABLED`, `SERVICE_FAILED`, `REQUEST_FAILED`, `RESPONSE_TOO_LARGE`, `HOST_TIMEOUT`, `HOST_REJECTED`, `BAD_PATH`.
 
 ### Roles
@@ -281,15 +281,15 @@ This is why Canvas needs a separate viewer process that outlives the MCP server.
 
 | Cannot | Consequence for Canvas |
 |---|---|
-| Register an executable agent tool from the extension manifest | The agent integration is registered separately in OpenCode |
+| Declare agent tools directly in the extension manifest | `contributes.opencodePlugin` ships the plugin folder; OpenChamber 2.7.0 or newer loads it without a manual entry |
 | Run code in the OpenChamber app origin | Artifact HTML never runs in the gallery |
 | Fetch arbitrary URLs from the panel | All data goes through `serviceRequest` or declared `origins` |
-| Stream from a service to the panel | The gallery polls; the viewer page can use SSE to the viewer daemon |
 | Load in VS Code or mobile | Canvas is web and desktop only |
 | Open a full-screen page from code | The user opens it from the Extension pages menu |
 | Read the clipboard on `127.0.0.1` | Use `localhost` in view URLs if clipboard matters, or provide a runtime copy action |
 | Modify OpenChamber config without a grant | Do not write `opencode.json` from the extension |
-| Auto-install the MCP server | The user adds it in Settings, MCP |
+
+Resolved in 2.7.0: a service pushes to open frames with `service.emit` and the panel listens with `host.onServiceEvent`. Canvas still polls in 0.7.0 because live refresh is a separate change; the platform gap is gone.
 
 ## 11. Build and package checklist
 
@@ -307,6 +307,7 @@ This is why Canvas needs a separate viewer process that outlives the MCP server.
 12. The service never logs the token, the view token, or artifact bodies.
 13. Test a folder install, a zip install, and a git install.
 14. Test pause, uninstall, and an extension update that adds a capability.
+15. A package that ships a native plugin declares `contributes.opencodePlugin` and keeps the folder entry loadable without dependencies.
 
 ## 12. Canvas manifest sketch
 
@@ -318,7 +319,7 @@ This is the planned shape, not an implemented file.
   "version": "0.1.0",
   "openchamber": {
     "apiVersion": 1,
-    "engines": { "openchamber": ">=2.5.1" },
+    "engines": { "openchamber": ">=2.7.0" },
     "contributes": {
       "panel": {
         "id": "canvas",
@@ -326,6 +327,7 @@ This is the planned shape, not an implemented file.
         "icon": "artboard",
         "entry": "panel/index.html"
       },
+      "opencodePlugin": "plugin",
       "page": {
         "entry": "panel/page.html",
         "title": "Canvas gallery"
@@ -431,18 +433,15 @@ The installed `~/.config/openchamber/agent-tool/openchamber-agent-tool/index.js`
 
 This is different from an extension's `contributes.tools`. That manifest field changes tool-call presentation only. An extension manifest does not register arbitrary executable tools, nor does installing an OpenChamber extension automatically authorize an OpenCode plugin.
 
-### Canvas 0.3.0 registration
+### Canvas plugin delivery
 
-The Canvas package exports its built `plugin/index.js`. The user merges the installed package directory into OpenCode V2 configuration:
+Canvas 0.3.0 through 0.6.0 required the user to merge the installed package directory into the OpenCode `plugins` array. Canvas 0.7.0 declares `contributes.opencodePlugin: "plugin"` and needs no manual entry: on OpenChamber 2.7.0 or newer, the host lists the package's `plugin/` folder in the managed OpenCode config it owns while the extension is enabled and approved. Hosts before 2.7.0 refuse the manifest at install and keep the older release.
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": ["/absolute/path/to/installed/canvas"]
-}
-```
+The contributed folder contains `plugin/index.js` and no `package.json`, so OpenCode resolves `index.js` at the folder root. It default-exports `{ id: "openchamber-canvas", setup }`. The bundle has no runtime SDK import and no node_modules. The development dependency `@opencode/plugin@2.2.0` checks its types.
 
-Configured local plugin entries must be directories. The package's exports select its built entry. There is no required runtime SDK import or node_modules in the installed bundle. The development dependency `@opencode/plugin@2.2.0` checks its types. OpenCode reloads watched configuration; `/reload` is available when necessary.
+The installed host resolves the folder with `resolveOpenCodePluginFolder` in `packages/web/server/lib/guests/opencode-plugin.js`. The folder must be inside the package, and the entry is `exports` when `package.json` also has `name`, otherwise `server` or `index` at the root. `.` resolves to the package root and is refused.
+
+Delivery is `file` when OpenChamber owns OpenCode's config, `restart` when the user's environment sets `OPENCODE_CONFIG`, `none` for an external local OpenCode, and `remote` for one on another machine. In `restart` and `none`, the Extensions card offers Add to global config after a click. Sessions in isolated spaces run their own OpenCode and do not receive the host's managed config.
 
 The plugin registers namespace `canvas` and the six operations. Effective names remain `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, and `canvas_result`; Code Mode exposes the namespace as `tools.canvas`. Each operation declares an OpenCode permission action. Native errors retain serialized Canvas codes/details in their message; successful text results contain JSON.
 
@@ -456,9 +455,9 @@ Invocation signals reach session/viewer requests and store lock acquisition. Can
 
 ### Setup and verification limits
 
-Canvas no longer scans OpenCode configuration or writes an MCP heartbeat. Setup provides exact plugin JSON/path and a sample prompt that is composed for review, never sent. It does not claim to know which plugins a session loaded. Work Status lists artifacts without an inferred tool connection badge.
+Canvas no longer scans OpenCode configuration or writes an MCP heartbeat. Setup shows the installed package path for support and 0.6.0 rollback, states that OpenChamber 2.7.0 or newer loads the plugin, and composes a sample prompt for review, never sent. It does not claim to know which plugins a session loaded. Work Status lists artifacts without an inferred tool connection badge.
 
-The isolated real-host test proves package loading, effective names, session lookup, executor behavior, and cold-start viewing without a model request. Its observer invokes the registered executor directly. It does not prove model/Code Mode selection, permission rejection, OpenChamber tool-card matching, or installed desktop routing. Those remain explicit user acceptance checks in FEAT-001 AC-073.
+The isolated real-host test proves folder loading, the `/api/plugin` active state, effective names, session lookup, executor behavior, and cold-start viewing without a model request. Its observer invokes the registered executor directly. It does not prove model/Code Mode selection, permission rejection, OpenChamber tool-card matching, or installed desktop routing. Those remain explicit user acceptance checks in FEAT-001 AC-095 and AC-096.
 
 Sources: [OpenCode plugin overview](https://opencode.ai/v2/docs/build/plugins), [server tools](https://opencode.ai/v2/docs/build/plugins/server#tools), [plugin configuration](https://opencode.ai/v2/docs/plugins), [`src/plugin/index.ts`](../../src/plugin/index.ts), [`tests/plugin.test.ts`](../../tests/plugin.test.ts).
 

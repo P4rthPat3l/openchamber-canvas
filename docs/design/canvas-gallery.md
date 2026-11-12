@@ -10,7 +10,7 @@ The component migration replaced the custom surface in commit `a4911b2`. The rej
 
 ## Source of truth
 
-- Installed `@openchamber/sdk@2.5.1`, particularly its `ui` exports and appearance stylesheet.
+- Installed `@openchamber/sdk@2.7.0`, particularly its `ui` exports and appearance stylesheet.
 - [Official UI kit guide](https://docs.openchamber.dev/sdk/ui/).
 - [OpenChamber UI guidance](https://github.com/openchamber/openchamber/blob/main/.agents/skills/openchamber-ui-guidance/SKILL.md) and its surface guidance.
 - The audit and resolution in [the platform research](../research/openchamber-extension-platform.md#15-native-extension-ui-audit).
@@ -35,7 +35,7 @@ Custom CSS is limited to the responsive list/inspector split, section headings, 
 - Feedback uses SDK checkboxes, badges, buttons, loading, and error controls with noninteractive text payloads. Add feedback to chat is explicit and never sends. Ten records show initially with pagination; Pending and Added to chat describe composer status, not agent receipt.
 - Three recent versions show initially; an SDK control expands older history. Legacy versions visibly identify unpinned rendering dependencies.
 - Search, scope, tags, and sort run on the service before pagination. Show loaded/matching counts and a Load more button; zero matches never remove the search field. Keyboard split behavior uses the layout's 720px breakpoint.
-- Setup uses SDK badges, banners, actions, and a labelled, keyboard-focusable JSON scroller under left-aligned headings with icons. Copy plugin config and Copy path use the exact installed package directory. Other plugin entries are preserved when the user merges the configuration.
+- Setup uses SDK badges, banners, actions, and a labelled, keyboard-focusable package-path scroller under left-aligned headings with icons. Copy path copies the installed package directory for support and rollback. OpenChamber 2.7.0 or newer loads the contributed plugin folder itself, so Setup shows no mergeable configuration and never writes OpenCode config.
 - The sample prompt is always available for user review. Setup does not scan OpenCode config or infer a session's connection state. It explains how to confirm the tools in chat. Viewer compatibility and known-protocol restart remain explicit actions; a failed recheck disables restart rather than retaining stale compatibility.
 - The Work Status section shows artifact count and latest title as native text, without a guessed agent connection badge. The section is transparent over the host panel.
 

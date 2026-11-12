@@ -6,9 +6,9 @@ status: active
 implementation_status: shipped_unverified
 owner: Parth
 created: 2026-10-23
-last_updated: 2026-11-07
+last_updated: 2026-11-12
 last_verified_commit: null
-version: 2.3.0
+version: 2.5.0
 tags:
   - openchamber
   - extension
@@ -37,12 +37,14 @@ The [artifact design system](#40-artifact-design-system) ships in package 0.5.0.
 
 The [preview-first authoring and scenario starters](#41-preview-first-authoring-and-scenario-starters) ship in package 0.6.0. The native preview tool, frozen promotion, scenario references, and consistent starters exist. Installed-app acceptance and paired model evaluations remain unverified.
 
+The [host-managed OpenCode plugin delivery](#42-host-managed-opencode-plugin-delivery) ships in package 0.7.0 against OpenChamber 2.7.0. It replaces the manual `opencode.json` entry with `contributes.opencodePlugin`, with AC-091 through AC-096. Automated checks pass; installed acceptance is pending.
+
 ## 1. Feature Snapshot
 
 | Field | Details |
 |---|---|
 | Document status | Active |
-| Implementation status | 0.6.0 released foundations; model trials pending |
+| Implementation status | 0.7.0 released foundations; installed acceptance pending |
 | Owner | Parth |
 | Primary actors | User, OpenCode agent, gallery extension, extension service, viewer daemon, native plugin, browser panel |
 | Trigger | The agent publishes or updates an artifact, or the user opens the gallery |
@@ -92,14 +94,14 @@ The first draft had a workable shape but several problems that would have surfac
 - `current.html` duplicated the current version. 0.2 resolves the current pointer and serves the version file.
 - `canvas_publish` returned the absolute store path. 0.2 returns an id and a view URL.
 - The gallery had no search, tags, favorites, export, restore, or session provenance. 0.2 includes them.
-- The extension permission list stays at `service` only. Refine and feedback use `host.compose`, so the user reviews the message before it is sent.
+- The extension permission list stayed at `service` through 0.6. The 0.7.0 plugin delivery adds the `opencodePlugin` approval. Refine and feedback still use `host.compose`, so the user reviews the message before it is sent.
 - The update contract was underspecified. 0.2 defines full replacement, file snapshot, partial bundle merge, exact edits, and restore.
 
 ### Status Legend
 
 Every `Status` value in this document is one of `Current`, `Planned`, `Inferred`, or `Unknown`. This document has no `Current` claims because `last_verified_commit` is null.
 
-Platform behavior was checked by reading the installed OpenChamber 2.5.1 build at `/opt/OpenChamber` and `@openchamber/sdk@2.5.1` on 2026-10-23. That evidence is stated in prose, not as a `Current` claim about this repository. The platform reference is [openchamber-extension-platform.md](../research/openchamber-extension-platform.md).
+Platform behavior was checked by reading the installed OpenChamber 2.5.1 build at `/opt/OpenChamber` and `@openchamber/sdk@2.5.1` on 2026-10-23. The plugin delivery facts were re-checked against OpenChamber 2.7.0 and `@openchamber/sdk@2.7.0` on 2026-11-12. That evidence is stated in prose, not as a `Current` claim about this repository. The platform reference is [openchamber-extension-platform.md](../research/openchamber-extension-platform.md).
 
 ## 2. Problem and Outcome
 
@@ -126,7 +128,7 @@ The user can reopen any previous artifact, switch between "This project" and "Al
 | Organization | Current project is the default filter and all projects are one click away | AC-002 and AC-003 |
 | Isolation | Artifact code cannot reach the OpenChamber API or the open network | SEC-001, SEC-011, AC-007 |
 | Kinds | HTML and bundles work in v1; Markdown, image, and PDF work in v1.1 | AC-018 to AC-021 |
-| Install | A new user installs the extension and registers its package directory as an OpenCode plugin using Setup's JSON | AC-073 manual acceptance |
+| Install | A new user installs the extension on OpenChamber 2.7.0 or newer and approves the `service` and `opencodePlugin` permissions; OpenChamber loads the plugin without a config edit | AC-095 manual acceptance |
 
 No analytics are added. Success is measured by the acceptance run and local logs.
 
@@ -223,9 +225,9 @@ Probe results on 2026-10-23:
 | MCP server | Write, update, list, read, archive artifacts | Store root only, size caps, no shell | MCP handlers |
 | Browser panel | Render the artifact | Opaque origin, no open network, no app access | Response CSP |
 
-The extension asks for one permission, `service`, which the user approves once at install and which runs with the user's full access. The gallery uses `host.compose` to put a feedback summary or a refine instruction in the chat box; the user reviews and sends it. `prompt` and `sessions` are not requested in v1. One-click send and opening another session are v1.1 options.
+The extension asks for the `service` approval and the `opencodePlugin` capability, which the user approves once at install. `service` runs the extension service with the user's access. `opencodePlugin` runs the contributed plugin inside OpenCode with the user's access. The gallery uses `host.compose` to put a feedback summary or a refine instruction in the chat box; the user reviews and sends it. `prompt` and `sessions` are not requested in v1. One-click send and opening another session are v1.1 options.
 
-`service` is the only permission that runs code outside the sandbox. The approval dialog says so.
+`service` and `opencodePlugin` both run code outside the page sandbox. The approval dialog names each one and what it runs.
 
 ## 6. User Journey
 
@@ -311,7 +313,7 @@ These behaviors were checked by reading the installed build and the SDK package.
 - The browser panel annotation tools are desktop-only.
 - The browser panel can read the clipboard only on the literal `localhost` hostname, not on `127.0.0.1` or `[::1]`.
 - `contributes.tools` changes how a tool call is drawn. It does not add a tool.
-- An extension manifest cannot register an executable agent tool. A separately registered OpenCode plugin can add native tools directly.
+- An extension manifest cannot declare agent tools directly. Since OpenChamber 2.7.0, `contributes.opencodePlugin` ships the plugin folder and the host lists it in the managed OpenCode config while the extension is enabled and approved.
 
 The full reference is [openchamber-extension-platform.md](../research/openchamber-extension-platform.md).
 
@@ -1682,8 +1684,8 @@ Run `bun run test:browser` for the actual bundled panel/status, native plugin, v
 ### Manual Acceptance Run
 
 1. Install the extension from its folder.
-2. Approve `service`.
-3. Merge the installed Canvas package directory into OpenCode V2's `plugins` array. Remove the old Canvas MCP entry if upgrading.
+2. Approve `service` and `opencodePlugin`.
+3. On an update from 0.6.0, remove the installed Canvas package directory from the OpenCode `plugins` array. Do not add a new entry; OpenChamber 2.7.0 or newer loads the contributed plugin folder itself.
 4. Enable an agent browser tool if automatic opening is wanted.
 5. Open Setup, confirm the service path, compose the sample prompt, review it and send it. Check native tool discovery, permission rejection and native chat-card presentation. These are not proven by direct executor tests.
 6. Ask the agent for a chart with an inline script.
@@ -2191,6 +2193,7 @@ If OpenChamber ships its own Canvases surface:
 | 2026-10-24 | 0.11.4 | One-command MCP setup: the Setup page shows and copies `opencode mcp add canvas --global -- node '<path>'`, which writes the v2 entry the registration check already accepts; README install steps use it (0.1.6) | In progress | Parth |
 | 2026-10-24 | 0.11.5 | Removed the list tooltip that advertised double-click in the rail, where the first click opens the inspector instead (0.1.7) | In progress | Parth |
 | 2026-10-30 | 2.0.0 | Package 0.3.0 replaces MCP with a native OpenCode plugin, session-derived context, cancellation-aware store locks, cold-start runtime handling, simplified Setup and real-host regressions. Installed-app acceptance remains pending | Inferred | Parth |
+| 2026-11-12 | 2.5.0 | Host-managed plugin delivery in package 0.7.0 on OpenChamber 2.7.0 (`contributes.opencodePlugin`), replacing the manual `opencode.json` step. Manifest, Setup, native/real-OpenCode and browser tests, and docs updated. Installed acceptance remains pending | Inferred | Parth |
 
 ## 31. Related Resources
 
@@ -2326,7 +2329,7 @@ This section answers the practical question: how does OpenChamber see the extens
 |---|---|---|---|---|
 | Gallery panel | Settings, Extensions | OpenChamber extension host | `service` | The rail UI, the page, the status section |
 | Extension service | Declared in the manifest | OpenChamber host on first request | `service` (full user access) | Store reads, view URL minting, export, feedback |
-| Native plugin | User or project V2 `plugins` configuration | OpenCode 2.2.0+ | OpenCode tool permission actions | `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, `canvas_result` |
+| Native plugin | `contributes.opencodePlugin: "plugin"` | OpenChamber 2.7.0+ managed OpenCode | `opencodePlugin` approval and OpenCode tool permissions | `canvas_publish`, `canvas_update`, `canvas_list`, `canvas_read`, `canvas_archive`, `canvas_result` |
 | Chat tool card | Extension manifest | OpenChamber chat | None | A Canvas header, icon, title, and Markdown output |
 
 The panel, service and built plugin ship in one package. OpenChamber loads the extension; OpenCode separately loads its directory as a plugin. The tool card changes presentation only and still needs installed-app verification for native calls.
@@ -2335,25 +2338,20 @@ The panel, service and built plugin ship in one package. OpenChamber loads the e
 
 1. Build the package.
 2. Install the folder or git URL in Settings, Extensions.
-3. Approve the service capability.
+3. Approve `service` and `opencodePlugin`.
 4. Open the Canvas panel, Setup tab.
-5. Merge Setup's package-directory entry into your existing OpenCode `plugins` array.
+5. Confirm the installed package path and the managed delivery statement. On an update from 0.6.0, remove the old Canvas package-directory entry from the user or project OpenCode `plugins` array.
 6. Enable an agent browser tool if auto-open is wanted.
-7. Use `/reload` if the tools have not appeared after configuration reload.
+7. If OpenChamber reports the `restart` delivery state, restart its OpenCode once. The default `file` state needs no reload.
 8. Compose Setup's sample prompt, review it, and send it. Check discovery, permission behavior, and opening in the intended session.
 
-### Plugin JSON
+### Plugin delivery and rollback
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": ["/absolute/path/to/installed/canvas"]
-}
-```
+OpenChamber 2.7.0 or newer lists the contributed `plugin/` folder in the managed OpenCode config while Canvas is enabled and approved. The extension and Setup never write `opencode.json`.
 
-Use the exact installed package directory shown by the service, not `plugin/index.js`. The default store is `~/.config/openchamber/artifacts`. If overriding `CANVAS_STORE`, the plugin and service must agree on the same store; configuring a new store is outside this migration.
+For rollback to 0.6.0, re-add the package directory to the user or project `plugins` array and reinstall the older version. Use the installed package path shown by Setup; do not point at `plugin/index.js`. The default store is `~/.config/openchamber/artifacts`. If overriding `CANVAS_STORE`, the plugin and service must agree on the same store; configuring a new store is outside this migration.
 
-A project-scoped plugin is available only where its configuration applies. User configuration is simpler when Canvas should work across projects. Preserve unrelated plugin/configuration entries.
+A project-scoped plugin entry is available only where its configuration applies. The managed entry is what 0.7.0 supports for normal use.
 
 ### Other extension surfaces
 
@@ -2383,14 +2381,15 @@ A project-scoped plugin is available only where its configuration applies. User 
 - Git install for users, with a version bump for updates.
 - Zip install for a one-off.
 - Community catalog listing when stable. The 2.5.1 Extensions page has a Browse button.
-- Plugin registration is a user-managed V2 configuration step. Do not edit `opencode.json` from the extension or plugin.
+- Plugin delivery is host-managed. OpenChamber 2.7.0 or newer lists the contributed `plugin/` folder in its managed OpenCode config while Canvas is enabled and approved. Neither the extension nor Setup writes `opencode.json`.
 
 ### Setup page
 
 The gallery's Setup tab is the install surface. It shows:
 
 - Extension-service status and store label.
-- Exact installed plugin JSON and package path, with SDK copy controls.
+- The installed package path, with a copy control for support and rollback.
+- The managed delivery statement and the Settings → Extensions fallback when the tools are missing.
 - A reminder that the gallery cannot certify session tool availability.
 - A sample prompt composed into chat for review, never sent automatically.
 - Viewer compatibility and authenticated restart for known-protocol daemons.
@@ -2643,9 +2642,9 @@ Added and changed tests name their criterion IDs. The table retains approved cri
 | AC-068 | Publish, read, every update mode, dedupe, archive, paginated list and feedback retain their existing behavior. Invalid payloads, path/symlink escapes, external references, oversize reads, and missing/stale base versions fail without partial writes. Metadata-only changes do not add content versions or notify views. | `tests/agent.test.ts`, existing store/source-security cases; real-viewer browser regression |
 | AC-069 | A cancelled call before mutation writes nothing. Cancellation reaches session/viewer requests. Once a version is committed, viewer failure or cancellation cannot erase it or report that it was never stored. Plugin cleanup stops owned work without stopping the shared viewer. OpenCode tool permission routing remains in use. | `tests/plugin.test.ts`, `tests/agent.test.ts`, viewer integration cases |
 | AC-070 | Existing artifacts, feedback, fixed/following views, restores, and pinned rendering remain readable and secure. Importing a relocated built plugin with no node_modules still locates its package, runtime, libraries, and viewer. The per-document sandbox and loopback-only bindings are unchanged. | `tests/rendering.test.ts`, `tests/version.test.ts`, `tests/viewer.test.ts`, `tests/browser/viewer.browser.ts`, relocated-package loader test |
-| AC-071 | Setup provides the exact installed package directory and mergeable V2 `plugins` JSON, with SDK copy controls, loading and actionable service-error/retry states. The sample prompt composes for user review without sending, even before installation can be confirmed. Neither Setup nor Work Status claims a connection based on a stale heartbeat. Existing gallery loading/empty/error/populated and long-content cases keep working without overflow. | `tests/service.test.ts`, `tests/browser/panel.browser.ts` at 390/768/1280/2048px plus relevant 320/375/1024/1440px widths |
-| AC-072 | The release contains no maintained MCP server, stdio transport, MCP dependency, heartbeat/config parser, or MCP setup controls. Built files and the lockfile agree with the native package; documentation directs fresh users to the plugin. The extension adds no permissions and writes no external configuration. | Package/build assertions in `tests/plugin.test.ts` and `tests/service.test.ts`; repository reference audit; manual documentation review |
-| AC-073 | The user can load the local package through their own configuration, discover the tools, publish/open, read/update, inspect feedback, and restore existing work in the installed app. Tool-card matching uses the actual native tool identity. No automated test is presented as proof of desktop acceptance. | Manual installed-app checklist, explicitly unverified until the user runs it; unit assertion for manifest tool matching |
+| AC-071 | Setup provides the exact installed package directory and mergeable V2 `plugins` JSON, with SDK copy controls, loading and actionable service-error/retry states. The sample prompt composes for user review without sending, even before installation can be confirmed. Neither Setup nor Work Status claims a connection based on a stale heartbeat. Existing gallery loading/empty/error/populated and long-content cases keep working without overflow. The JSON and copy-config clauses are superseded by AC-093 for release 0.7.0; the prompt, state, and layout clauses remain. | `tests/service.test.ts`, `tests/browser/panel.browser.ts` at 390/768/1280/2048px plus relevant 320/375/1024/1440px widths |
+| AC-072 | The release contains no maintained MCP server, stdio transport, MCP dependency, heartbeat/config parser, or MCP setup controls. Built files and the lockfile agree with the native package; documentation directs fresh users to the plugin. The extension adds no capability beyond `service` and `opencodePlugin` and writes no external configuration. The "no permissions" clause is amended by AC-091 for 0.7.0; the rest stands. | Package/build assertions in `tests/plugin.test.ts` and `tests/service.test.ts`; repository reference audit; manual documentation review |
+| AC-073 | The user can load the local package through their own configuration, discover the tools, publish/open, read/update, inspect feedback, and restore existing work in the installed app. Tool-card matching uses the actual native tool identity. No automated test is presented as proof of desktop acceptance. The manual-registration clause is superseded by AC-095 for release 0.7.0; the installed acceptance clauses remain. | Manual installed-app checklist, explicitly unverified until the user runs it; unit assertion for manifest tool matching |
 
 Earlier MCP-specific AC-043 through AC-049, AC-058 and AC-060 are replaced by the native installation/context criteria when implementation lands. Their reusable behavior, including safe composer insertion and project-local sources, remains covered. Earlier security and store criteria retain their IDs.
 
@@ -2663,7 +2662,7 @@ Earlier MCP-specific AC-043 through AC-049, AC-058 and AC-060 are replaced by th
 |---|---|
 | R-NATIVE-01: OpenCode APIs differ outside the probed version | Target and test OpenCode 2.2.0 or newer. Do not ship a guessed V1 adapter. Report an unsupported runtime rather than retaining MCP. |
 | R-NATIVE-02: Plugin startup is asynchronous | Readiness checks wait for expected plugin state. An initial empty registry is not proof of a missing install. |
-| R-NATIVE-03: Setup cannot reliably infer effective plugin configuration | No partial global-config parser or connection badge. Provide explicit install instructions and a sample prompt; user acceptance establishes that tools are available in the intended session. |
+| R-NATIVE-03: Setup cannot read the host's plugin delivery state | No partial global-config parser or connection badge. State the managed delivery, point to Settings → Extensions, and provide a sample prompt; user acceptance establishes that tools are available in the intended session. |
 | R-NATIVE-04: Old MCP entry remains in the user's configuration | Explain its manual removal in separate upgrade guidance. Do not edit configuration, auto-disable another server, or ship two tool sets. Test native installation with no MCP entry. |
 | R-NATIVE-05: Built tool names differ in the host chat renderer | Probe native tool identity during installed acceptance and adjust only presentation matching if needed; never change security boundaries to obtain a tool card. |
 | R-NATIVE-06: Session subdirectories/worktrees differ from setup location | The source check resolves the path rule: use `session.location.directory`, without appending its project-relative `subpath`. Resolve the invoking session on each call and test distinct/moved/nested sessions. Do not use a guessed cwd fallback. |
@@ -2740,7 +2739,7 @@ Every added test names its criterion ID. Deterministic criteria have automated e
 | AC-075 | A relocated built installation without `node_modules` exposes the same skill. Its skill/resource paths resolve inside that installation. Missing required skill content fails setup before tool/skill registration rather than advertising unavailable guidance. No files outside the isolated test root are written. | `tests/plugin.test.ts`; relocated-package fixture including `skills/` and referenced `examples/`; both child invocations override viewer entry and port-file paths |
 | AC-076 | The normal OpenCode skill tool loads the registered skill and returns its authoring content in an isolated actual server. Namespace/publish/update descriptions direct the agent to load it before writing or revising source. No new tool or forced call-order gate is introduced. | `tests/plugin.test.ts`, `tests/fixtures/native-observer.mjs`; assertions on descriptions and built-in skill output |
 | AC-077 | The shipped skill covers output routing, one canonical source, shipped examples, no CDN, bundled libraries, Canvas storage/feedback, actual-view verification, existing project checks, read-before-update/baseVersion, conflict rereads, and feedback review. All referenced resources exist; metadata and registered description agree. | `tests/skill.test.ts`; the read response's `version` is explicitly mapped to update `baseVersion`; three review prompts exist but are unexecuted |
-| AC-078 | Existing operation, viewer, sandbox, and distribution tests still pass. The package adds no permissions or runtime SDK dependency and writes no external configuration. README explains bundled skill discovery after plugin registration and does not promise automatic loading or faster generation. | Existing unit/browser suites; package and documentation assertions in `tests/plugin.test.ts` and `tests/skill.test.ts`; independent review |
+| AC-078 | Existing operation, viewer, sandbox, and distribution tests still pass. The package adds no runtime SDK dependency and writes no external configuration. The no-added-permissions clause is amended by AC-091 for 0.7.0; the rest stands. README explains bundled skill discovery after plugin delivery and does not promise automatic loading or faster generation. | Existing unit/browser suites; package and documentation assertions in `tests/plugin.test.ts` and `tests/skill.test.ts`; independent review |
 | AC-079 | The shipped skill directs the agent to complete a source preflight before the first publish, publish one complete artifact for a new artifact, batch concrete runtime fixes into one update, and stop unless the user asks for another change or a new defect appears. The namespace, publish, and update descriptions carry the preflight and one-publish rule, and the review expectations match. The old publish-first wording is absent. | `tests/skill.test.ts` |
 
 ### Publish-as-preview correction
@@ -2921,7 +2920,7 @@ Tests name their criterion IDs. The paths below contain automated checks; instru
 | AC-083 | Publish promotes identical source hashes/rendering into one version, ignores later local or installed-runtime changes, and excludes preview state/feedback. Retried publish does not duplicate. Update adds one version to the same ID, and rejects stale base, kind mismatch, or library mismatch without mutation. | `tests/preview.test.ts`, `tests/agent.test.ts`, `tests/rendering.test.ts`, `tests/browser/viewer.browser.ts` |
 | AC-084 | Tokens cannot cross scopes. Entry and secondary HTML keep `sandbox allow-scripts`, viewer-only connections, blocked native forms/network/app access, and project-confined assets. Foreign project/session promotion and missing/tampered rendering fail without publication. | `tests/policy.test.ts`, `tests/viewer.test.ts`, `tests/preview.test.ts`, `tests/browser/viewer.browser.ts` |
 | AC-085 | Expired, invalid, or cancelled calls cannot publish. Expired views/runtime writes fail clearly. Cleanup handles abandoned snapshots and serializes with promotion. Restart/compatibility handling does not expose previews as published objects. | `tests/preview.test.ts`, `tests/viewer.test.ts`, `tests/ensure.test.ts`, `tests/agent.test.ts` |
-| AC-086 | Preview registers, unloads/reloads, and works from a relocated built package without node_modules. Keep the six existing operations. Real invocation sessions supply ownership/cancellation. No additional extension permission or external config write. | `tests/plugin.test.ts`, `tests/fixtures/plugin-host.mjs`, `tests/fixtures/native-observer.mjs` |
+| AC-086 | Preview registers, unloads/reloads, and works from a relocated built package without node_modules. Keep the six existing operations. Real invocation sessions supply ownership/cancellation. The no-additional-permission clause is amended by AC-091 for 0.7.0; the rest, including no external config write, stands. | `tests/plugin.test.ts`, `tests/fixtures/plugin-host.mjs`, `tests/fixtures/native-observer.mjs` |
 | AC-087 | The short entry skill routes to six focused scenarios, preserves project-first design, and states scenario-specific content/completion checks. Static outputs avoid fake app states; mockups identify simulated actions. All resources resolve after relocation. | `tests/skill.test.ts`, `tests/plugin.test.ts`; human review |
 | AC-088 | Chart, diagram, mockup, and report use fallback tokens and a viewer-seeded Light/Dark switcher at narrow/wide sizes in both themes. Chart/table share data; diagram details support keyboards; forms preserve validation/pending/retry behavior; report content is readable without scripts. | `tests/browser/examples.browser.ts`, `tests/skill.test.ts`; bounded screenshots at 390 and 1280 pixels |
 | AC-089 | Evaluation cases cover new output and seeded revision, project/fallback styling, and a long-label/empty-data case. The rubric records skill loading, scenario choice, tool calls, correctness, browser checks, time, and visual review. Separate model observations from mechanical tests; fewer versions alone do not prove quality. | `tests/skill.test.ts`; baseline and protocol. Paired model runs remain explicitly unverified until executed |
@@ -2967,3 +2966,146 @@ Rollback removes additive preview registration/guidance while retaining direct p
 ### Changelog
 
 - 2026-11-07: Added unpublished previews, frozen publish/update promotion, preview-only lock protection after independent review, six scenario references, consistent starters, and evaluation fixtures. Preserved direct inputs and published history. A second review fixed rendering capture on changed-content preview retries. Bumped to package 0.6.0. No installation or user-artifact mutation.
+
+## 42. Host-managed OpenCode plugin delivery
+
+Status: Inferred. Implemented in the working tree on 2026-11-12 against `@openchamber/sdk@2.7.0` and OpenCode 2.2.6. Automated checks pass; installed-app acceptance (AC-095, AC-096) is pending. The previous behavior below describes 0.6.0.
+
+### Previous behavior (0.6.0)
+
+The 0.6.0 extension ships no OpenCode plugin contribution. The user installs the extension, opens Setup, copies a `plugins` array, and merges the installed package directory into their user or project `opencode.json`. OpenCode then loads `plugin/index.js` through the root package `exports`. That entry is the only source of the `canvas_*` tools and the `canvas-authoring` skill.
+
+Installation therefore depends on an external config edit the extension does not own. A wrong path, a skipped step, or a stale entry after an update leaves the agent without tools while the gallery still works. Disabling or removing the extension leaves the entry behind, and the installed extension version can differ from the plugin code OpenCode loads.
+
+Evidence: the 0.6.0 `panel/main.ts` `mountSetup`, README Install step 5, and the distribution rule in [AGENTS.md](../../AGENTS.md).
+
+### Implemented change
+
+- `package.json` declares `contributes.opencodePlugin: "plugin"` and raises `engines.openchamber` to `>=2.7.0`.
+- `@openchamber/sdk` moves to 2.7.0. Its UI kit exports are unchanged, but its look styles are not: rest-state field rings, edge contrast, badges, shadows, and progress colours changed. The rebuilt panel and status inherit those changes, so the SDK bump needs a visual review of the gallery and Setup, not only layout checks.
+- OpenChamber lists `<installed package>/plugin` in the managed OpenCode config it owns while Canvas is enabled, fully approved, and not refused by enterprise mode. The default state is `file`, where the plugin loads without a restart. `restart`, `none` and `remote` are host states the extension cannot read or change. The Extensions card owns that fallback.
+- The `opencodePlugin` capability adds one approval row that says plugin code runs inside OpenCode with the user's access.
+- Setup stops teaching a config edit. It keeps the installed package path with Copy path for support and rollback, states that OpenChamber loads the tools, points to Settings → Extensions when they are missing, and keeps the sample prompt and viewer checks.
+
+Non-goals for this change: `contributes.skills`, `service.emit` live refresh, `statusSection.source`, mentions, and blocks. Each is a separate change.
+
+### Why the plugin folder and not the package root
+
+The host requires the contributed folder to resolve inside the package. `.` resolves to the package root and the host rejects it. `plugin` resolves to the built folder, and the host finds `index.js` there without a `package.json`. That keeps the current build output and avoids a second manifest file that could drift.
+
+### Control flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant OC as OpenChamber
+    participant CFG as Managed OpenCode config
+    participant O as OpenCode
+    participant P as Canvas plugin
+    participant A as Agent
+    U->>OC: Enable and approve Canvas
+    OC->>CFG: Write plugins entry for the package plugin folder
+    CFG-->>O: Watched change
+    O->>P: Import the folder plugin
+    P->>P: Register canvas tools and skill
+    A->>P: canvas_publish
+    P-->>A: viewUrl
+    U->>OC: Disable or remove Canvas
+    OC->>CFG: Drop the entry
+    O->>P: Unload and dispose
+```
+
+The extension never writes OpenCode config. The host owns the entry, its delivery, and its removal. Setup reads only the Canvas service health it already reads.
+
+### Contracts and compatibility
+
+- Manifest: `contributes.opencodePlugin` is a package-relative folder. The host resolves `exports` only when the folder has a `package.json` with `name`; otherwise it tries `server` and `index` at the folder root. `plugin/index.js` resolves without a new file.
+- Parse: `parseManifestJson` from 2.7.0 accepts the current manifest and the contributed form, and requests exactly `service` and `opencodePlugin`.
+- Engine floor: hosts older than 2.7.0 refuse the new version at install and keep 0.6.0. The floor is what tells the user why the update did not apply.
+- Delivery: `file` is the default when OpenChamber starts its own OpenCode. `restart` applies at the next OpenCode start. `none` means an external local OpenCode. `remote` cannot load a folder from this machine. In `restart` and `none` the Extensions card offers Add to global config after a click. Canvas does not duplicate that control.
+- Isolated spaces run their own OpenCode with their own config layers, so an extension's plugin is absent from sessions in a space. VS Code and mobile load no extensions.
+- The plugin resolves package assets through `packageRoot()`, which returns the package directory from `plugin/`, `service/`, or `viewer/`. The contributed folder does not change that.
+
+### Migration for existing installs
+
+1. Update Canvas and approve the new `opencodePlugin` row.
+2. Remove the Canvas package directory from `plugins` in the user or project `opencode.json`. The contribution names `<package>/plugin`; the old entry names `<package>`. Those are different paths, and the host's single-load guarantee covers the same folder named twice, not the same file reached through two paths.
+3. Confirm the managed config lists the plugin folder. On Linux that file is `~/.config/openchamber/opencode.managed.json`. Then confirm `GET /api/plugin` shows `openchamber-canvas` active.
+4. Two live entries are a migration defect, not a supported state.
+
+Rollback: revert the manifest and Setup, reinstall 0.6.0, and re-add the package directory to `plugins`. Setup keeps showing the package path so the rollback value does not require reading the installation folder. The current suite does not exercise the 0.6.0 package-root load end to end; it asserts the root export and keeps the folder load covered.
+
+### Implementation map
+
+| Area | Path | Change | Status |
+|---|---|---|---|
+| Manifest | `package.json` | Version 0.7.0, SDK 2.7.0, engine floor, `opencodePlugin` contribution | Current |
+| Setup | `panel/main.ts` `mountSetup` | Removed the JSON text and Copy plugin config, kept the package path and Copy path, added managed delivery copy and the Extensions pointer | Current |
+| Manifest regression | `tests/manifest.test.ts` | Parse with the pinned SDK, assert the contribution, engine floor, capability set, and the built entry | Current |
+| Real OpenCode | `tests/plugin.test.ts` | Loads `plugin/` from the temporary config instead of the package root | Current |
+| Setup browser | `tests/browser/panel.browser.ts` | Asserts no mergeable config, path copy, sample prompt, service error and retry at the checked widths | Current |
+| Documentation | `README.md`, `AGENTS.md`, `docs/research/openchamber-extension-platform.md`, `docs/features/README.md`, this section | Install steps, platform facts, corrected statements, index | Current |
+| Generated | `plugin/index.js`, `panel/main.js`, `bun.lock`, `viewer/build.json` | Rebuilt or locked by the existing commands, never edited | Generated |
+
+### Probe evidence
+
+Run on 2026-11-12 against the installed host and the running CLIs.
+
+| Probe | Command | Result |
+|---|---|---|
+| Host folder resolution | The installed host's `resolveOpenCodePluginFolder` from `/opt/OpenChamber/resources/app.asar` | `plugin` resolves to the package folder; `.` returns null; delivery is `file` for a managed OpenCode |
+| Manifest parse | `parseManifestJson` from `@openchamber/sdk@2.7.0` on the package with the contribution and `>=2.7.0` | Success; requested capabilities are `service` and `opencodePlugin` |
+| Folder plugin load | `opencode serve` 2.2.6 with an isolated config naming `/home/parth/Production/openchamber-canvas/plugin` | `GET /api/plugin` lists `openchamber-canvas`, source `local`, state `active` |
+
+The probe scripts lived under `/tmp/opencode` and are not part of the repository.
+
+### Acceptance criteria
+
+| ID | Observable criterion | Evidence |
+|---|---|---|
+| AC-091 | The manifest parses with the pinned SDK, declares the contribution and `>=2.7.0`, requests exactly `service` and `opencodePlugin`, and the contributed folder exposes an entry at `index.js` or through a `package.json` `exports` target of `./index.js`. | `tests/manifest.test.ts`; host resolver probe recorded above |
+| AC-092 | OpenCode 2.2.6 lists the contributed folder as `openchamber-canvas` active, loads seven tools and the skill, and cold-starts a preview from a relocated package. | `tests/plugin.test.ts` |
+| AC-093 | Setup shows no mergeable config, states the managed delivery and the Settings → Extensions fallback, keeps the package path copy and the sample prompt, and keeps correct loading, service-error, and retry states at 320, 375, 390, 768, 1024, 1280, 1440 and 2048 pixels plus the 620-pixel setup page in both themes. The error and retry path is exercised on the 620-pixel page. | `tests/browser/panel.browser.ts` |
+| AC-094 | The extension writes no OpenCode config, and Setup and the gallery claim no plugin connection state. | `tests/browser/panel.browser.ts` request log; repository grep for config writes; code review |
+| AC-095 | On the installed 2.7.0 app, updating Canvas and removing the old entry yields tools without a manual edit, disabling Canvas removes the managed entry, and `/api/plugin` shows the plugin. | Manual checklist, unverified until run |
+| AC-096 | Rolling back to 0.6.0 and the old entry restores the previous behavior with no store, artifact, or feedback change. | Manual checklist, unverified until run |
+
+AC-071 and AC-073 are superseded. Their JSON and manual-registration clauses no longer describe the product. Their remaining intent, a reviewed test prompt and an honest installed acceptance run, moves to AC-093 through AC-096.
+
+### Implementation phases
+
+1. Manifest and dependency. Done. `package.json` and the lockfile carry 0.7.0, SDK 2.7.0, the engine floor, and the contribution. AC-091 passes.
+2. Real OpenCode. Done. The native test configures the plugin folder and keeps its assertions. AC-092 passes under OpenCode 2.2.6.
+3. Setup. Done. The JSON block and copy control are gone, the delivery copy and package path remain, and the browser assertions cover them. AC-093 and AC-094 pass.
+4. Documentation. Done. README, AGENTS, research, index, and this section describe managed delivery and no longer teach a config edit.
+5. Verification and acceptance. Automated checks pass below. Install the updated package as a folder install and run the checklist for AC-095 and AC-096. Do not edit the installed app's configuration for the user.
+
+### Verification
+
+On 2026-11-12, `bun run typecheck`, `bun run lint`, `bun test` (118 passing across 13 files), `bun run test:browser`, and `bun run build` passed. The unit suite includes the isolated OpenCode 2.2.6 folder-plugin load and the `/api/plugin` active state. The panel suite covers the managed delivery copy, the package path copy, the sample prompt, service error and retry, and the long installed path at every checked width in both themes.
+
+Independent review found documentation gaps and one incorrect claim that the UI kit was visually unchanged. Those are corrected here. The SDK 2.7.0 look changes are not visually compared against 2.5.1 screenshots; the browser suite checks layout, tokens, labels, and target size, not appearance.
+
+Unverified: installed-app acceptance (AC-095) and rollback (AC-096).
+
+### Risks, fallback, and rollback
+
+| ID | Risk | Mitigation | Fallback |
+|---|---|---|---|
+| R-42-01 | A user keeps the old entry, so OpenCode may load two plugin instances through two paths | Migration step 2 and a plugin-list check | Remove one entry |
+| R-42-02 | The host does not write the entry in `restart`, `none`, or `remote` | Setup names Settings → Extensions instead of a state the panel cannot read | Add to global config, then roll back |
+| R-42-03 | OpenCode changes folder entry resolution | The native test loads the folder, not the package root | Add `plugin/package.json` with `name` and `exports`, which both resolvers accept |
+| R-42-04 | The engine bump locks out hosts before 2.7.0 | 0.6.0 keeps working and the release note states the floor | Stay on 0.6.0 |
+| R-42-05 | Sessions in isolated spaces miss the plugin | Not fixable here; state it in the install notes | None |
+| R-42-06 | Setup copy drifts from the host's delivery language | Name only the supported fallback and the Settings path, never a guessed success | Update the copy with the host version |
+| R-42-07 | The SDK 2.7.0 look changes reach the panel and status through the rebuilt bundles | Visual review of the gallery and Setup at the checked widths | Revert the SDK bump and the contribution together; do not mix versions |
+
+### Decisions
+
+- DEC-42-01: Keep the installed package path in Setup. Accepted. It serves support and the 0.6.0 rollback value. It is not the Add to global config fallback, which writes the plugin folder itself.
+- DEC-42-02: Do not adopt `contributes.skills` in the same change. Accepted. Two delivery paths for one skill risk a duplicate.
+- DEC-42-03: Do not infer or display delivery state in the panel. Accepted. No `ready` field carries it, and a guessed state repeats the heartbeat mistake.
+
+### Changelog
+
+- 2026-11-12: Shipped host-managed plugin delivery in package 0.7.0. The manifest contributes `plugin/`, Setup teaches managed delivery instead of a config edit, and the native, manifest, and browser tests cover the new path. Installed-app acceptance and rollback remain pending.

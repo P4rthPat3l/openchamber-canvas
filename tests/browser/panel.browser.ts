@@ -257,22 +257,19 @@ await openOptions(frame);
 await frame.getByRole('menuitem', { name: 'Setup' }).click();
 await frame.getByRole('heading', { name: 'OpenCode plugin' }).waitFor();
 await frame.getByText('Running', { exact: true }).waitFor();
-const copyConfig = frame.getByRole('button', { name: 'Copy plugin config' });
-assert.equal(await copyConfig.isEnabled(), true);
-const configText = await frame.locator('pre').evaluate(node => node.textContent ?? '');
-assert.deepEqual(JSON.parse(configText).plugins, ['/home/parth/Production/openchamber-canvas']);
-check('AC-071', 'setup shows native plugin JSON for the installed package', true);
+assert.equal(await frame.getByRole('button', { name: 'Copy plugin config' }).count(), 0, 'AC-093: Setup no longer teaches an OpenCode config edit');
+const pathText = await frame.locator('pre').evaluate(node => node.textContent ?? '');
+assert.equal(pathText.trim(), '/home/parth/Production/openchamber-canvas');
+await frame.getByText(/OpenChamber 2\.7\.0 or newer loads this package/).waitFor();
+await frame.getByText(/Settings → Extensions/).waitFor();
+check('AC-093', 'setup shows the managed plugin delivery and the installed package path', true);
 const sample = frame.getByRole('button', { name: 'Add sample prompt to chat' });
-assert.equal(await sample.isEnabled(), true, 'AC-071: the user can test tools without a guessed connection state');
+assert.equal(await sample.isEnabled(), true, 'AC-093: the user can test tools without a guessed connection state');
 await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'setup.png') });
-await copyConfig.click();
-await panelPage.waitForFunction(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').length === 1);
-const copiedConfig = await panelPage.evaluate(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').at(-1));
-assert.ok(JSON.stringify(copiedConfig).includes('plugins'), 'copy config should copy the plugin entry');
 await frame.getByRole('button', { name: 'Copy path' }).click();
-await panelPage.waitForFunction(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').length === 2);
+await panelPage.waitForFunction(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').length === 1);
 const copied = await panelPage.evaluate(() => window.__host.getState().actions.filter(action => action.type === 'clipboard').at(-1));
-assert.ok(JSON.stringify(copied).includes('/home/parth/Production/openchamber-canvas'));
+assert.ok(JSON.stringify(copied).includes('/home/parth/Production/openchamber-canvas'), 'copy path should copy the installed package path');
 await frame.getByRole('button', { name: 'Back to gallery' }).click();
 await frame.getByRole('searchbox', { name: 'Search artifacts' }).waitFor();
 
@@ -383,17 +380,17 @@ await frame.getByRole('heading', { name: 'OpenCode plugin' }).waitFor();
 await setupPage.evaluate(() => window.__host.setFailure('failHealth', true));
 await frame.getByRole('button', { name: 'Check again' }).click();
 await frame.getByText('Could not check setup', { exact: true }).waitFor();
-assert.equal(await frame.getByRole('button', { name: 'Copy plugin config' }).isDisabled(), true);
+assert.equal(await frame.getByRole('button', { name: 'Copy path' }).isDisabled(), true);
 assert.equal(await frame.getByRole('button', { name: 'Add sample prompt to chat' }).isEnabled(), true);
 await frame.locator('body').screenshot({ path: path.join(screenshotDir, 'setup-service-error.png') });
 await setupPage.evaluate(() => window.__host.setFailure('failHealth', false));
 await frame.getByRole('button', { name: 'Check again' }).click();
 await frame.getByText('Running', { exact: true }).waitFor();
-assert.equal(await frame.getByRole('button', { name: 'Copy plugin config' }).isEnabled(), true);
+assert.equal(await frame.getByRole('button', { name: 'Copy path' }).isEnabled(), true);
 const setupState = await setupPage.evaluate(() => window.__host.getState());
 assert.equal(setupState.requests.some(request => JSON.stringify(request).includes('/mcp-')), false);
 assert.equal(await frame.getByText('Connected', { exact: true }).count(), 0);
-check('AC-071', 'native setup retries service errors without a config scan or false connection status', true);
+check('AC-093', 'native setup retries service errors without a config scan or false connection status', true);
 await closePage(setupPage);
 
 const pagePage = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
@@ -586,7 +583,7 @@ for (const width of [320, 375, 390, 768, 1024, 1280, 1440, 2048]) {
   await waitCanvasReady(view);
   await openOptions(view);
   await view.getByRole('menuitem', { name: 'Setup', exact: true }).click();
-  await view.getByRole('button', { name: 'Copy plugin config' }).waitFor();
+  await view.getByRole('button', { name: 'Copy path' }).waitFor();
   for (const theme of ['openchamber-light', 'openchamber-dark']) {
     await page.evaluate(name => window.__host.setTheme(name), theme);
     await page.waitForTimeout(220);
@@ -613,13 +610,13 @@ for (const width of [320, 375, 390, 768, 1024, 1280, 1440, 2048]) {
   }
   await page.evaluate(() => window.__host.setPluginPath('/installed/' + 'long path with spaces/'.repeat(20)));
   await view.getByRole('button', { name: 'Check again' }).click();
-  await view.getByRole('button', { name: 'Copy plugin config' }).waitFor({ state: 'visible' });
-  assert.equal(await view.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `AC-071: long installed path stays within its code scroller at ${width}`);
-  await view.getByLabel('OpenCode plugin configuration').focus();
-  assert.equal(await view.getByLabel('OpenCode plugin configuration').evaluate(node => node === document.activeElement), true);
+  await view.getByRole('button', { name: 'Copy path' }).waitFor({ state: 'visible' });
+  assert.equal(await view.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `AC-093: long installed path stays within its code scroller at ${width}`);
+  await view.getByLabel('Installed package path').focus();
+  assert.equal(await view.getByLabel('Installed package path').evaluate(node => node === document.activeElement), true);
   await closePage(page);
 }
-check('AC-071', 'native Setup renders at required and awkward widths in both themes', true);
+check('AC-093', 'native Setup renders at required and awkward widths in both themes', true);
 
 await browser.close();
 server.stop();
@@ -635,7 +632,7 @@ console.log(JSON.stringify({
     'controlled search, list selection, and retained draft/focus across theme switch',
     'six official theme fixtures plus host-supplied font/radius, no refetch on theme-only ready',
     'host.storage view/sort persistence across reload',
-    'native plugin config/path, reviewed test prompt, and service error/retry',
+    'managed plugin delivery, installed package path, reviewed test prompt, and service error/retry',
     'empty, grid, error/retry, menu, dialog, and action coverage',
     '320px panel, 720px wide panel, and 1200px page layout',
   ],

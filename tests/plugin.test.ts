@@ -75,7 +75,7 @@ test('AC-066 AC-067 AC-069 AC-074 AC-076 AC-086: native tools and skill registra
 describe('AC-072 AC-073: native distribution contract', () => {
   test('exports the plugin, styles native tools, and has no MCP package or transport', async () => {
     const pkg = z.object({ version: z.string(), exports: record, dependencies: record, openchamber: record }).parse(await Bun.file(path.join(project, 'package.json')).json());
-    expect(pkg.version).toBe('0.6.0');
+    expect(pkg.version).toBe('0.7.0');
     expect(pkg.exports['.']).toBe('./plugin/index.js');
     expect(pkg.dependencies['@modelcontextprotocol/sdk']).toBeUndefined();
     expect(pkg.dependencies['@opencode/plugin']).toBeUndefined();
@@ -83,6 +83,7 @@ describe('AC-072 AC-073: native distribution contract', () => {
     const contributes = z.object({ contributes: record }).parse(pkg.openchamber).contributes;
     expect(z.array(z.object({ match: z.string() })).parse(contributes.tools)[0]?.match).toBe('canvas_*');
     expect(contributes.capabilities).toBeUndefined();
+    expect(contributes.opencodePlugin).toBe('plugin');
   });
 });
 
@@ -175,7 +176,8 @@ test.skipIf(opencode === null)('AC-066 AC-070 AC-076 AC-086: actual OpenCode loa
   await fs.mkdir(observer);
   await fs.copyFile(path.join(project, 'tests/fixtures/native-observer.mjs'), path.join(observer, 'index.js'));
   await fs.writeFile(path.join(observer, 'package.json'), JSON.stringify({ name: 'canvas-test-observer', type: 'module', exports: { '.': './index.js' } }));
-  await fs.writeFile(path.join(root, 'config/opencode.json'), JSON.stringify({ plugins: [project, observer] }));
+  // The host's opencodePlugin contribution names the plugin folder, not the package root.
+  await fs.writeFile(path.join(root, 'config/opencode.json'), JSON.stringify({ plugins: [path.join(project, 'plugin'), observer] }));
   const env = {
     PATH: process.env.PATH ?? '/usr/bin:/bin',
     HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'xdg-config'),
@@ -190,13 +192,20 @@ test.skipIf(opencode === null)('AC-066 AC-070 AC-076 AC-086: actual OpenCode loa
   const server = Bun.spawn([opencode, 'serve', '--hostname', '127.0.0.1', '--port', String(port)], { cwd: work, env, stdout: 'ignore', stderr: 'ignore' });
   try {
     const reportFile = path.join(work, 'native-result.json');
-    for (let attempt = 0; attempt < 40 && !await Bun.file(reportFile).exists(); attempt++) {
-      const request = Bun.spawn([opencode, 'api', '--server', `http://127.0.0.1:${port}`, 'get', '/api/plugin'], { cwd: work, env, stdout: 'ignore', stderr: 'ignore' });
+    const readPlugins = async (): Promise<string> => {
+      const request = Bun.spawn([opencode, 'api', '--server', `http://127.0.0.1:${port}`, 'get', '/api/plugin'], { cwd: work, env, stdout: 'pipe', stderr: 'ignore' });
+      const stdout = await new Response(request.stdout).text();
       await request.exited;
+      return stdout;
+    };
+    for (let attempt = 0; attempt < 40 && !await Bun.file(reportFile).exists(); attempt++) {
+      await readPlugins();
       await Bun.sleep(200);
     }
     const report = z.object({ version: z.string(), names: z.array(z.string()), directory: z.string(), skill: z.object({ id: z.string(), path: z.string(), content: z.string() }), loadedSkill: z.string(), result: z.object({ id: z.string(), viewUrl: z.string(), warnings: z.array(z.string()) }) }).parse(await Bun.file(reportFile).json());
-  expect(report.names).toEqual(['canvas_archive', 'canvas_list', 'canvas_preview', 'canvas_publish', 'canvas_read', 'canvas_result', 'canvas_update']);
+    const plugins = z.object({ data: z.array(z.object({ id: z.string(), state: z.object({ status: z.string() }) })) }).parse(JSON.parse(await readPlugins()));
+    expect(plugins.data.find(plugin => plugin.id === 'openchamber-canvas')?.state.status).toBe('active');
+    expect(report.names).toEqual(['canvas_archive', 'canvas_list', 'canvas_preview', 'canvas_publish', 'canvas_read', 'canvas_result', 'canvas_update']);
     expect(report.directory).toBe(work);
     expect((await new ArtifactStore({ root: env.CANVAS_STORE }).getMeta(report.result.id)).directory).toBe(work);
     expect(report.result.warnings).toEqual([]);

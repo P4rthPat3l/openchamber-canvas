@@ -109,6 +109,25 @@
     }
     return true;
   };
+  // node_modules/@openchamber/sdk/dist/manifest.js
+  var TRACKER_URL_TOKENS = ["{id}", "{segment}", "{segments+}"];
+  var TRACKER_URL_TOKEN_SET = new Set(TRACKER_URL_TOKENS);
+  // node_modules/@openchamber/sdk/dist/session-events.js
+  var GUEST_SESSION_EVENT_TYPES = [
+    "turn-finished",
+    "turn-failed",
+    "permission-asked",
+    "question-asked",
+    "turn-started",
+    "session-created",
+    "session-archived",
+    "session-deleted"
+  ];
+  var SESSION_EVENTS_IDLE_MS = 10 * 60000;
+  var EVENT_TYPES = new Set(GUEST_SESSION_EVENT_TYPES);
+  // node_modules/@openchamber/sdk/dist/service-host.js
+  var SERVICE_SCHEDULE_IDLE_MS = 10 * 60000;
+  var MENTIONS_IDLE_MS = 10 * 60000;
   // node_modules/@openchamber/sdk/dist/file-editor.js
   var GUEST_FILE_EDITOR_CONTENT_MAX = 20000000;
   var GUEST_FILE_EDITOR_VERSION_MAX = 256;
@@ -172,6 +191,7 @@
   };
 
   // node_modules/@openchamber/sdk/dist/contract.js
+  var GUEST_BLOCK_ANSWER_MAX = 2000;
   var GUEST_FILE_STAT_KINDS = ["file", "directory", "other", "missing"];
   var isStartSessionResult = (value) => Boolean(value && "sessionId" in value);
   var isPromptResult = (value) => Boolean(value && "sent" in value && !("sessionId" in value));
@@ -337,6 +357,7 @@
     "item",
     "resolve",
     "action",
+    "service-event",
     "status-control-event",
     "popover-closed",
     "file-open",
@@ -426,6 +447,8 @@
     const connectionListeners = new Set;
     const settingsListeners = new Set;
     const itemListeners = new Set;
+    const blockListeners = new Set;
+    const serviceEventListeners = new Set;
     const statusControlListeners = new Set;
     const popoverClosedListeners = new Set;
     const lateGenerateListeners = new Set;
@@ -504,7 +527,13 @@
         emit(connectionListeners, message.payload.connection);
         emit(settingsListeners, message.payload.settings);
         emit(itemListeners, message.payload.item);
+        if (message.payload.block)
+          emit(blockListeners, message.payload.block);
         listenForLateGenerate();
+        return;
+      }
+      if (message.type === "service-event") {
+        emit(serviceEventListeners, message.payload);
         return;
       }
       if (message.type === "generate-late") {
@@ -977,6 +1006,20 @@
           itemListeners.delete(listener);
         };
       },
+      onBlock: (listener) => {
+        blockListeners.add(listener);
+        if (lastReady?.block)
+          listener(lastReady.block);
+        return () => {
+          blockListeners.delete(listener);
+        };
+      },
+      onServiceEvent: (listener) => {
+        serviceEventListeners.add(listener);
+        return () => {
+          serviceEventListeners.delete(listener);
+        };
+      },
       onStatusControl: (listener) => {
         statusControlListeners.add(listener);
         return () => {
@@ -1046,6 +1089,13 @@
         id: nextId(ids),
         payload: { sha }
       }) : Promise.reject(new HostRequestError("HOST_REJECTED", "Commit id must be 7 to 64 hex characters.")),
+      answerBlock: (text) => request({
+        channel: OPENCHAMBER_SDK_CHANNEL,
+        v: OPENCHAMBER_SDK_API_VERSION,
+        type: "block-answer",
+        id: nextId(ids),
+        payload: { text: text.trim().slice(0, GUEST_BLOCK_ANSWER_MAX) }
+      }),
       openSurface: (surfaceId) => request({
         channel: OPENCHAMBER_SDK_CHANNEL,
         v: OPENCHAMBER_SDK_API_VERSION,
@@ -1346,6 +1396,8 @@
         connectionListeners.clear();
         settingsListeners.clear();
         itemListeners.clear();
+        blockListeners.clear();
+        serviceEventListeners.clear();
         statusControlListeners.clear();
         popoverClosedListeners.clear();
         lateGenerateListeners.clear();
@@ -1371,6 +1423,9 @@
   var BROWSER_PROVIDER_IDLE_MS = 10 * 60000;
   var CONTROL_ACTIONS = new Set(BROWSER_CONTROL_ACTIONS);
   var SOURCE_CONTROL_PROVIDER_IDLE_MS = 10 * 60000;
+  var NOTIFICATIONS_PROVIDER_IDLE_MS = 10 * 60000;
+  var TRACKER_PROVIDER_IDLE_MS = 10 * 60000;
+  var QUOTA_PROVIDER_IDLE_MS = 10 * 60000;
   // node_modules/@openchamber/sdk/dist/service-surface.js
   var SURFACE_CONTROLLERS = ["none", "agent", "user"];
   var CONTROLLERS = new Set(SURFACE_CONTROLLERS);
@@ -1515,30 +1570,30 @@
   var smallRadius = `calc(${radius} - 4px)`;
   var mix = (color, pct, base = "transparent") => `color-mix(in srgb, ${color} ${pct}%, ${base})`;
   var focusFill = `background-image: linear-gradient(${hover}, ${hover});`;
-  var field = (edge) => `box-shadow: inset 0 0 0 1px ${edge}, var(--oc-sdk-field-lift);`;
+  var field = (edge, width = "0.5px") => `box-shadow: inset 0 0 0 ${width} ${edge}, var(--oc-sdk-field-lift);`;
   var raised = "border-color: var(--oc-sdk-edge); box-shadow: var(--oc-sdk-raised-lift);";
   var litButton = "box-shadow: var(--oc-sdk-lit);";
-  var darkLift = `inset 0 1px 0 0 ${mix(fg, 1.5)}, 0 1px 1px 0 rgb(0 0 0 / 0.28), 0 2px 3px -2px rgb(0 0 0 / 0.2)`;
+  var darkLift = `inset 0 0.5px 0 0 ${mix(fg, 8)}, 0 1px 2px 0 rgb(0 0 0 / 0.4)`;
   var THEME_VARS = `
 :root {
-  --oc-sdk-edge: ${mix(fg, 10)};
+  --oc-sdk-edge: ${mix(fg, 16)};
   --oc-sdk-field-bg: ${elevated};
   --oc-sdk-raised-bg: ${bg};
   --oc-sdk-field-lift: inset 0 1px 2px 0 rgb(0 0 0 / 0.04);
-  --oc-sdk-raised-lift: 0 1px 2px 0 rgb(0 0 0 / 0.06);
-  --oc-sdk-lit: inset 0 1px 0 0 rgb(255 255 255 / 0.45), 0 1px 2px 0 rgb(0 0 0 / 0.08);
-  --oc-sdk-float-edge: rgb(0 0 0 / 0.1);
-  --oc-sdk-float: inset 0 1px 0 0 rgb(255 255 255 / 0.8), inset 0 0 0 1px rgb(0 0 0 / 0.04), 0 1px 2px -0.5px rgb(0 0 0 / 0.08), 0 4px 8px -2px rgb(0 0 0 / 0.08), 0 12px 20px -4px rgb(0 0 0 / 0.08);
+  --oc-sdk-raised-lift: 0 1px 1.5px 0 rgb(0 0 0 / 0.08);
+  --oc-sdk-lit: inset 0 1px 0 0 rgb(255 255 255 / 0.2), 0 1px 1.5px 0 rgb(0 0 0 / 0.1);
+  --oc-sdk-float-edge: rgb(0 0 0 / 0.14);
+  --oc-sdk-float: inset 0 1px 0 0 rgb(255 255 255 / 0.7), 0 1px 2px -0.5px rgb(0 0 0 / 0.06), 0 4px 8px -2px rgb(0 0 0 / 0.08), 0 12px 20px -4px rgb(0 0 0 / 0.06);
 }
 :root[data-oc-theme="dark"] {
-  --oc-sdk-edge: ${mix(fg, 6)};
+  --oc-sdk-edge: ${mix(fg, 14)};
   --oc-sdk-field-bg: ${mix(bg, 50, elevated)};
   --oc-sdk-raised-bg: ${elevated};
   --oc-sdk-field-lift: ${darkLift};
   --oc-sdk-raised-lift: ${darkLift};
-  --oc-sdk-lit: inset 0 1px 0 0 ${mix(fg, 1.5)}, 0 1px 1px 0 rgb(0 0 0 / 0.28), 0 2px 3px -2px rgb(0 0 0 / 0.2);
-  --oc-sdk-float-edge: rgb(0 0 0 / 0.36);
-  --oc-sdk-float: inset 0 1px 0 0 rgb(255 255 255 / 0.06), inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 1px 1px -0.5px rgb(0 0 0 / 0.22), 0 3px 3px -1.5px rgb(0 0 0 / 0.2), 0 6px 6px -3px rgb(0 0 0 / 0.16);
+  --oc-sdk-lit: ${darkLift};
+  --oc-sdk-float-edge: rgb(0 0 0 / 0.55);
+  --oc-sdk-float: inset 0 1px 0 0 rgb(255 255 255 / 0.04), inset 0 0 0 0.5px rgb(255 255 255 / 0.08), 0 8px 16px 0 rgb(0 0 0 / 0.25), 0 4px 8px 0 rgb(0 0 0 / 0.25);
 }`;
   var tone = (name) => {
     const color = v(`status-${name}`, "currentColor");
@@ -1635,6 +1690,8 @@ textarea.oc-sdk-input { height: auto; padding: 8px 10px; resize: vertical; }
 .oc-sdk-progress-label { display: flex; justify-content: space-between; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 .oc-sdk-progress-track { height: 6px; overflow: hidden; }
 .oc-sdk-progress-fill { height: 100%; transform-origin: left; transition: transform 200ms ease-out; }
+.oc-sdk-progress-value { display: inline-flex; align-items: center; gap: 2px; }
+.oc-sdk-progress[data-done="true"] .oc-sdk-progress-value { font-weight: 600; }
 
 .oc-sdk-menu { position: relative; display: inline-flex; }
 
@@ -1673,8 +1730,8 @@ ${tone("success")}${tone("warning")}${tone("error")}${tone("info")}
 .oc-sdk-input { border-radius: ${controlRadius}; background: var(--oc-sdk-field-bg); color: ${elevatedFg}; ${field("var(--oc-sdk-edge)")} transition: background 150ms ease-out; }
 .oc-sdk-input::placeholder { color: ${muted}; }
 .oc-sdk-input:hover:not(:focus) { background-image: linear-gradient(${hover}, ${hover}); }
-.oc-sdk-input:focus, .oc-sdk-input:focus-visible { ${field(mix(fg, 26))} }
-.oc-sdk-field[data-invalid="true"] .oc-sdk-input, .oc-sdk-field[data-invalid="true"] .oc-sdk-input:focus { ${field(v("status-error", "red"))} }
+.oc-sdk-input:focus, .oc-sdk-input:focus-visible { ${field(mix(fg, 26), "1px")} }
+.oc-sdk-field[data-invalid="true"] .oc-sdk-input, .oc-sdk-field[data-invalid="true"] .oc-sdk-input:focus { ${field(v("status-error", "red"), "1px")} }
 .oc-sdk-input[data-mono="true"] { font-family: ${mono}; }
 
 .oc-sdk-search-icon { color: ${muted}; }
@@ -1687,7 +1744,7 @@ ${tone("success")}${tone("warning")}${tone("error")}${tone("info")}
 .oc-sdk-trigger[aria-expanded="true"] { background-image: linear-gradient(${active}, ${active}); }
 .oc-sdk-trigger-value[data-empty="true"] { color: ${muted}; }
 .oc-sdk-trigger-chevron { color: ${muted}; }
-/* The app's dropdown light: lit top, hairline rings and a layered shadow. Its outer ring is the border, over the page like the app's. */
+/* The app's floating level: the glass edge (a hairline ring and a lit top line, dark outside and light inside in dark themes) over soft shadows. The outer ring is the border, over the page like the app's. */
 .oc-sdk-popup { --surface-foreground: ${elevatedFg}; border-color: var(--oc-sdk-float-edge); border-radius: 12px; background: ${elevated}; background-clip: padding-box; color: ${elevatedFg}; box-shadow: var(--oc-sdk-float); }
 .oc-sdk-option { border-radius: 8px; }
 .oc-sdk-option[data-active="true"] { background: ${hover}; }
@@ -1719,7 +1776,8 @@ ${tone("success")}${tone("warning")}${tone("error")}${tone("info")}
 .oc-sdk-tabs[data-track="true"] .oc-sdk-tab[aria-selected="true"] { color: ${elevatedFg}; background: var(--oc-sdk-raised-bg); ${raised} }
 .oc-sdk-tab-count { color: ${muted}; }
 
-.oc-sdk-badge { border-radius: 9999px; background: ${hover}; color: ${muted}; }
+/* The app's neutral badge: a step of the text colour, the same in every theme. */
+.oc-sdk-badge { border-radius: 9999px; background: ${mix(fg, 6)}; color: ${muted}; }
 .oc-sdk-badge[data-tone] { color: var(--oc-sdk-tone-text, var(--oc-sdk-tone)); background: ${mix("var(--oc-sdk-tone)", 15)}; }
 
 .oc-sdk-row { border-radius: 6px; transition: background 120ms ease-out; }
@@ -1745,8 +1803,11 @@ ${tone("success")}${tone("warning")}${tone("error")}${tone("info")}
 .oc-sdk-separator::before, .oc-sdk-separator::after { background: ${mix(border, 40)}; }
 
 .oc-sdk-progress-label { color: ${muted}; }
-.oc-sdk-progress-track { border-radius: 9999px; background: ${border}; }
+/* The app's progress: a groove a step of the text colour, green once done. Older bundles mark done only through aria-valuenow. */
+.oc-sdk-progress-track { border-radius: 9999px; background: ${mix(fg, 6)}; }
 .oc-sdk-progress-fill { border-radius: 9999px; background: var(--oc-sdk-tone, ${primary}); }
+.oc-sdk-progress-track[aria-valuenow="100"] > .oc-sdk-progress-fill:not([data-tone]) { background: ${v("status-success", "currentColor")}; }
+.oc-sdk-progress[data-done="true"] .oc-sdk-progress-value { color: ${v("success-text", "inherit")}; }
 
 .oc-sdk-text a { color: ${primaryText}; text-decoration: underline; text-underline-offset: 2px; }
 .oc-sdk-text img { border-radius: 8px; border: 1px solid ${mix(border, 60)}; }
@@ -3619,7 +3680,7 @@ Read it with canvas_read first, then update it with canvas_update and the curren
     const recheck = action(toolbar, handles, "Check again", load, "outline", "sm", "refresh");
     const intro = element("header", node, "canvas-setup-intro");
     element("h1", intro, "canvas-title", "Set up Canvas");
-    element("p", intro, "canvas-muted", "The gallery works on its own. Add the OpenCode plugin to let the agent publish and update artifacts.");
+    element("p", intro, "canvas-muted", "The gallery works on its own. The agent needs the Canvas plugin to publish and update artifacts.");
     const errorRoot = element("div", node);
     errorRoot.hidden = true;
     const error = mountBanner(errorRoot, { tone: "error", title: "Could not check setup" });
@@ -3631,17 +3692,15 @@ Read it with canvas_read first, then update it with canvas_update and the curren
     const store = element("p", extension, "canvas-muted");
     const plugin = element("section", node, "canvas-setup-section");
     sectionHeading(plugin, "terminal", "OpenCode plugin");
-    element("p", plugin, "canvas-muted", "Requires OpenCode 2.2.0 or newer. Merge this entry into the plugins array in your user or project opencode.json. Keep your other entries. The path points to this installed Canvas package.");
+    element("p", plugin, "canvas-muted", "OpenChamber 2.7.0 or newer loads this package into the OpenCode it runs while Canvas is enabled and approved. If the agent does not see the Canvas tools, open Settings → Extensions and follow the note on the Canvas card.");
     const config = element("pre", plugin, "canvas-code");
     config.tabIndex = 0;
-    config.setAttribute("aria-label", "OpenCode plugin configuration");
+    config.setAttribute("aria-label", "Installed package path");
     config.setAttribute("aria-live", "polite");
     let pluginPath = "";
-    let pluginConfig = "";
     const configActions = element("div", plugin, "canvas-actions");
-    const copyConfig = action(configActions, handles, "Copy plugin config", () => copy(pluginConfig, "Plugin config"), "default", "sm", "copy");
-    const copyPath = action(configActions, handles, "Copy path", () => copy(pluginPath, "Plugin path"), "ghost", "sm", "copy");
-    const pluginNotice = mountBanner(plugin, { tone: "info", title: "Confirm the tools in chat", body: "The gallery cannot confirm which plugins your session has loaded. OpenCode watches configuration changes; use /reload if needed, then send the sample prompt below." });
+    const copyPath = action(configActions, handles, "Copy path", () => copy(pluginPath, "Package path"), "default", "sm", "copy");
+    const pluginNotice = mountBanner(plugin, { tone: "info", title: "Confirm the tools in chat", body: "The gallery cannot confirm which plugins your session has loaded. Send the sample prompt below to check." });
     const agent = element("section", node, "canvas-setup-section");
     sectionHeading(agent, "message", "Try Canvas");
     element("p", agent, "canvas-muted", "Add the sample prompt to chat, review it, then send it to check that Canvas tools are available.");
@@ -3656,13 +3715,11 @@ Read it with canvas_read first, then update it with canvas_update and the curren
     }, "outline", "sm", "refresh");
     restart.update({ disabled: true });
     handles.push(error, extensionBadge, pluginNotice);
-    copyConfig.update({ disabled: true });
     copyPath.update({ disabled: true });
     async function load() {
       const owner = ++setupRequest;
       recheck.update({ loading: true });
       errorRoot.hidden = true;
-      copyConfig.update({ disabled: true });
       copyPath.update({ disabled: true });
       restart.update({ disabled: true });
       viewerText.textContent = "Checking compatibility";
@@ -3683,9 +3740,7 @@ Read it with canvas_read first, then update it with canvas_update and the curren
         extensionBadge.update({ label: status.status === "ready" ? "Running" : status.status, tone: status.status === "ready" ? "success" : "warning" });
         store.textContent = `Store: ${health.store}`;
         pluginPath = health.pluginPath;
-        pluginConfig = JSON.stringify({ $schema: "https://opencode.ai/config.json", plugins: [pluginPath] }, null, 2);
-        config.textContent = pluginConfig;
-        copyConfig.update({ disabled: false });
+        config.textContent = pluginPath;
         copyPath.update({ disabled: false });
         try {
           const state = await request("/viewer-status");

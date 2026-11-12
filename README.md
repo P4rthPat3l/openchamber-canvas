@@ -37,25 +37,19 @@ The examples live in [`examples/`](examples/README.md) with publishing notes. Th
 
 ## Install
 
-Requirements: OpenChamber 2.5.1 or newer, OpenCode 2.2.0 or newer, and Node 24 on the machine that runs OpenChamber.
+Requirements: OpenChamber 2.7.0 or newer, OpenCode 2.2.0 or newer, and Node 24 on the machine that runs OpenChamber.
 
 1. Open **Settings → Extensions → Add**.
 2. Paste the Git URL: `https://github.com/P4rthPat3l/openchamber-canvas`.
-3. Approve the `service` permission.
+3. Approve the `service` and `opencodePlugin` permissions.
 4. Open **Canvas** on the right rail, then **Canvas → Setup**.
-5. Copy the plugin configuration from Setup. Merge its entry into the `plugins` array in your user `~/.config/opencode/opencode.json` or project `opencode.json`. Keep your existing settings and plugin entries:
+5. Use **Add sample prompt to chat**, review the prompt, and send it to test the tools.
 
-   ```json
-   {
-     "$schema": "https://opencode.ai/config.json",
-     "plugins": ["/absolute/path/to/installed/canvas"]
-   }
-   ```
+OpenChamber 2.7.0 or newer loads the Canvas plugin into the OpenCode it runs while Canvas is enabled and approved. There is no separate plugin configuration step. If the agent does not see the Canvas tools, open **Settings → Extensions** and follow the note on the Canvas card. That card also carries the Add to global config fallback when OpenChamber cannot load the plugin itself.
 
-   Setup fills in this installation's exact package directory, not a JavaScript filename. OpenCode loads the built plugin from that package. Configuration changes reload automatically; use `/reload` if needed.
-6. Use **Add sample prompt to chat**, review the prompt, and send it to test the tools.
+The gallery works without the loaded plugin: you can browse, open, export, and copy artifacts. The agent cannot publish or revise until the plugin is loaded. Canvas never writes your OpenCode configuration, and the gallery does not guess whether a session has loaded its tools.
 
-The gallery works without the OpenCode plugin: you can browse, open, export, and copy artifacts. The agent cannot publish or revise until the plugin is loaded. The extension does not change your OpenCode configuration, and the gallery does not guess whether a session has loaded its tools.
+**Updating from 0.6.0.** Remove the Canvas package directory from the OpenCode `plugins` array. Canvas 0.7.0 ships its plugin through OpenChamber, and the old entry is no longer needed. See [the upgrade guide](docs/upgrade-native-plugin.md).
 
 The plugin also registers the bundled [`canvas-authoring`](skills/canvas-authoring/SKILL.md) skill with OpenCode. No separate skill installation is needed. It routes to six focused scenarios, uses project-first design tokens or the fallback [Canvas system](examples/design-system.html), and guides one canonical source, preview verification, one complete publication, batched corrections, and safe revisions. Tool descriptions ask agents to load it before authoring. Availability does not guarantee that a model follows the workflow; you can explicitly ask it to load `canvas-authoring`.
 
@@ -82,7 +76,7 @@ Four parts share one store:
 - A detached **viewer daemon** serves artifact HTML, the runtime API, pinned libraries, and live updates over loopback.
 - A **native OpenCode plugin** registers `preview`, `publish`, `update`, `list`, `read`, `archive`, and `result` under the `canvas` namespace, plus the bundled `canvas-authoring` skill. Effective names are `canvas_preview`, `canvas_publish`, and so on; Code Mode exposes `tools.canvas.preview` and related calls. The skill uses the normal skill loader.
 
-The extension asks for the `service` permission only. The user separately authorizes the OpenCode plugin through their plugin configuration. Tools use OpenCode's permission system and take project/session context from the invoking session.
+The extension asks for the `service` approval and the `opencodePlugin` capability. OpenChamber 2.7.0 or newer loads the plugin into its OpenCode, so there is no separate plugin configuration. Tools use OpenCode's permission system and take project/session context from the invoking session.
 
 The viewer outlives a plugin reload, so an open artifact does not depend on the agent session staying alive. The browser panel renders the page; the viewer enforces the sandbox. Native annotation does not reach these sandboxed pages, so feedback and revision notes are the supported review path.
 
@@ -110,7 +104,7 @@ Six authoring cases and a [trace-based evaluation protocol](skills/canvas-author
 
 ## Requirements and limits
 
-- OpenChamber desktop or web, tested against 2.5.1. Extensions do not load in VS Code or on mobile.
+- OpenChamber desktop or web, tested against 2.7.0. Extensions do not load in VS Code or on mobile.
 - Local machine only. A remote client cannot reach the server's loopback viewer; use Copy URL or Export there.
 - Artifact HTML is model output. Treat it as untrusted; the viewer sandboxes it.
 - Exports contain authored source files. The viewer runtime and pinned libraries are not bundled into a standalone export.

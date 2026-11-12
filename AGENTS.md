@@ -4,13 +4,13 @@ Feature documentation lives in `docs/features/`. Read the relevant feature docum
 
 ## Status
 
-The 0.6.0 release adds unpublished `canvas_preview` snapshots, frozen publish/update promotion, preview-only lock protection, task-based scenario references, and aligned starters. It keeps the 0.5.0 artifact design system with fallback tokens and Light/Dark switcher, the 0.3.0 native OpenCode plugin, and the 0.4.0 bundled `canvas-authoring` skill. The shared store, sandboxed viewer, pinned rendering snapshots, native tools/service contracts, feedback handoff, paginated gallery, status section, and authoring examples exist. Installed-app acceptance remains a manual check; do not change the installed extension to manufacture a pass.
+The 0.7.0 release ships the Canvas plugin through `contributes.opencodePlugin`, so OpenChamber 2.7.0 or newer loads it without a manual `opencode.json` entry. It keeps the 0.6.0 unpublished `canvas_preview` snapshots, frozen publish/update promotion, preview-only lock protection, task-based scenario references, and aligned starters. It also keeps the 0.5.0 artifact design system with fallback tokens and Light/Dark switcher, the 0.3.0 native OpenCode plugin, and the 0.4.0 bundled `canvas-authoring` skill. The shared store, sandboxed viewer, pinned rendering snapshots, native tools/service contracts, feedback handoff, paginated gallery, status section, and authoring examples exist. Installed-app acceptance remains a manual check; do not change the installed extension to manufacture a pass.
 
 ## Stack
 
 - TypeScript, no `any`.
 - Bun 1.4 for scripts, bundling, and tests.
-- The native plugin runs inside OpenCode 2.2.0 or newer. The service and detached viewer use a JavaScript runtime. All ship as bundled JavaScript; installed packages do not need node_modules or compilation.
+- The native plugin runs inside OpenCode 2.2.0 or newer and ships through the extension's `opencodePlugin` contribution. The service and detached viewer use a JavaScript runtime. All ship as bundled JavaScript; installed packages do not need node_modules or compilation.
 - `@openchamber/sdk` for the panel, the service contract, and the guest bundler.
 - `@opencode/plugin@2.2.0` supplies development types and skill-schema constructors that build into the plugin. The native bundle has no external runtime SDK import. Do not reintroduce a second MCP adapter.
 - No UI framework. Mount the public `@openchamber/sdk/ui` components for buttons, fields, search, selects, menus, lists, badges, banners, empty states, spinners, and separators. Custom CSS and plain HTML are only for composition the installed kit lacks: responsive split, grid, version metadata, setup/status layout, and the native dialog frame.
@@ -45,7 +45,7 @@ bun run build
 - Apply `applyHostReady` on every host ready snapshot. Do not rebuild mounted controls for a theme-only snapshot; call `update` for controlled values and `dispose` when removing a view.
 - Use `host.storage`, not `localStorage`, for panel preferences. The extension iframe has an opaque origin.
 - Store paths are validated against the store root. No `..`, no symlink escape.
-- The extension asks for the `service` permission only. Do not add `filesystem`, `sessions`, or `prompt` without a documented reason.
+- The extension asks for the `service` approval and the `opencodePlugin` capability only. Do not add `filesystem`, `sessions`, `prompt`, or `origins` without a documented reason.
 - Bundles run one level below the package root (`plugin/`, `service/`, `viewer/`), while source entries run under `src/<area>` and version resolution lives at `src/version.ts`. Package paths must work from source and relocated built installations without node_modules. Use `packageRoot()` for package assets.
 - The plugin registers `skills/canvas-authoring/SKILL.md` through `ctx.skill.transform`, not a custom tool or a global skill install. Ship `skills/` and referenced `examples/` with the built package. Read the skill before registering tools or writing a store; unload both registrations. Keep registered name/description aligned with the file's frontmatter. `ctx.skill.list()` returns a `data` envelope; the probed OpenCode 2.2.5 skill loader takes `id`. Test that real boundary instead of assuming a local source checkout matches the running CLI.
 - The skill must require a source preflight before the first publish, one complete publish for a new artifact, and a single batched `canvas_update` for concrete runtime failures. Do not restore publish-first or publish-as-preview wording. Tool descriptions must carry the same rule because skill loading is optional.
@@ -58,7 +58,7 @@ bun run build
 - When spawning a JavaScript viewer with process.execPath from OpenCode's compiled Bun host, set `BUN_BE_BUN=1`. `ELECTRON_RUN_AS_NODE=1` handles Electron but is not sufficient for OpenCode. Test cold start under the actual OpenCode binary, not only Node.
 - The service token and view tokens are never logged, never sent to the panel, and never placed in artifact HTML.
 - Do not modify OpenChamber's installation or configuration outside the project folder. The extension and OpenCode plugin are installed by the user.
-- `opencode.json` is not tracked. The root package exports `plugin/index.js`; users register the package directory in the V2 `plugins` array, preserving other entries. Setup shows the exact installed path/JSON and a reviewed sample prompt. Do not scan partial config layers or infer connection state from a heartbeat.
+- `opencode.json` is not tracked. The package exports `plugin/index.js` and declares `contributes.opencodePlugin: "plugin"`. OpenChamber 2.7.0 or newer lists that folder in the managed OpenCode config while the extension is enabled and approved. Never write the user's OpenCode configuration or duplicate the host's managed entry. Setup shows the installed package path and a reviewed sample prompt, never a mergeable config. Do not scan partial config layers or infer connection state.
 
 ## Local paths
 
